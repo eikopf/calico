@@ -16,11 +16,17 @@
 
 use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use css::Css3Color;
-use iri_string::types::UriString;
-use oxilangtag::LanguageTag;
+use primitive::{
+    AlarmAction, Binary, CalendarScale, CalendarUserType, Classification, DisplayType, EventStatus,
+    FeatureType, FreeBusyType, Frequency, JournalStatus, Language, Method, ParticipationRole,
+    ParticipationStatus, RelationshipType, Status, TodoStatus, Transparency, TriggerRelation, Uid,
+    Uri, VersionReq,
+};
 use std::collections::HashMap;
 
 pub mod css;
+pub mod primitive;
+pub mod property;
 
 /// Top-level iCalendar object.
 #[derive(Debug, Clone)]
@@ -30,14 +36,10 @@ pub struct Calendar {
     pub product_id: String,
     pub version: VersionReq,
 
-    // TODO: properties like name and description can occur multiple times, but
-    // only once per language. they should probably be replaced with hashmaps from
-    // Language to Text (or maybe a subset of the fields of Text?)
-
     // RFC 7986 extensions
-    pub name: Vec<Text>,
-    pub description: Vec<Text>,
-    pub uid: Option<String>,
+    pub name: HashMap<Language, Text>,
+    pub description: HashMap<Language, Text>,
+    pub uid: Option<Uid>,
     pub last_modified: Option<DateTime<Utc>>,
     pub url: Option<Uri>,
     pub categories: Vec<String>,
@@ -48,35 +50,6 @@ pub struct Calendar {
 
     pub components: Vec<Component>,
     pub x_properties: HashMap<String, XProperty>,
-}
-
-/// The calendar scale, which is almost always Gregorian (RFC 5545 §3.7.1).
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub enum CalendarScale {
-    #[default]
-    Gregorian,
-    Other(String),
-}
-
-/// An HTTP method.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Method(http::Method);
-
-/// The iCalendar version requirements on a [`Calendar`] (RFC 5545, §3.7.4).
-#[derive(Debug, Clone)]
-pub enum VersionReq {
-    Latest(Version),
-    Bounded { min: Version, max: Version },
-}
-
-/// A version value, which is almost always 2.0 (RFC 5545 §3.7.4).
-#[derive(Debug, Clone, Default)]
-pub enum Version {
-    /// Version 2.0.
-    #[default]
-    Rfc5545,
-    /// Any version other than 2.0.
-    Other(String),
 }
 
 /// Calendar component types
@@ -93,7 +66,7 @@ pub enum Component {
 /// Common fields shared by all components except [`TimeZone`] and [`Alarm`].
 #[derive(Debug, Clone)]
 pub struct ComponentCore {
-    pub uid: String,
+    pub uid: Uid,
     pub dtstamp: DateTime<Utc>,
     pub sequence: Option<u32>,
     pub created: Option<DateTime<Utc>>,
@@ -310,7 +283,7 @@ pub enum Property {
     RecurrenceId(RecurrenceId),
     RelatedTo(RelatedTo),
     Url(Uri),
-    Uid(String),
+    Uid(Uid),
 
     // Recurrence properties
     ExDate(Vec<DateTimeOrDate>),
@@ -353,10 +326,7 @@ pub struct Image {
 #[derive(Debug, Clone)]
 pub enum ImageData {
     Uri(Uri),
-    Binary {
-        data: BinaryData,
-        encoding: BinaryEncoding,
-    },
+    Binary(Binary),
 }
 
 /// RFC 7986 CONFERENCE property.
@@ -368,11 +338,6 @@ pub struct Conference {
     pub language: Option<Language>,
 }
 
-// TODO: while Text is not the only example of this problem, it is a good example.
-// the language and alternate_representation parameters on a text property value
-// are not the only possibilities, and more generally we need a way to handle
-// arbitrary unknown properties and parameters.
-
 /// A text value.
 #[derive(Debug, Clone)]
 pub struct Text {
@@ -380,14 +345,6 @@ pub struct Text {
     pub language: Option<Language>,
     pub alternate_representation: Option<Uri>,
 }
-
-/// An RFC 5646 language tag.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Language(LanguageTag<String>);
-
-/// An RFC 3986 uniform resource identifier (URI).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Uri(UriString);
 
 /// X-Property (non-standard property).
 #[derive(Debug, Clone)]
@@ -399,7 +356,7 @@ pub struct XProperty {
 /// Property value types as defined in RFC 5545.
 #[derive(Debug, Clone)]
 pub enum PropertyValueType {
-    Binary(BinaryData),
+    Binary(Binary),
     Boolean(bool),
     CalAddress(String),
     Date(NaiveDate),
@@ -413,12 +370,6 @@ pub enum PropertyValueType {
     Time(NaiveTime),
     Uri(String),
     UtcOffset(UtcOffset),
-}
-
-/// The data of a BINARY property.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct BinaryData {
-    bytes: Vec<u8>,
 }
 
 /// Parameter values.
@@ -523,14 +474,7 @@ pub enum Attachment {
     Binary {
         data: Vec<u8>,
         fmttype: Option<String>,
-        encoding: BinaryEncoding,
     },
-}
-
-/// Binary encoding type.
-#[derive(Debug, Clone, Copy)]
-pub enum BinaryEncoding {
-    Base64,
 }
 
 /// Free/busy period.
@@ -600,177 +544,6 @@ pub enum AlarmTrigger {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum Frequency {
-    Secondly,
-    Minutely,
-    Hourly,
-    Daily,
-    Weekly,
-    Monthly,
-    Yearly,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum Classification {
-    Public,
-    Private,
-    Confidential,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum Status {
-    Event(EventStatus),
-    Todo(TodoStatus),
-    Journal(JournalStatus),
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum EventStatus {
-    Tentative,
-    Confirmed,
-    Cancelled,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum TodoStatus {
-    NeedsAction,
-    Completed,
-    InProcess,
-    Cancelled,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum JournalStatus {
-    Draft,
-    Final,
-    Cancelled,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum Transparency {
-    Opaque,
-    Transparent,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum CalendarUserType {
-    Individual,
-    Group,
-    Resource,
-    Room,
-    Unknown,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum ParticipationRole {
-    Chair,
-    ReqParticipant,
-    OptParticipant,
-    NonParticipant,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum ParticipationStatus {
-    NeedsAction,
-    Accepted,
-    Declined,
-    Tentative,
-    Delegated,
-    Completed,
-    InProcess,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum FreeBusyType {
-    Free,
-    Busy,
-    BusyUnavailable,
-    BusyTentative,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum AlarmAction {
-    Audio,
-    Display,
-    Email,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum TriggerRelation {
-    Start,
-    End,
-}
-
-#[derive(Debug, Clone, Copy)]
 pub enum RecurrenceRange {
     ThisAndFuture,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum RelationshipType {
-    Parent,
-    Child,
-    Sibling,
-}
-
-/// DISPLAY parameter values (RFC 7986)
-#[derive(Debug, Clone, Copy)]
-pub enum DisplayType {
-    Badge,
-    Graphic,
-    Fullsize,
-    Thumbnail,
-}
-
-/// FEATURE parameter values (RFC 7986)
-#[derive(Debug, Clone, Copy)]
-pub enum FeatureType {
-    Audio,
-    Chat,
-    Feed,
-    Moderator,
-    Phone,
-    Screen,
-    Video,
-}
-
-// Display trait impls
-
-impl std::fmt::Display for DisplayType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            DisplayType::Badge => write!(f, "BADGE"),
-            DisplayType::Graphic => write!(f, "GRAPHIC"),
-            DisplayType::Fullsize => write!(f, "FULLSIZE"),
-            DisplayType::Thumbnail => write!(f, "THUMBNAIL"),
-        }
-    }
-}
-
-impl std::fmt::Display for FeatureType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            FeatureType::Audio => write!(f, "AUDIO"),
-            FeatureType::Chat => write!(f, "CHAT"),
-            FeatureType::Feed => write!(f, "FEED"),
-            FeatureType::Moderator => write!(f, "MODERATOR"),
-            FeatureType::Phone => write!(f, "PHONE"),
-            FeatureType::Screen => write!(f, "SCREEN"),
-            FeatureType::Video => write!(f, "VIDEO"),
-        }
-    }
-}
-
-impl std::fmt::Display for Frequency {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Frequency::Secondly => write!(f, "SECONDLY"),
-            Frequency::Minutely => write!(f, "MINUTELY"),
-            Frequency::Hourly => write!(f, "HOURLY"),
-            Frequency::Daily => write!(f, "DAILY"),
-            Frequency::Weekly => write!(f, "WEEKLY"),
-            Frequency::Monthly => write!(f, "MONTHLY"),
-            Frequency::Yearly => write!(f, "YEARLY"),
-        }
-    }
 }
