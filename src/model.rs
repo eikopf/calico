@@ -1,8 +1,23 @@
-//! The iCalendar data model.
+//! The iCalendar object model.
+//!
+//! # Specification
+//!
+//! The primary document specifying the iCalendar object model is
+//! [RFC 5545](https://datatracker.ietf.org/doc/html/rfc5545), with some later alterations
+//! specified in [RFC 7986](https://datatracker.ietf.org/doc/html/rfc7986). Other relevant
+//! documents include [RFC 6868](https://www.rfc-editor.org/rfc/rfc6868) and [RFC 7529](https://www.rfc-editor.org/rfc/rfc7529).
+//!
+//! ## Vestigial Features
+//!
+//! Some elements of these documents were intended to be variable, but in practice are almost never
+//! changed from a single fixed value. Most notably, the CALSCALE (calendar scale) property is
+//! essentially always GREGORIAN, and the VERSION (iCalendar version requirement) property is
+//! essentially always 2.0.
 
 use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use css::Css3Color;
 use iri_string::types::UriString;
+use oxilangtag::LanguageTag;
 use std::collections::HashMap;
 
 pub mod css;
@@ -10,10 +25,14 @@ pub mod css;
 /// Top-level iCalendar object.
 #[derive(Debug, Clone)]
 pub struct Calendar {
-    pub version: String,
-    pub prodid: String,
-    pub calscale: Option<String>,
-    pub method: Option<String>,
+    pub calendar_scale: CalendarScale,
+    pub method: Option<Method>,
+    pub product_id: String,
+    pub version: VersionReq,
+
+    // TODO: properties like name and description can occur multiple times, but
+    // only once per language. they should probably be replaced with hashmaps from
+    // Language to Text (or maybe a subset of the fields of Text?)
 
     // RFC 7986 extensions
     pub name: Vec<Text>,
@@ -31,6 +50,35 @@ pub struct Calendar {
     pub x_properties: HashMap<String, XProperty>,
 }
 
+/// The calendar scale, which is almost always Gregorian (RFC 5545 §3.7.1).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum CalendarScale {
+    #[default]
+    Gregorian,
+    Other(String),
+}
+
+/// An HTTP method.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Method(http::Method);
+
+/// The iCalendar version requirements on a [`Calendar`] (RFC 5545, §3.7.4).
+#[derive(Debug, Clone)]
+pub enum VersionReq {
+    Latest(Version),
+    Bounded { min: Version, max: Version },
+}
+
+/// A version value, which is almost always 2.0 (RFC 5545 §3.7.4).
+#[derive(Debug, Clone, Default)]
+pub enum Version {
+    /// Version 2.0.
+    #[default]
+    Rfc5545,
+    /// Any version other than 2.0.
+    Other(String),
+}
+
 /// Calendar component types
 #[derive(Debug, Clone)]
 pub enum Component {
@@ -42,7 +90,7 @@ pub enum Component {
     Alarm(Alarm),
 }
 
-/// Common fields shared by all calendar components except [`TimeZone`] and [`Alarm`].
+/// Common fields shared by all components except [`TimeZone`] and [`Alarm`].
 #[derive(Debug, Clone)]
 pub struct ComponentCore {
     pub uid: String,
@@ -316,19 +364,28 @@ pub enum ImageData {
 pub struct Conference {
     pub uri: Uri,
     pub feature: Vec<FeatureType>,
-    pub label: Option<Text>,
-    pub language: Option<String>,
+    pub label: Option<String>,
+    pub language: Option<Language>,
 }
 
-/// Text value with optional parameters.
+// TODO: while Text is not the only example of this problem, it is a good example.
+// the language and alternate_representation parameters on a text property value
+// are not the only possibilities, and more generally we need a way to handle
+// arbitrary unknown properties and parameters.
+
+/// A text value.
 #[derive(Debug, Clone)]
 pub struct Text {
-    pub value: String,
-    pub language: Option<String>,
+    pub contents: String,
+    pub language: Option<Language>,
     pub alternate_representation: Option<Uri>,
 }
 
-/// An RFC 3986 URI.
+/// An RFC 5646 language tag.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Language(LanguageTag<String>);
+
+/// An RFC 3986 uniform resource identifier (URI).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Uri(UriString);
 
