@@ -18,10 +18,11 @@ use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use css::Css3Color;
 use primitive::{
     AlarmAction, Binary, CalendarScale, CalendarUserType, Classification, DisplayType, EventStatus,
-    FeatureType, FreeBusyType, Frequency, JournalStatus, Language, Method, ParticipationRole,
-    ParticipationStatus, RelationshipType, Status, TodoStatus, Transparency, TriggerRelation, Uid,
-    Uri, VersionReq,
+    FeatureType, FreeBusyType, Frequency, ImageData, JournalStatus, Language, Method,
+    ParticipationRole, ParticipationStatus, RelationshipType, Status, TodoStatus, Transparency,
+    TriggerRelation, Uid, Uri, VersionReq,
 };
+use property::{ConfProp, ImageProp, Prop, TextProp};
 use std::collections::HashMap;
 
 pub mod css;
@@ -31,25 +32,40 @@ pub mod property;
 /// Top-level iCalendar object.
 #[derive(Debug, Clone)]
 pub struct Calendar {
-    pub calendar_scale: CalendarScale,
-    pub method: Option<Method>,
-    pub product_id: String,
-    pub version: VersionReq,
+    /// RFC 5545 §3.7.1
+    pub calendar_scale: Prop<CalendarScale>,
+    /// RFC 5545 §3.7.2
+    pub method: Option<Prop<Method>>,
+    /// RFC 5545 §3.7.3
+    pub product_id: Prop<Box<str>>,
+    /// RFC 5545 §3.7.4
+    pub version: Prop<VersionReq>,
 
-    // RFC 7986 extensions
-    pub name: HashMap<Language, Text>,
-    pub description: HashMap<Language, Text>,
-    pub uid: Option<Uid>,
-    pub last_modified: Option<DateTime<Utc>>,
-    pub url: Option<Uri>,
-    pub categories: Vec<String>,
-    pub refresh_interval: Option<Duration>,
-    pub source: Option<Uri>,
-    pub color: Option<Css3Color>,
-    pub image: Vec<Image>,
+    /// RFC 7986 §5.1
+    pub name: Vec<TextProp>,
+    /// RFC 7986 §5.2
+    pub description: Vec<TextProp>,
+    /// RFC 7986 §5.3
+    pub uid: Option<Prop<Uid>>,
+    /// RFC 7986 §5.4
+    pub last_modified: Option<Prop<DateTime<Utc>>>,
+    /// RFC 7986 §5.5
+    pub url: Option<Prop<Uri>>,
+    /// RFC 7986 §5.6
+    pub categories: Vec<TextProp>,
+    /// RFC 7986 §5.7
+    pub refresh_interval: Option<Prop<Duration>>,
+    /// RFC 7986 §5.8
+    pub source: Option<Prop<Uri>>,
+    /// RFC 7986 §5.9
+    pub color: Option<Prop<Css3Color>>,
+    /// RFC 7986 §5.10
+    pub image: Vec<ImageProp>,
+    /// RFC 7986 §5.11
+    pub conference: Option<ConfProp>,
 
     pub components: Vec<Component>,
-    pub x_properties: HashMap<String, XProperty>,
+    pub extra_properties: HashMap<Box<str>, Prop<Box<str>>>,
 }
 
 /// Calendar component types
@@ -66,8 +82,8 @@ pub enum Component {
 /// Common fields shared by all components except [`TimeZone`] and [`Alarm`].
 #[derive(Debug, Clone)]
 pub struct ComponentCore {
-    pub uid: Uid,
-    pub dtstamp: DateTime<Utc>,
+    pub uid: Prop<Uid>,
+    pub datetime_stamp: Prop<DateTime<Utc>>,
     pub sequence: Option<u32>,
     pub created: Option<DateTime<Utc>>,
     pub last_modified: Option<DateTime<Utc>>,
@@ -322,13 +338,6 @@ pub struct Image {
     pub alternate_representation: Option<Uri>,
 }
 
-/// The data of an RFC 7986 IMAGE property.
-#[derive(Debug, Clone)]
-pub enum ImageData {
-    Uri(Uri),
-    Binary(Binary),
-}
-
 /// RFC 7986 CONFERENCE property.
 #[derive(Debug, Clone)]
 pub struct Conference {
@@ -488,7 +497,7 @@ pub struct FreeBusyPeriod {
 #[derive(Debug, Clone)]
 pub struct RecurrenceId {
     pub datetime: DateTimeOrDate,
-    pub range: Option<RecurrenceRange>,
+    pub this_and_future: bool,
 }
 
 /// Related-to property.
@@ -541,9 +550,4 @@ pub enum AlarmTrigger {
         related: Option<TriggerRelation>,
     },
     DateTime(DateTime<Utc>),
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum RecurrenceRange {
-    ThisAndFuture,
 }

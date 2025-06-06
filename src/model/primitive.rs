@@ -83,6 +83,17 @@ pub enum RelationshipType {
     Sibling,
 }
 
+/// The data of an RFC 7986 IMAGE property.
+#[derive(Debug, Clone)]
+pub enum ImageData {
+    Uri(Uri),
+    Binary(Binary),
+}
+
+/// RFC 5545 §3.2.8
+#[derive(Debug, Clone)]
+pub struct FormatType;
+
 /// DISPLAY parameter values (RFC 7986)
 #[derive(Debug, Clone, Copy)]
 pub enum DisplayType {
@@ -93,7 +104,7 @@ pub enum DisplayType {
 }
 
 /// FEATURE parameter values (RFC 7986)
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum FeatureType {
     Audio,
     Chat,
@@ -102,6 +113,7 @@ pub enum FeatureType {
     Phone,
     Screen,
     Video,
+    Other(Box<str>),
 }
 
 #[derive(Debug, Clone, Copy)]
