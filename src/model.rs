@@ -14,20 +14,23 @@
 //! essentially always GREGORIAN, and the VERSION (iCalendar version requirement) property is
 //! essentially always 2.0.
 
-use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
+use chrono::Utc;
 use css::Css3Color;
 use primitive::{
-    AlarmAction, Binary, CalendarScale, CalendarUserType, Classification, DisplayType, EventStatus,
-    FeatureType, FreeBusyType, Frequency, ImageData, JournalStatus, Language, Method,
-    ParticipationRole, ParticipationStatus, RelationshipType, Status, TodoStatus, Transparency,
-    TriggerRelation, Uid, Uri, VersionReq,
+    AlarmAction, Binary, CalendarScale, CalendarUserType, Classification, Date, DateTime,
+    DateTimeOrDate, DisplayType, Duration, EventStatus, FeatureType, FreeBusyType, Geo, ImageData,
+    JournalStatus, Language, Method, ParticipationRole, ParticipationStatus, Period, RDateValue,
+    RelationshipType, Status, Time, TodoStatus, Transparency, TriggerRelation, Uid, Uri, UtcOffset,
+    VersionReq,
 };
 use property::{ConfProp, ImageProp, Prop, TextProp};
+use rrule::RecurrenceRule;
 use std::collections::HashMap;
 
 pub mod css;
 pub mod primitive;
 pub mod property;
+pub mod rrule;
 
 /// Top-level iCalendar object.
 #[derive(Debug, Clone)]
@@ -48,7 +51,7 @@ pub struct Calendar {
     /// RFC 7986 §5.3
     pub uid: Option<Prop<Uid>>,
     /// RFC 7986 §5.4
-    pub last_modified: Option<Prop<DateTime<Utc>>>,
+    pub last_modified: Option<Prop<DateTime>>,
     /// RFC 7986 §5.5
     pub url: Option<Prop<Uri>>,
     /// RFC 7986 §5.6
@@ -84,9 +87,9 @@ pub enum Component {
 pub struct ComponentCore {
     pub uid: Prop<Uid>,
     pub datetime_stamp: Prop<DateTime<Utc>>,
-    pub sequence: Option<u32>,
-    pub created: Option<DateTime<Utc>>,
-    pub last_modified: Option<DateTime<Utc>>,
+    pub sequence: Prop<Option<u64>>,
+    pub created: Prop<Option<DateTime<Utc>>>,
+    pub last_modified: Prop<Option<DateTime<Utc>>>,
     pub x_properties: HashMap<String, XProperty>,
     pub iana_properties: HashMap<String, Property>,
 }
@@ -368,7 +371,7 @@ pub enum PropertyValueType {
     Binary(Binary),
     Boolean(bool),
     CalAddress(String),
-    Date(NaiveDate),
+    Date(Date),
     DateTime(DateTimeOrDate),
     Duration(Duration),
     Float(f64),
@@ -376,7 +379,7 @@ pub enum PropertyValueType {
     Period(Period),
     Recur(RecurrenceRule),
     Text(String),
-    Time(NaiveTime),
+    Time(Time),
     Uri(String),
     UtcOffset(UtcOffset),
 }
@@ -389,64 +392,6 @@ pub enum ParameterValue {
     CalAddress(String),
     Boolean(bool),
     Integer(i64),
-}
-
-/// Date-time or date value.
-#[derive(Debug, Clone)]
-pub enum DateTimeOrDate {
-    DateTime(DateTime<Utc>),
-    Date(NaiveDate),
-    FloatingDateTime(chrono::NaiveDateTime),
-    LocalDateTime {
-        datetime: chrono::NaiveDateTime,
-        tzid: String,
-    },
-}
-
-/// Period of time.
-#[derive(Debug, Clone)]
-pub enum Period {
-    Explicit {
-        start: DateTimeOrDate,
-        end: DateTimeOrDate,
-    },
-    Start {
-        start: DateTimeOrDate,
-        duration: Duration,
-    },
-}
-
-/// RDATE values can be DATE-TIME, DATE, or PERIOD.
-#[derive(Debug, Clone)]
-pub enum RDateValue {
-    DateTime(DateTimeOrDate),
-    Period(Period),
-}
-
-/// Duration type.
-#[derive(Debug, Clone, Default)]
-pub struct Duration {
-    pub weeks: Option<u32>,
-    pub days: Option<u32>,
-    pub hours: Option<u32>,
-    pub minutes: Option<u32>,
-    pub seconds: Option<u32>,
-    pub negative: bool,
-}
-
-/// Geographic coordinates.
-#[derive(Debug, Clone)]
-pub struct Geo {
-    pub latitude: f64,
-    pub longitude: f64,
-}
-
-/// UTC offset.
-#[derive(Debug, Clone)]
-pub struct UtcOffset {
-    pub hours: i8,
-    pub minutes: u8,
-    pub seconds: Option<u8>,
 }
 
 /// Calendar user.
@@ -514,32 +459,6 @@ pub struct RequestStatus {
     pub status_description: String,
     pub exception_data: Option<String>,
     pub language: Option<String>,
-}
-
-/// Recurrence rule.
-#[derive(Debug, Clone)]
-pub struct RecurrenceRule {
-    pub freq: Frequency,
-    pub until: Option<DateTimeOrDate>,
-    pub count: Option<u32>,
-    pub interval: Option<u32>,
-    pub by_second: Vec<u8>,
-    pub by_minute: Vec<u8>,
-    pub by_hour: Vec<u8>,
-    pub by_day: Vec<WeekdayNum>,
-    pub by_month_day: Vec<i8>,
-    pub by_year_day: Vec<i16>,
-    pub by_week_no: Vec<i8>,
-    pub by_month: Vec<u8>,
-    pub by_set_pos: Vec<i16>,
-    pub week_start: Option<chrono::Weekday>,
-}
-
-/// Weekday with optional occurrence number.
-#[derive(Debug, Clone)]
-pub struct WeekdayNum {
-    pub weekday: chrono::Weekday,
-    pub occurrence: Option<i8>,
 }
 
 /// Alarm trigger.

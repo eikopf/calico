@@ -1,5 +1,6 @@
 //! Primitive types for the object model.
 
+use chrono::NaiveDate;
 use iri_string::types::UriString;
 use oxilangtag::LanguageTag;
 
@@ -57,16 +58,44 @@ pub struct Binary {
     bytes: Vec<u8>,
 }
 
-/// The frequency of a recurrence rule.
-#[derive(Debug, Clone, Copy)]
-pub enum Frequency {
-    Secondly,
-    Minutely,
-    Hourly,
-    Daily,
-    Weekly,
-    Monthly,
-    Yearly,
+/// Date-time or date value.
+#[derive(Debug, Clone)]
+pub enum DateTimeOrDate {
+    DateTime(DateTime),
+    Date(Date),
+}
+
+/// The product of a [`Date`] and a [`Time`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DateTime<F = TimeFormat> {
+    pub date: Date,
+    pub time: Time<F>,
+}
+
+/// A DATE value (RFC 5545, §3.3.4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Date(NaiveDate);
+
+/// A TIME value (RFC 5545, §3.3.12).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Time<F = TimeFormat> {
+    pub raw: RawTime,
+    pub format: F,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RawTime {
+    pub hour: u8,
+    pub minute: u8,
+    pub second: u8,
+}
+
+/// The format of a [`Time`], which may be local or absolute.
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TimeFormat {
+    #[default]
+    Local,
+    Utc,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -198,4 +227,50 @@ pub enum AlarmAction {
 pub enum TriggerRelation {
     Start,
     End,
+}
+
+/// Period of time.
+#[derive(Debug, Clone)]
+pub enum Period {
+    Explicit {
+        start: DateTimeOrDate,
+        end: DateTimeOrDate,
+    },
+    Start {
+        start: DateTimeOrDate,
+        duration: Duration,
+    },
+}
+
+/// RDATE values can be DATE-TIME, DATE, or PERIOD.
+#[derive(Debug, Clone)]
+pub enum RDateValue {
+    DateTime(DateTimeOrDate),
+    Period(Period),
+}
+
+/// Duration type.
+#[derive(Debug, Clone, Default)]
+pub struct Duration {
+    pub weeks: Option<u32>,
+    pub days: Option<u32>,
+    pub hours: Option<u32>,
+    pub minutes: Option<u32>,
+    pub seconds: Option<u32>,
+    pub negative: bool,
+}
+
+/// Geographic coordinates.
+#[derive(Debug, Clone)]
+pub struct Geo {
+    pub latitude: f64,
+    pub longitude: f64,
+}
+
+/// UTC offset.
+#[derive(Debug, Clone)]
+pub struct UtcOffset {
+    pub hours: i8,
+    pub minutes: u8,
+    pub seconds: Option<u8>,
 }
