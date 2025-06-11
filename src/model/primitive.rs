@@ -74,7 +74,7 @@ pub struct DateTime<F = TimeFormat> {
 
 /// A DATE value (RFC 5545, §3.3.4).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Date(NaiveDate);
+pub struct Date(pub(crate) NaiveDate);
 
 /// A TIME value (RFC 5545, §3.3.12).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -85,9 +85,9 @@ pub struct Time<F = TimeFormat> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RawTime {
-    pub hour: u8,
-    pub minute: u8,
-    pub second: u8,
+    pub hours: u8,
+    pub minutes: u8,
+    pub seconds: u8,
 }
 
 /// The format of a [`Time`], which may be local or absolute.
