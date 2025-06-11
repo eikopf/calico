@@ -3,35 +3,11 @@
 use chrono::NaiveDate;
 use iri_string::types::UriString;
 use oxilangtag::LanguageTag;
-
-/// The calendar scale, which is almost always Gregorian (RFC 5545 §3.7.1).
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub enum CalendarScale {
-    #[default]
-    Gregorian,
-    Other(String),
-}
+use uuid::Uuid;
 
 /// An HTTP method.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Method(http::Method);
-
-/// The iCalendar version requirements on a [`Calendar`] (RFC 5545, §3.7.4).
-#[derive(Debug, Clone)]
-pub enum VersionReq {
-    Latest(Version),
-    Bounded { min: Version, max: Version },
-}
-
-/// A version value, which is almost always 2.0 (RFC 5545 §3.7.4).
-#[derive(Debug, Clone, Default)]
-pub enum Version {
-    /// Version 2.0.
-    #[default]
-    Rfc5545,
-    /// Any version other than 2.0.
-    Other(String),
-}
+pub struct Method(pub(crate) http::Method);
 
 /// A unique identifier (RFC 5545 §3.8.4.7).
 ///
@@ -40,7 +16,7 @@ pub enum Version {
 /// when generating new UIDs.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Uid {
-    Uuid(uuid::Uuid),
+    Uuid(Uuid),
     String(Box<str>),
 }
 
@@ -60,8 +36,8 @@ pub struct Binary {
 
 /// Date-time or date value.
 #[derive(Debug, Clone)]
-pub enum DateTimeOrDate {
-    DateTime(DateTime),
+pub enum DateTimeOrDate<F = TimeFormat> {
+    DateTime(DateTime<F>),
     Date(Date),
 }
 

@@ -17,11 +17,10 @@
 use chrono::Utc;
 use css::Css3Color;
 use primitive::{
-    AlarmAction, Binary, CalendarScale, CalendarUserType, Classification, Date, DateTime,
-    DateTimeOrDate, DisplayType, Duration, EventStatus, FeatureType, FreeBusyType, Geo, ImageData,
-    JournalStatus, Language, Method, ParticipationRole, ParticipationStatus, Period, RDateValue,
-    RelationshipType, Status, Time, TodoStatus, Transparency, TriggerRelation, Uid, Uri, UtcOffset,
-    VersionReq,
+    AlarmAction, Binary, CalendarUserType, Classification, Date, DateTime, DateTimeOrDate,
+    DisplayType, Duration, EventStatus, FeatureType, FreeBusyType, Geo, ImageData, JournalStatus,
+    Language, Method, ParticipationRole, ParticipationStatus, Period, RDateValue, RelationshipType,
+    Status, Time, TodoStatus, Transparency, TriggerRelation, Uid, Uri, UtcOffset,
 };
 use property::{ConfProp, ImageProp, Prop, TextProp};
 use rrule::RecurrenceRule;
@@ -32,17 +31,21 @@ pub mod primitive;
 pub mod property;
 pub mod rrule;
 
+// NOTE: some properties are (), but not omitted, because it's still legal to
+// add arbitrary extra parameters to them. if this were not the case, the
+// calendar_scale and version fields on Calendar could be removed.
+
 /// Top-level iCalendar object.
 #[derive(Debug, Clone)]
 pub struct Calendar {
-    /// RFC 5545 §3.7.1
-    pub calendar_scale: Prop<CalendarScale>,
+    /// RFC 5545 §3.7.1 (always GREGORIAN in practice)
+    pub calendar_scale: Prop<()>,
     /// RFC 5545 §3.7.2
     pub method: Option<Prop<Method>>,
     /// RFC 5545 §3.7.3
     pub product_id: Prop<Box<str>>,
-    /// RFC 5545 §3.7.4
-    pub version: Prop<VersionReq>,
+    /// RFC 5545 §3.7.4 (always 2.0 in practice)
+    pub version: Prop<()>,
 
     /// RFC 7986 §5.1
     pub name: Vec<TextProp>,

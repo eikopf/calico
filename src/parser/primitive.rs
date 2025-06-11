@@ -1,14 +1,153 @@
 //! Parsers for primitive (i.e. terminal) grammar elements.
 
+use std::{borrow::Cow, str::FromStr};
+
 use chrono::{NaiveDate, Utc};
+use uuid::Uuid;
 use winnow::{
     ModalResult, Parser,
-    ascii::digit1,
-    combinator::{alt, empty, trace},
-    token::take,
+    ascii::{alpha1, digit1},
+    combinator::{alt, empty, repeat, trace},
+    stream::Accumulate,
+    token::{any, take},
 };
 
-use crate::model::primitive::{Date, RawTime, Time, TimeFormat};
+use crate::model::primitive::{Date, DateTime, Method, RawTime, Time, TimeFormat};
+
+/// Parses the exact string `GREGORIAN`, which occurs in the calendar scale
+/// property. This parser returns `()` because the Gregorian calendar is the
+/// _only_ calendar scale recognised by RFC 5545 and its successors.
+///
+/// # Examples
+///
+/// ```
+/// use calico::parser::primitive::gregorian;
+/// use winnow::Parser;
+///
+/// assert!(gregorian.parse_peek("GREGORIAN").is_ok());
+/// assert!(gregorian.parse_peek("GRUGORIAN").is_err());
+/// ```
+pub fn gregorian(input: &mut &str) -> ModalResult<()> {
+    "GREGORIAN".void().parse_next(input)
+}
+
+/// Parses the exact string `2.0`, which occurs in the version property. This
+/// parser returns `()` because no other version of iCalendar has ever been
+/// registered or recognised.
+pub fn v2_0(input: &mut &str) -> ModalResult<()> {
+    "2.0".void().parse_next(input)
+}
+
+/// Parses an HTTP method; see [`http::Method`] for details. This parser will
+/// accept any IANA token, but special handling is done for the recognised HTTP
+/// methods and sufficiently small strings.
+///
+/// # Examples
+///
+/// ```
+/// use calico::parser::primitive::method;
+/// use winnow::Parser;
+///
+/// assert!(method.parse_peek("GET").is_ok());
+/// assert!(method.parse_peek("UPDATE").is_ok());
+/// assert!(method.parse_peek("DELETE").is_ok());
+/// assert!(method.parse_peek("any-iana-token").is_ok());
+/// assert!(method.parse_peek("17").is_err());
+/// ```
+pub fn method(input: &mut &str) -> ModalResult<Method> {
+    iana_token
+        .try_map(http::Method::from_str)
+        .map(Method)
+        .parse_next(input)
+}
+
+pub fn uuid(input: &mut &str) -> ModalResult<Uuid> {
+    todo!()
+}
+
+/// Parses an IANA token, which consists of ASCII alphabetic characters and the
+/// `-` character.
+///
+/// # Examples
+///
+/// ```
+/// use calico::parser::primitive::iana_token;
+/// use winnow::Parser;
+///
+/// assert!(iana_token.parse_peek("foo-bar-baz").is_ok());
+/// assert!(iana_token.parse_peek("00mangled").is_err());
+/// ```
+pub fn iana_token<'i>(input: &mut &'i str) -> ModalResult<&'i str> {
+    repeat::<_, _, (), _, _>(
+        1..,
+        alt((any.verify(|c: &char| c.is_ascii_alphabetic()), '-')),
+    )
+    .take()
+    .parse_next(input)
+}
+
+/// Parses an arbitrary sequence of text terminated by CRLF. The return type is
+/// `Cow<'_, str>` because a text value may contain escape sequences, in which
+/// case it must be modified.
+pub fn text<'i>(input: &mut &'i str) -> ModalResult<Cow<'i, str>> {
+    /// Wrapper struct for [`Accumulate`] impls on `Cow<'_, str>`.
+    struct Acc<'a>(Cow<'a, str>);
+
+    impl<'a> Accumulate<&'a str> for Acc<'a> {
+        fn initial(capacity: Option<usize>) -> Self {
+            Acc(Cow::Owned(String::with_capacity(
+                capacity.unwrap_or_default(),
+            )))
+        }
+
+        fn accumulate(&mut self, acc: &'a str) {
+            self.0 += acc;
+        }
+    }
+
+    // TODO: add parsing and handling for escapes; remember that we're trying
+    // to avoid allocating strings as much as possible
+
+    repeat::<_, _, Acc<'_>, _, _>(1.., alt((alpha1,)))
+        .parse_next(input)
+        .map(|acc| acc.0)
+}
+
+/// Parses a datetime of the form `YYYYMMDDThhmmss`, with an optional time
+/// format suffix.
+///
+/// # Examples
+///
+/// ```
+/// use calico::parser::primitive::datetime;
+/// use winnow::Parser;
+///
+/// assert!(datetime.parse_peek("19970714T045015Z").is_ok());
+/// assert!(datetime.parse_peek("19970714T045015").is_ok());
+/// ```
+pub fn datetime(input: &mut &str) -> ModalResult<DateTime<TimeFormat>> {
+    (date, 'T', time)
+        .map(|(date, _, time)| DateTime { date, time })
+        .parse_next(input)
+}
+
+/// Parses a datetime of the form `YYYYMMDDThhmmssZ`, including the mandatory
+/// UTC marker suffix.
+///
+/// # Examples
+///
+/// ```
+/// use calico::parser::primitive::datetime_utc;
+/// use winnow::Parser;
+///
+/// assert!(datetime_utc.parse_peek("19970714T045015Z").is_ok());
+/// assert!(datetime_utc.parse_peek("19970714T045015").is_err());
+/// ```
+pub fn datetime_utc(input: &mut &str) -> ModalResult<DateTime<Utc>> {
+    (date, 'T', time_utc)
+        .map(|(date, _, time)| DateTime { date, time })
+        .parse_next(input)
+}
 
 /// Parses a date of the form YYYYMMDD.
 ///
@@ -48,6 +187,8 @@ pub fn date(input: &mut &str) -> ModalResult<Date> {
 ///         format: TimeFormat::Utc,
 ///     },
 /// );
+///
+/// assert!(time.parse_peek("123456").is_ok());
 /// ```
 pub fn time(input: &mut &str) -> ModalResult<Time<TimeFormat>> {
     (raw_time, time_format)
@@ -148,7 +289,7 @@ pub fn utc_marker(input: &mut &str) -> ModalResult<()> {
     'Z'.void().parse_next(input)
 }
 
-/// A version of [`dec_uint`] that accepts leading zeroes.
+/// A version of [`dec_uint`] that accepts leading zeros.
 ///
 /// [`dec_uint`]: winnow::ascii::dec_uint
 fn lz_dec_uint<I, O, E>(input: &mut I) -> winnow::error::Result<O, E>
