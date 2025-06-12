@@ -5,14 +5,14 @@ use std::{borrow::Cow, str::FromStr};
 use chrono::{NaiveDate, Utc};
 use winnow::{
     ModalResult, Parser,
-    ascii::digit1,
+    ascii::{crlf, digit1},
     combinator::{alt, empty, preceded, repeat, trace},
     stream::Accumulate,
     token::{any, none_of, take},
 };
 
 use crate::model::primitive::{
-    Date, DateTime, Language, Method, RawTime, Time, TimeFormat, Uid, Uri,
+    Binary, Date, DateTime, Language, Method, RawTime, Time, TimeFormat, Uid, Uri,
 };
 
 /// Parses the exact string `GREGORIAN`, which occurs in the calendar scale
@@ -53,7 +53,6 @@ pub fn v2_0(input: &mut &str) -> ModalResult<()> {
 /// assert!(method.parse_peek("UPDATE").is_ok());
 /// assert!(method.parse_peek("DELETE").is_ok());
 /// assert!(method.parse_peek("any-iana-token").is_ok());
-/// assert!(method.parse_peek("17").is_err());
 /// ```
 pub fn method(input: &mut &str) -> ModalResult<Method> {
     iana_token
@@ -139,8 +138,32 @@ pub fn uri(input: &mut &str) -> ModalResult<Uri> {
         .parse_next(input)
 }
 
-/// Parses an IANA token, which consists of ASCII alphabetic characters and the
-/// `-` character.
+/// Parses a base64-encoded character string.
+///
+/// # Examples
+///
+/// ```
+/// use calico::parser::primitive::binary;
+/// use winnow::Parser;
+///
+/// const DATA: &str = r#"AAABAAEAEBAQAAEABAAoAQAAFgAAACgAAAAQAAAAIAAAAAEABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAgIAAAICAgADAwMAA////AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMwAAAAAAABNEMQAAAAAAAkQgAAAAAAJEREQgAAACECQ0QgEgAAQxQzM0E0AABERCRCREQAADRDJEJEQwAAAhA0QwEQAAAAAEREAAAAAAAAREQAAAAAAAAkQgAAAAAAAAMgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"#;
+///
+/// assert!(binary.parse(DATA).is_ok());
+/// ```
+pub fn binary(input: &mut &str) -> ModalResult<Binary> {
+    text.take()
+        .try_map(|xs| {
+            <base64::engine::GeneralPurpose as base64::Engine>::decode(
+                &base64::prelude::BASE64_STANDARD,
+                xs,
+            )
+        })
+        .map(|bytes| Binary { bytes })
+        .parse_next(input)
+}
+
+/// Parses an IANA token, which consists of ASCII alphanumeric characters and
+/// the `-` character.
 ///
 /// # Examples
 ///
@@ -149,15 +172,34 @@ pub fn uri(input: &mut &str) -> ModalResult<Uri> {
 /// use winnow::Parser;
 ///
 /// assert!(iana_token.parse_peek("foo-bar-baz").is_ok());
-/// assert!(iana_token.parse_peek("00mangled").is_err());
+/// assert!(iana_token.parse_peek("x-name-1-2-3").is_ok());
 /// ```
 pub fn iana_token<'i>(input: &mut &'i str) -> ModalResult<&'i str> {
     repeat::<_, _, (), _, _>(
         1..,
-        alt((any.verify(|c: &char| c.is_ascii_alphabetic()), '-')),
+        alt((any.verify(|c: &char| c.is_ascii_alphanumeric()), '-')),
     )
     .take()
     .parse_next(input)
+}
+
+/// Parses an X-name, effectively an [`iana_token`] prefixed with `X-`. Note
+/// that the grammar in RFC 5545 §3.1 includes an optional `vendorid` segment,
+/// but also that this introduces a grammar ambiguity between the `vendorid`
+/// and `iana-token` rules.
+///
+/// # Examples
+///
+/// ```
+/// use calico::parser::primitive::x_name;
+/// use winnow::Parser;
+///
+/// assert_eq!(x_name.parse_peek("X-foo-bar"), Ok(("", "X-foo-bar")));
+/// assert_eq!(x_name.parse_peek("X-baz-123"), Ok(("", "X-baz-123")));
+/// assert!(x_name.parse_peek("x-must-be-capital").is_err());
+/// ```
+pub fn x_name<'i>(input: &mut &'i str) -> ModalResult<&'i str> {
+    ("X-", iana_token).take().parse_next(input)
 }
 
 /// Parses an arbitrary sequence of text terminated by CRLF. The return type is
@@ -176,6 +218,7 @@ pub fn iana_token<'i>(input: &mut &'i str) -> ModalResult<&'i str> {
 /// ```
 pub fn text<'i>(input: &mut &'i str) -> ModalResult<Cow<'i, str>> {
     /// Wrapper struct for [`Accumulate`] impl on `Cow<'_, str>`.
+    #[derive(Debug, Clone)]
     struct Acc<'a>(Cow<'a, str>);
 
     impl<'a> Accumulate<Acc<'a>> for Acc<'a> {
@@ -199,6 +242,8 @@ pub fn text<'i>(input: &mut &'i str) -> ModalResult<Cow<'i, str>> {
             .parse_next(input)
     }
 
+    // TODO: handle CRLF-WSP escapes
+
     /// A single textual escape, which has to be allocated to be handled properly.
     fn text_escape<'j>(input: &mut &'j str) -> ModalResult<Acc<'j>> {
         preceded(
@@ -217,9 +262,19 @@ pub fn text<'i>(input: &mut &'i str) -> ModalResult<Cow<'i, str>> {
         .parse_next(input)
     }
 
-    repeat::<_, _, Acc<'_>, _, _>(1.., alt((safe_text, text_escape)))
-        .parse_next(input)
-        .map(|acc| acc.0)
+    trace(
+        "text",
+        repeat::<_, _, Acc<'_>, _, _>(
+            1..,
+            alt((
+                safe_text,
+                text_escape,
+                (crlf, alt((' ', '\t'))).value(Acc(Cow::Owned(String::default()))),
+            )),
+        ),
+    )
+    .parse_next(input)
+    .map(|acc| acc.0)
 }
 
 /// Parses a datetime of the form `YYYYMMDDThhmmss`, with an optional time
