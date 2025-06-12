@@ -1,7 +1,6 @@
 //! Primitive types for the object model.
 
 use chrono::NaiveDate;
-use iri_string::types::UriString;
 use oxilangtag::LanguageTag;
 use uuid::Uuid;
 
@@ -20,18 +19,35 @@ pub enum Uid {
     String(Box<str>),
 }
 
+impl Uid {
+    /// Returns `true` if the uid is [`Uuid`].
+    ///
+    /// [`Uuid`]: Uid::Uuid
+    #[must_use]
+    pub fn is_uuid(&self) -> bool {
+        matches!(self, Self::Uuid(..))
+    }
+}
+
 /// An RFC 5646 language tag.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Language(LanguageTag<String>);
+pub struct Language(pub(crate) LanguageTag<String>);
 
 /// An RFC 3986 uniform resource identifier (URI).
+///
+/// # Compatibility
+///
+/// This type is _not_ equivalent to [`http::Uri`], and instead strictly
+/// represents a URI as defined in RFC 3986. Most other URI types can be
+/// converted into this type, but the converse is not true: not all RFC 3986
+/// URIs are representable by all URI types!
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Uri(UriString);
+pub struct Uri(pub(crate) iri_string::types::UriString);
 
 /// The data of a BINARY property.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Binary {
-    bytes: Vec<u8>,
+    pub(crate) bytes: Vec<u8>,
 }
 
 /// Date-time or date value.

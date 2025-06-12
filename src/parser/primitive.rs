@@ -3,16 +3,17 @@
 use std::{borrow::Cow, str::FromStr};
 
 use chrono::{NaiveDate, Utc};
-use uuid::Uuid;
 use winnow::{
     ModalResult, Parser,
-    ascii::{alpha1, digit1},
-    combinator::{alt, empty, repeat, trace},
+    ascii::digit1,
+    combinator::{alt, empty, preceded, repeat, trace},
     stream::Accumulate,
-    token::{any, take},
+    token::{any, none_of, take},
 };
 
-use crate::model::primitive::{Date, DateTime, Method, RawTime, Time, TimeFormat};
+use crate::model::primitive::{
+    Date, DateTime, Language, Method, RawTime, Time, TimeFormat, Uid, Uri,
+};
 
 /// Parses the exact string `GREGORIAN`, which occurs in the calendar scale
 /// property. This parser returns `()` because the Gregorian calendar is the
@@ -61,8 +62,81 @@ pub fn method(input: &mut &str) -> ModalResult<Method> {
         .parse_next(input)
 }
 
-pub fn uuid(input: &mut &str) -> ModalResult<Uuid> {
-    todo!()
+/// Parses a UID, with special handling if it is a well-formed UUID.
+///
+/// # Examples
+///
+/// ```
+/// use calico::parser::primitive::uid;
+/// use winnow::Parser;
+///
+/// assert!(!uid.parse_peek("some random text").unwrap().1.is_uuid());
+/// assert!(uid.parse_peek("550e8400e29b41d4a716446655440000").unwrap().1.is_uuid());
+/// ```
+pub fn uid(input: &mut &str) -> ModalResult<Uid> {
+    text.map(|s| match uuid::Uuid::try_parse(&s) {
+        Ok(uuid) => Uid::Uuid(uuid),
+        Err(_) => Uid::String(s.into_owned().into_boxed_str()),
+    })
+    .parse_next(input)
+}
+
+/// Parses an RFC 5646 language tag from a [`text`] value.
+///
+/// # Examples
+///
+/// ```
+/// use calico::parser::primitive::language;
+/// use winnow::Parser;
+///
+/// assert!(language.parse_peek("en-US").is_ok());
+/// assert!(language.parse_peek("de-CH").is_ok());
+/// assert!(language.parse_peek("!!!garbage").is_err());
+/// ```
+pub fn language(input: &mut &str) -> ModalResult<Language> {
+    text.try_map(|s| oxilangtag::LanguageTag::parse(s.into_owned()))
+        .map(Language)
+        .parse_next(input)
+}
+
+/// Parses an RFC 3986 URI. The description of the grammar in RFC 5545 is
+/// somewhat ambiguous, so in particular we first parse a sequence of characters
+/// which may occur in a URI and then attempt to verify that it is actually a
+/// valid URI.
+///
+/// # Examples
+///
+/// ```
+/// use calico::parser::primitive::uri;
+/// use winnow::Parser;
+///
+/// // these examples are from RFC 3986 §3
+/// assert!(uri.parse_peek("foo://example.com:8042/over/there?name=ferret#nose").is_ok());
+/// assert!(uri.parse_peek("urn:example:animal:ferret:nose").is_ok());
+/// ```
+pub fn uri(input: &mut &str) -> ModalResult<Uri> {
+    /// Parses the longest sequence of characters which can occur in a URI. See
+    /// RFC 3986 sections 2.1, 2.2, and 2.3 for details.
+    fn uri_character(input: &mut &str) -> ModalResult<char> {
+        #[allow(clippy::match_like_matches_macro)]
+        any.verify(|c| match c {
+            '!' => true,
+            '#'..=';' => true,
+            '=' => true,
+            '?'..='Z' => true,
+            '[' | ']' => true,
+            '_' => true,
+            'a'..='z' => true,
+            _ => false,
+        })
+        .parse_next(input)
+    }
+
+    repeat::<_, _, (), _, _>(1.., uri_character)
+        .take()
+        .try_map(iri_string::types::UriString::from_str)
+        .map(Uri)
+        .parse_next(input)
 }
 
 /// Parses an IANA token, which consists of ASCII alphabetic characters and the
@@ -89,26 +163,61 @@ pub fn iana_token<'i>(input: &mut &'i str) -> ModalResult<&'i str> {
 /// Parses an arbitrary sequence of text terminated by CRLF. The return type is
 /// `Cow<'_, str>` because a text value may contain escape sequences, in which
 /// case it must be modified.
+///
+/// # Examples
+///
+/// ```
+/// use calico::parser::primitive::text;
+/// use winnow::Parser;
+/// use std::borrow::Cow;
+///
+/// assert!(text.parse_peek(r#"hello world!"#).is_ok_and(|(_, s)| matches!(s, Cow::Borrowed(_))));
+/// assert!(text.parse_peek(r#"hello\, world!"#).is_ok_and(|(_, s)| matches!(s, Cow::Owned(_))));
+/// ```
 pub fn text<'i>(input: &mut &'i str) -> ModalResult<Cow<'i, str>> {
-    /// Wrapper struct for [`Accumulate`] impls on `Cow<'_, str>`.
+    /// Wrapper struct for [`Accumulate`] impl on `Cow<'_, str>`.
     struct Acc<'a>(Cow<'a, str>);
 
-    impl<'a> Accumulate<&'a str> for Acc<'a> {
+    impl<'a> Accumulate<Acc<'a>> for Acc<'a> {
         fn initial(capacity: Option<usize>) -> Self {
             Acc(Cow::Owned(String::with_capacity(
                 capacity.unwrap_or_default(),
             )))
         }
 
-        fn accumulate(&mut self, acc: &'a str) {
-            self.0 += acc;
+        fn accumulate(&mut self, acc: Acc<'a>) {
+            self.0 += acc.0;
         }
     }
 
-    // TODO: add parsing and handling for escapes; remember that we're trying
-    // to avoid allocating strings as much as possible
+    /// A contiguous sequence of characters that don't need to be escaped.
+    fn safe_text<'j>(input: &mut &'j str) -> ModalResult<Acc<'j>> {
+        repeat::<_, _, (), _, _>(1.., none_of(('\\', ';', ',', ..' ')))
+            .take()
+            .map(Cow::Borrowed)
+            .map(Acc)
+            .parse_next(input)
+    }
 
-    repeat::<_, _, Acc<'_>, _, _>(1.., alt((alpha1,)))
+    /// A single textual escape, which has to be allocated to be handled properly.
+    fn text_escape<'j>(input: &mut &'j str) -> ModalResult<Acc<'j>> {
+        preceded(
+            '\\',
+            alt((
+                '\\'.value("\\"),
+                'n'.value("\n"),
+                'N'.value("\n"),
+                ';'.value(";"),
+                ','.value(","),
+            )),
+        )
+        .map(String::from)
+        .map(Cow::Owned)
+        .map(Acc)
+        .parse_next(input)
+    }
+
+    repeat::<_, _, Acc<'_>, _, _>(1.., alt((safe_text, text_escape)))
         .parse_next(input)
         .map(|acc| acc.0)
 }
