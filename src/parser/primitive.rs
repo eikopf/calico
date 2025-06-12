@@ -5,7 +5,7 @@ use std::{borrow::Cow, str::FromStr};
 use chrono::{NaiveDate, Utc};
 use winnow::{
     ModalResult, Parser,
-    ascii::{crlf, digit1},
+    ascii::digit1,
     combinator::{alt, empty, preceded, repeat, trace},
     stream::Accumulate,
     token::{any, none_of, take},
@@ -242,8 +242,6 @@ pub fn text<'i>(input: &mut &'i str) -> ModalResult<Cow<'i, str>> {
             .parse_next(input)
     }
 
-    // TODO: handle CRLF-WSP escapes
-
     /// A single textual escape, which has to be allocated to be handled properly.
     fn text_escape<'j>(input: &mut &'j str) -> ModalResult<Acc<'j>> {
         preceded(
@@ -264,14 +262,7 @@ pub fn text<'i>(input: &mut &'i str) -> ModalResult<Cow<'i, str>> {
 
     trace(
         "text",
-        repeat::<_, _, Acc<'_>, _, _>(
-            1..,
-            alt((
-                safe_text,
-                text_escape,
-                (crlf, alt((' ', '\t'))).value(Acc(Cow::Owned(String::default()))),
-            )),
-        ),
+        repeat::<_, _, Acc<'_>, _, _>(1.., alt((safe_text, text_escape))),
     )
     .parse_next(input)
     .map(|acc| acc.0)
