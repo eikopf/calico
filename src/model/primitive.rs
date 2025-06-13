@@ -172,13 +172,14 @@ pub enum Transparency {
     Transparent,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CalendarUserType {
     Individual,
     Group,
     Resource,
     Room,
     Unknown,
+    Other(Box<str>),
 }
 
 #[derive(Debug, Clone, Copy)]

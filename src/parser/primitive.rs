@@ -12,7 +12,7 @@ use winnow::{
 };
 
 use crate::model::primitive::{
-    Binary, Date, DateTime, Language, Method, RawTime, Time, TimeFormat, Uid, Uri,
+    Binary, CalendarUserType, Date, DateTime, Language, Method, RawTime, Time, TimeFormat, Uid, Uri,
 };
 
 /// Parses the exact string `GREGORIAN`, which occurs in the calendar scale
@@ -160,6 +160,42 @@ pub fn binary(input: &mut &str) -> ModalResult<Binary> {
         })
         .map(|bytes| Binary { bytes })
         .parse_next(input)
+}
+
+/// Parses a calendar user type value (RFC 5545 §3.2.3).
+///
+/// # Examples
+///
+/// ```
+/// use calico::parser::primitive::calendar_user_type;
+/// use calico::model::primitive::CalendarUserType;
+/// use winnow::Parser;
+///
+/// assert_eq!(
+///     calendar_user_type.parse_peek("INDIVIDUAL").unwrap().1,
+///     CalendarUserType::Individual,
+/// );
+///
+/// assert_eq!(
+///     calendar_user_type.parse_peek("ROOM").unwrap().1,
+///     CalendarUserType::Room,
+/// );
+///
+/// assert_eq!(
+///     calendar_user_type.parse_peek("iana-token").unwrap().1,
+///     CalendarUserType::Other("iana-token".into()),
+/// );
+/// ```
+pub fn calendar_user_type(input: &mut &str) -> ModalResult<CalendarUserType> {
+    alt((
+        "INDIVIDUAL".value(CalendarUserType::Individual),
+        "GROUP".value(CalendarUserType::Group),
+        "RESOURCE".value(CalendarUserType::Resource),
+        "ROOM".value(CalendarUserType::Room),
+        "UNKNOWN".value(CalendarUserType::Unknown),
+        iana_token.map(|s| CalendarUserType::Other(s.into())),
+    ))
+    .parse_next(input)
 }
 
 /// Parses an IANA token, which consists of ASCII alphanumeric characters and
