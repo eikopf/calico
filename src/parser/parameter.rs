@@ -2,26 +2,270 @@
 
 use winnow::{
     ModalResult, Parser,
-    combinator::{alt, delimited, preceded, repeat},
-    error::ParserError,
+    combinator::{alt, delimited, repeat, separated_pair},
     token::none_of,
 };
 
-use crate::model::primitive::{CalendarUserType as CalendarUserTypeValue, Uri};
+use super::primitive::iana_token;
 
-use super::primitive::{calendar_user_type, uri};
-
-pub fn parameter<'a, O, E>(
-    name: &'static str,
-    value: impl Parser<&'a str, O, E>,
-) -> impl Parser<&'a str, O, E>
-where
-    E: ParserError<&'a str>,
-{
-    preceded((name, '='), value)
+/// A property parameter with an unstructured textual value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RawParam<'a> {
+    pub name: ParamName<'a>,
+    pub value: ParamValue<'a>,
 }
 
-/// Parses a parameter value string, stripping double quotes if they occur.
+/// Parses a [`RawParam`].
+///
+/// # Examples
+///
+/// ```
+/// use calico::parser::parameter::parameter;
+/// use winnow::Parser;
+///
+/// assert!(parameter.parse_peek("CUTYPE=GROUP").is_ok());
+/// assert!(parameter.parse_peek("TZID=America/New_York").is_ok());
+/// ```
+pub fn parameter<'i>(input: &mut &'i str) -> ModalResult<RawParam<'i>> {
+    separated_pair(param_name, '=', param_value)
+        .map(|(name, value)| RawParam { name, value })
+        .parse_next(input)
+}
+
+/// A property parameter name from RFC 5545, RFC 7986, or an arbitrary token.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParamName<'a> {
+    Rfc5545(Rfc5545ParamName),
+    Rfc7986(Rfc7986ParamName),
+    Other(&'a str),
+}
+
+impl<'a> ParamName<'a> {
+    /// Returns `true` if the param name is [`Rfc5545`].
+    ///
+    /// [`Rfc5545`]: ParamName::Rfc5545
+    #[must_use]
+    pub fn is_rfc5545(&self) -> bool {
+        matches!(self, Self::Rfc5545(..))
+    }
+
+    /// Returns `true` if the param name is [`Rfc7986`].
+    ///
+    /// [`Rfc7986`]: ParamName::Rfc7986
+    #[must_use]
+    pub fn is_rfc7986(&self) -> bool {
+        matches!(self, Self::Rfc7986(..))
+    }
+
+    /// Returns `true` if the param name is [`Other`].
+    ///
+    /// [`Other`]: ParamName::Other
+    #[must_use]
+    pub fn is_other(&self) -> bool {
+        matches!(self, Self::Other(..))
+    }
+}
+
+/// Parses a [`ParamName`].
+///
+/// # Examples
+///
+/// ```
+/// use calico::parser::parameter::param_name;
+/// use winnow::Parser;
+///
+/// assert!(param_name.parse_peek("RANGE").is_ok_and(|r| r.1.is_rfc5545()));
+/// assert!(param_name.parse_peek("EMAIL").is_ok_and(|r| r.1.is_rfc7986()));
+/// assert!(param_name.parse_peek("OTHER").is_ok_and(|r| r.1.is_other()));
+/// assert!(param_name.parse_peek(",bad,").is_err());
+/// ```
+pub fn param_name<'i>(input: &mut &'i str) -> ModalResult<ParamName<'i>> {
+    // NOTE: there's an obvious optimisation here where we go character by
+    // character until either it must be a known static name, or else it must
+    // be an unknown name (or an error). i think regex-automata could help with
+    // implementing this, but it's probably unnecessary until we have benchmarks
+
+    alt((
+        rfc5545_param_name.map(ParamName::Rfc5545),
+        rfc7986_param_name.map(ParamName::Rfc7986),
+        iana_token.map(ParamName::Other),
+    ))
+    .parse_next(input)
+}
+
+/// A statically known property parameter name from RFC 5545.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Rfc5545ParamName {
+    /// RFC 5545 §3.2.1 (ALTREP)
+    AlternateTextRepresentation,
+    /// RFC 5545 §3.2.2 (CN)
+    CommonName,
+    /// RFC 5545 §3.2.3 (CUTYPE)
+    CalendarUserType,
+    /// RFC 5545 §3.2.4 (DELEGATED-FROM)
+    Delegators,
+    /// RFC 5545 §3.2.5 (DELEGATED-TO)
+    Delegatees,
+    /// RFC 5545 §3.2.6 (DIR)
+    DirectoryEntryReference,
+    /// RFC 5545 §3.2.7 (ENCODING)
+    InlineEncoding,
+    /// RFC 5545 §3.2.8 (FMTTYPE)
+    FormatType,
+    /// RFC 5545 §3.2.9 (FBTYPE)
+    FreeBusyTimeType,
+    /// RFC 5545 §3.2.10 (LANGUAGE)
+    Language,
+    /// RFC 5545 §3.2.11 (MEMBER)
+    GroupOrListMembership,
+    /// RFC 5545 §3.2.12 (PARTSTAT)
+    ParticipationStatus,
+    /// RFC 5545 §3.2.13 (RANGE)
+    RecurrenceIdentifierRange,
+    /// RFC 5545 §3.2.14 (RELATED)
+    AlarmTriggerRelationship,
+    /// RFC 5545 §3.2.15 (RELTYPE)
+    RelationshipType,
+    /// RFC 5545 §3.2.16 (ROLE)
+    ParticipationRole,
+    /// RFC 5545 §3.2.17 (RSVP)
+    RsvpExpectation,
+    /// RFC 5545 §3.2.18 (SENT-BY)
+    SentBy,
+    /// RFC 5545 §3.2.19 (TZID)
+    TimeZoneIdentifier,
+    /// RFC 5545 §3.2.20 (VALUE)
+    ValueDataType,
+}
+
+/// A statically known property parameter name from RFC 7986.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Rfc7986ParamName {
+    /// RFC 7986 §6.1 (DISPLAY)
+    Display,
+    /// RFC 7986 §6.2 (EMAIL)
+    Email,
+    /// RFC 7986 §6.3 (FEATURE)
+    Feature,
+    /// RFC 7986 §6.4 (LABEL)
+    Label,
+}
+
+/// Parses an [`Rfc5545ParamName`].
+///
+/// # Examples
+///
+/// ```
+/// use calico::parser::parameter::rfc5545_param_name;
+/// use calico::parser::parameter::Rfc5545ParamName;
+/// use winnow::Parser;
+///
+/// assert_eq!(
+///     rfc5545_param_name.parse_peek("ALTREP").unwrap().1,
+///     Rfc5545ParamName::AlternateTextRepresentation,
+/// );
+///
+/// assert_eq!(
+///     rfc5545_param_name.parse_peek("LANGUAGE").unwrap().1,
+///     Rfc5545ParamName::Language,
+/// );
+///
+/// assert_eq!(
+///     rfc5545_param_name.parse_peek("ENCODING").unwrap().1,
+///     Rfc5545ParamName::InlineEncoding,
+/// );
+///
+/// // EMAIL is an RFC 7986 property parameter
+/// assert!(rfc5545_param_name.parse_peek("EMAIL").is_err());
+/// ```
+pub fn rfc5545_param_name(input: &mut &str) -> ModalResult<Rfc5545ParamName> {
+    alt((
+        // RFC 5545
+        "ALTREP".value(Rfc5545ParamName::AlternateTextRepresentation),
+        "CN".value(Rfc5545ParamName::CommonName),
+        "CUTYPE".value(Rfc5545ParamName::CalendarUserType),
+        "DELEGATED-FROM".value(Rfc5545ParamName::Delegators),
+        "DELEGATED-TO".value(Rfc5545ParamName::Delegatees),
+        "DIR".value(Rfc5545ParamName::DirectoryEntryReference),
+        "ENCODING".value(Rfc5545ParamName::InlineEncoding),
+        "FMTTYPE".value(Rfc5545ParamName::FormatType),
+        "FBTYPE".value(Rfc5545ParamName::FreeBusyTimeType),
+        "LANGUAGE".value(Rfc5545ParamName::Language),
+        "MEMBER".value(Rfc5545ParamName::GroupOrListMembership),
+        "PARTSTAT".value(Rfc5545ParamName::ParticipationStatus),
+        "RANGE".value(Rfc5545ParamName::RecurrenceIdentifierRange),
+        "RELATED".value(Rfc5545ParamName::AlarmTriggerRelationship),
+        "RELTYPE".value(Rfc5545ParamName::RelationshipType),
+        "ROLE".value(Rfc5545ParamName::ParticipationRole),
+        "RSVP".value(Rfc5545ParamName::RsvpExpectation),
+        "SENT-BY".value(Rfc5545ParamName::SentBy),
+        "TZID".value(Rfc5545ParamName::TimeZoneIdentifier),
+        "VALUE".value(Rfc5545ParamName::ValueDataType),
+    ))
+    .parse_next(input)
+}
+
+/// Parses an [`Rfc7986ParamName`].
+///
+/// # Examples
+///
+/// ```
+/// use calico::parser::parameter::rfc7986_param_name;
+/// use calico::parser::parameter::Rfc7986ParamName;
+/// use winnow::Parser;
+///
+/// assert_eq!(
+///     rfc7986_param_name.parse_peek("DISPLAY").unwrap().1,
+///     Rfc7986ParamName::Display,
+/// );
+///
+/// assert_eq!(
+///     rfc7986_param_name.parse_peek("LABEL").unwrap().1,
+///     Rfc7986ParamName::Label,
+/// );
+///
+/// // TZID is an RFC 5545 property parameter
+/// assert!(rfc7986_param_name.parse_peek("TZID").is_err());
+/// ```
+pub fn rfc7986_param_name(input: &mut &str) -> ModalResult<Rfc7986ParamName> {
+    alt((
+        "DISPLAY".value(Rfc7986ParamName::Display),
+        "EMAIL".value(Rfc7986ParamName::Email),
+        "FEATURE".value(Rfc7986ParamName::Feature),
+        "LABEL".value(Rfc7986ParamName::Label),
+    ))
+    .parse_next(input)
+}
+
+/// A parameter value string, which may either be [`Safe`] or [`Quoted`].
+///
+/// [`Safe`]: ParamValue::Safe
+/// [`Quoted`]: ParamValue::Quoted
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParamValue<'a> {
+    Safe(&'a str),
+    Quoted(&'a str),
+}
+
+impl<'a> ParamValue<'a> {
+    /// Returns `true` if the param value is [`Safe`].
+    ///
+    /// [`Safe`]: ParamValue::Safe
+    #[must_use]
+    pub fn is_safe(&self) -> bool {
+        matches!(self, Self::Safe(..))
+    }
+
+    /// Returns `true` if the param value is [`Quoted`].
+    ///
+    /// [`Quoted`]: ParamValue::Quoted
+    #[must_use]
+    pub fn is_quoted(&self) -> bool {
+        matches!(self, Self::Quoted(..))
+    }
+}
+
+/// Parses a [`ParamValue`], stripping quotes if they occur.
 ///
 /// # Examples
 ///
@@ -29,11 +273,11 @@ where
 /// use calico::parser::parameter::param_value;
 /// use winnow::Parser;
 ///
-/// assert!(param_value.parse_peek("hello world").is_ok());
-/// assert!(param_value.parse_peek("\"hello, world\"").is_ok());
-/// assert!(param_value.parse_peek(",hello world").is_err());
+/// assert!(param_value.parse_peek("hello").is_ok_and(|r| r.1.is_safe()));
+/// assert!(param_value.parse_peek("\"hello\"").is_ok_and(|r| r.1.is_quoted()));
+/// assert!(param_value.parse_peek(",hello").is_err());
 /// ```
-pub fn param_value<'i>(input: &mut &'i str) -> ModalResult<&'i str> {
+pub fn param_value<'i>(input: &mut &'i str) -> ModalResult<ParamValue<'i>> {
     fn param_text<'i>(input: &mut &'i str) -> ModalResult<&'i str> {
         repeat(1.., none_of((..' ', '"', ',', ':', ';', '\u{007F}')))
             .map(|()| ())
@@ -52,79 +296,9 @@ pub fn param_value<'i>(input: &mut &'i str) -> ModalResult<&'i str> {
         .parse_next(input)
     }
 
-    alt((quoted_string, param_text)).parse_next(input)
+    alt((
+        quoted_string.map(ParamValue::Quoted),
+        param_text.map(ParamValue::Safe),
+    ))
+    .parse_next(input)
 }
-
-/// RFC 5545 §3.2.1
-#[derive(Debug, Clone)]
-pub struct AltRep(Uri);
-
-/// Parses the [`AltRep`] parameter.
-///
-/// # Examples
-///
-/// ```
-/// use calico::parser::parameter::altrep;
-/// use winnow::Parser;
-///
-/// assert!(altrep.parse_peek("ALTREP=\"CID:part3.msg.970415T083000@example.com\"").is_ok());
-/// ```
-pub fn altrep(input: &mut &str) -> ModalResult<AltRep> {
-    parameter("ALTREP", delimited('"', uri.map(AltRep), '"')).parse_next(input)
-}
-
-/// RFC 5545 §3.2.2
-#[derive(Debug, Clone)]
-pub struct CommonName(Box<str>);
-
-/// Parses the [`CommonName`] parameter.
-///
-/// # Examples
-///
-/// ```
-/// use calico::parser::parameter::common_name;
-/// use winnow::Parser;
-///
-/// assert!(common_name.parse_peek("CN=\"John Smith\"").is_ok());
-/// assert!(common_name.parse_peek("CN=John Smith").is_ok());
-/// ```
-pub fn common_name(input: &mut &str) -> ModalResult<CommonName> {
-    parameter("CN", param_value.map(Box::<str>::from).map(CommonName)).parse_next(input)
-}
-
-/// RFC 5545 §3.2.3
-#[derive(Debug, Clone)]
-pub struct CalendarUserType(CalendarUserTypeValue);
-
-/// Parses the [`CalendarUserType`] parameter.
-///
-/// # Examples
-///
-/// ```
-/// use calico::parser::parameter::cu_type;
-/// use winnow::Parser;
-///
-/// assert!(cu_type.parse_peek("CUTYPE=GROUP").is_ok());
-/// assert!(cu_type.parse_peek("CUTYPE=\"GROUP\"").is_err());
-/// ```
-pub fn cu_type(input: &mut &str) -> ModalResult<CalendarUserType> {
-    parameter("CUTYPE", calendar_user_type.map(CalendarUserType)).parse_next(input)
-}
-
-// NOTE: okay, so here's my current plan for implementing out-of-order parsing.
-// the basic idea is to tag each parser with its allowed multiplicity (either a
-// number or a range) and then use something like Stateful to track how many times
-// it's successfully parsed a value. then we can just wrap them into a tuple and
-// use some combinator to try all of them repeatedly until either the input ends,
-// and we can check thereafter whether the success state was acheived.
-// ------------------------------------------------------------------------------
-// basically, we're bundling three things together here: the parsers themselves,
-// multiplicity tracking, and intermediate state tracking. that is, i want an
-// impl Parser that combines multiple subparsers together, tracks how many times
-// they've each succeeded, accumulates their outputs, and then emits a single
-// tuple afterwards (which i can then map over to construct the output type).
-// ------------------------------------------------------------------------------
-// each multiplicity corresponds to a certain way of tracking intermediate state.
-// obviously you could get extremely complicated with this, but i think the best
-// solution is just to have a bipartite distinction between mandatory and optional
-// values (stored in an Option) and all other multiplicities (stored in a Vec).
