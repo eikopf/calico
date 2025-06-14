@@ -2,7 +2,9 @@
 
 use std::collections::HashMap;
 
-use super::primitive::{DisplayType, FeatureType, FormatType, ImageData, Language, Uri};
+use super::primitive::{
+    DisplayType, FeatureType, FormatType, ImageData, Language, Uri,
+};
 
 /// An ordinary textual property.
 pub type TextProp = Prop<Box<str>, TextParams>;

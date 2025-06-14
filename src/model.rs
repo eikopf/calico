@@ -17,10 +17,12 @@
 use chrono::Utc;
 use css::Css3Color;
 use primitive::{
-    AlarmAction, Binary, CalendarUserType, Classification, Date, DateTime, DateTimeOrDate,
-    DisplayType, Duration, EventStatus, FeatureType, FreeBusyType, Geo, ImageData, JournalStatus,
-    Language, Method, ParticipationRole, ParticipationStatus, Period, RDateValue, RelationshipType,
-    Status, Time, TodoStatus, Transparency, TriggerRelation, Uid, Uri, UtcOffset,
+    AlarmAction, Binary, CalendarUserType, Classification, Date, DateTime,
+    DateTimeOrDate, DisplayType, Duration, EventStatus, FeatureType,
+    FreeBusyType, Geo, ImageData, JournalStatus, Language, Method,
+    ParticipationRole, ParticipationStatus, Period, RDateValue,
+    RelationshipType, Status, Time, TodoStatus, Transparency, TriggerRelation,
+    Uid, Uri, UtcOffset,
 };
 use property::{ConfProp, ImageProp, Prop, TextProp};
 use rrule::RecurrenceRule;

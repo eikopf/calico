@@ -12,7 +12,8 @@ use winnow::{
 };
 
 use crate::model::primitive::{
-    Binary, CalendarUserType, Date, DateTime, Language, Method, RawTime, Time, TimeFormat, Uid, Uri,
+    Binary, CalendarUserType, Date, DateTime, Language, Method, RawTime, Time,
+    TimeFormat, Uid, Uri,
 };
 
 /// Parses the exact string `GREGORIAN`, which occurs in the calendar scale

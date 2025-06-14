@@ -51,9 +51,12 @@ pub fn property_name<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
 
     fn a_names<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
         alt((
-            Caseless("ATTENDEE").value(PropName::Rfc5545(Rfc5545PropName::Attendee)),
-            Caseless("ATTACH").value(PropName::Rfc5545(Rfc5545PropName::Attachment)),
-            Caseless("ACTION").value(PropName::Rfc5545(Rfc5545PropName::Action)),
+            Caseless("ATTENDEE")
+                .value(PropName::Rfc5545(Rfc5545PropName::Attendee)),
+            Caseless("ATTACH")
+                .value(PropName::Rfc5545(Rfc5545PropName::Attachment)),
+            Caseless("ACTION")
+                .value(PropName::Rfc5545(Rfc5545PropName::Action)),
             other,
         ))
         .parse_next(input)
@@ -61,15 +64,23 @@ pub fn property_name<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
 
     fn c_names<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
         alt((
-            Caseless("CONFERENCE").value(PropName::Rfc7986(Rfc7986PropName::Conference)),
-            Caseless("CATEGORIES").value(PropName::Rfc5545(Rfc5545PropName::Categories)),
-            Caseless("COMPLETED").value(PropName::Rfc5545(Rfc5545PropName::DateTimeCompleted)),
-            Caseless("CALSCALE").value(PropName::Rfc5545(Rfc5545PropName::CalendarScale)),
-            Caseless("CONTACT").value(PropName::Rfc5545(Rfc5545PropName::Contact)),
-            Caseless("CREATED").value(PropName::Rfc5545(Rfc5545PropName::DateTimeCreated)),
-            Caseless("COMMENT").value(PropName::Rfc5545(Rfc5545PropName::Comment)),
+            Caseless("CONFERENCE")
+                .value(PropName::Rfc7986(Rfc7986PropName::Conference)),
+            Caseless("CATEGORIES")
+                .value(PropName::Rfc5545(Rfc5545PropName::Categories)),
+            Caseless("COMPLETED")
+                .value(PropName::Rfc5545(Rfc5545PropName::DateTimeCompleted)),
+            Caseless("CALSCALE")
+                .value(PropName::Rfc5545(Rfc5545PropName::CalendarScale)),
+            Caseless("CONTACT")
+                .value(PropName::Rfc5545(Rfc5545PropName::Contact)),
+            Caseless("CREATED")
+                .value(PropName::Rfc5545(Rfc5545PropName::DateTimeCreated)),
+            Caseless("COMMENT")
+                .value(PropName::Rfc5545(Rfc5545PropName::Comment)),
             Caseless("COLOR").value(PropName::Rfc7986(Rfc7986PropName::Color)),
-            Caseless("CLASS").value(PropName::Rfc5545(Rfc5545PropName::Classification)),
+            Caseless("CLASS")
+                .value(PropName::Rfc5545(Rfc5545PropName::Classification)),
             other,
         ))
         .parse_next(input)
@@ -77,12 +88,18 @@ pub fn property_name<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
 
     fn d_names<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
         alt((
-            Caseless("DESCRIPTION").value(PropName::Rfc5545(Rfc5545PropName::Description)),
-            Caseless("DTSTART").value(PropName::Rfc5545(Rfc5545PropName::DateTimeStart)),
-            Caseless("DTSTAMP").value(PropName::Rfc5545(Rfc5545PropName::DateTimeStamp)),
-            Caseless("DTEND").value(PropName::Rfc5545(Rfc5545PropName::DateTimeEnd)),
-            Caseless("DURATION").value(PropName::Rfc5545(Rfc5545PropName::Duration)),
-            Caseless("DUE").value(PropName::Rfc5545(Rfc5545PropName::DateTimeDue)),
+            Caseless("DESCRIPTION")
+                .value(PropName::Rfc5545(Rfc5545PropName::Description)),
+            Caseless("DTSTART")
+                .value(PropName::Rfc5545(Rfc5545PropName::DateTimeStart)),
+            Caseless("DTSTAMP")
+                .value(PropName::Rfc5545(Rfc5545PropName::DateTimeStamp)),
+            Caseless("DTEND")
+                .value(PropName::Rfc5545(Rfc5545PropName::DateTimeEnd)),
+            Caseless("DURATION")
+                .value(PropName::Rfc5545(Rfc5545PropName::Duration)),
+            Caseless("DUE")
+                .value(PropName::Rfc5545(Rfc5545PropName::DateTimeDue)),
             other,
         ))
         .parse_next(input)
@@ -90,7 +107,8 @@ pub fn property_name<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
 
     fn e_names<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
         alt((
-            Caseless("EXDATE").value(PropName::Rfc5545(Rfc5545PropName::ExceptionDateTimes)),
+            Caseless("EXDATE")
+                .value(PropName::Rfc5545(Rfc5545PropName::ExceptionDateTimes)),
             other,
         ))
         .parse_next(input)
@@ -98,7 +116,8 @@ pub fn property_name<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
 
     fn f_names<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
         alt((
-            Caseless("FREEBUSY").value(PropName::Rfc5545(Rfc5545PropName::FreeBusyTime)),
+            Caseless("FREEBUSY")
+                .value(PropName::Rfc5545(Rfc5545PropName::FreeBusyTime)),
             other,
         ))
         .parse_next(input)
@@ -106,7 +125,8 @@ pub fn property_name<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
 
     fn g_names<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
         alt((
-            Caseless("GEO").value(PropName::Rfc5545(Rfc5545PropName::GeographicPosition)),
+            Caseless("GEO")
+                .value(PropName::Rfc5545(Rfc5545PropName::GeographicPosition)),
             other,
         ))
         .parse_next(input)
@@ -122,8 +142,10 @@ pub fn property_name<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
 
     fn l_names<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
         alt((
-            Caseless("LAST-MODIFIED").value(PropName::Rfc5545(Rfc5545PropName::LastModified)),
-            Caseless("LOCATION").value(PropName::Rfc5545(Rfc5545PropName::Location)),
+            Caseless("LAST-MODIFIED")
+                .value(PropName::Rfc5545(Rfc5545PropName::LastModified)),
+            Caseless("LOCATION")
+                .value(PropName::Rfc5545(Rfc5545PropName::Location)),
             other,
         ))
         .parse_next(input)
@@ -131,7 +153,8 @@ pub fn property_name<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
 
     fn m_names<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
         alt((
-            Caseless("METHOD").value(PropName::Rfc5545(Rfc5545PropName::Method)),
+            Caseless("METHOD")
+                .value(PropName::Rfc5545(Rfc5545PropName::Method)),
             other,
         ))
         .parse_next(input)
@@ -147,7 +170,8 @@ pub fn property_name<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
 
     fn o_names<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
         alt((
-            Caseless("ORGANIZER").value(PropName::Rfc5545(Rfc5545PropName::Organizer)),
+            Caseless("ORGANIZER")
+                .value(PropName::Rfc5545(Rfc5545PropName::Organizer)),
             other,
         ))
         .parse_next(input)
@@ -155,9 +179,12 @@ pub fn property_name<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
 
     fn p_names<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
         alt((
-            Caseless("PERCENT-COMPLETE").value(PropName::Rfc5545(Rfc5545PropName::PercentComplete)),
-            Caseless("PRIORITY").value(PropName::Rfc5545(Rfc5545PropName::Priority)),
-            Caseless("PRODID").value(PropName::Rfc5545(Rfc5545PropName::ProductIdentifier)),
+            Caseless("PERCENT-COMPLETE")
+                .value(PropName::Rfc5545(Rfc5545PropName::PercentComplete)),
+            Caseless("PRIORITY")
+                .value(PropName::Rfc5545(Rfc5545PropName::Priority)),
+            Caseless("PRODID")
+                .value(PropName::Rfc5545(Rfc5545PropName::ProductIdentifier)),
             other,
         ))
         .parse_next(input)
@@ -165,14 +192,22 @@ pub fn property_name<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
 
     fn r_names<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
         alt((
-            Caseless("REFRESH-INTERVAL").value(PropName::Rfc7986(Rfc7986PropName::RefreshInterval)),
-            Caseless("REQUEST-STATUS").value(PropName::Rfc5545(Rfc5545PropName::RequestStatus)),
-            Caseless("RECURRENCE-ID").value(PropName::Rfc5545(Rfc5545PropName::RecurrenceId)),
-            Caseless("RELATED-TO").value(PropName::Rfc5545(Rfc5545PropName::RelatedTo)),
-            Caseless("RESOURCES").value(PropName::Rfc5545(Rfc5545PropName::Resources)),
-            Caseless("RDATE").value(PropName::Rfc5545(Rfc5545PropName::RecurrenceDateTimes)),
-            Caseless("RRULE").value(PropName::Rfc5545(Rfc5545PropName::RecurrenceRule)),
-            Caseless("REPEAT").value(PropName::Rfc5545(Rfc5545PropName::RepeatCount)),
+            Caseless("REFRESH-INTERVAL")
+                .value(PropName::Rfc7986(Rfc7986PropName::RefreshInterval)),
+            Caseless("REQUEST-STATUS")
+                .value(PropName::Rfc5545(Rfc5545PropName::RequestStatus)),
+            Caseless("RECURRENCE-ID")
+                .value(PropName::Rfc5545(Rfc5545PropName::RecurrenceId)),
+            Caseless("RELATED-TO")
+                .value(PropName::Rfc5545(Rfc5545PropName::RelatedTo)),
+            Caseless("RESOURCES")
+                .value(PropName::Rfc5545(Rfc5545PropName::Resources)),
+            Caseless("RDATE")
+                .value(PropName::Rfc5545(Rfc5545PropName::RecurrenceDateTimes)),
+            Caseless("RRULE")
+                .value(PropName::Rfc5545(Rfc5545PropName::RecurrenceRule)),
+            Caseless("REPEAT")
+                .value(PropName::Rfc5545(Rfc5545PropName::RepeatCount)),
             other,
         ))
         .parse_next(input)
@@ -180,10 +215,14 @@ pub fn property_name<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
 
     fn s_names<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
         alt((
-            Caseless("SEQUENCE").value(PropName::Rfc5545(Rfc5545PropName::SequenceNumber)),
-            Caseless("SUMMARY").value(PropName::Rfc5545(Rfc5545PropName::Summary)),
-            Caseless("STATUS").value(PropName::Rfc5545(Rfc5545PropName::Status)),
-            Caseless("SOURCE").value(PropName::Rfc7986(Rfc7986PropName::Source)),
+            Caseless("SEQUENCE")
+                .value(PropName::Rfc5545(Rfc5545PropName::SequenceNumber)),
+            Caseless("SUMMARY")
+                .value(PropName::Rfc5545(Rfc5545PropName::Summary)),
+            Caseless("STATUS")
+                .value(PropName::Rfc5545(Rfc5545PropName::Status)),
+            Caseless("SOURCE")
+                .value(PropName::Rfc7986(Rfc7986PropName::Source)),
             other,
         ))
         .parse_next(input)
@@ -191,13 +230,20 @@ pub fn property_name<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
 
     fn t_names<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
         alt((
-            Caseless("TZOFFSETFROM").value(PropName::Rfc5545(Rfc5545PropName::TimeZoneOffsetFrom)),
-            Caseless("TZOFFSETTO").value(PropName::Rfc5545(Rfc5545PropName::TimeZoneOffsetTo)),
-            Caseless("TZNAME").value(PropName::Rfc5545(Rfc5545PropName::TimeZoneName)),
-            Caseless("TZURL").value(PropName::Rfc5545(Rfc5545PropName::TimeZoneUrl)),
-            Caseless("TZID").value(PropName::Rfc5545(Rfc5545PropName::TimeZoneIdentifier)),
-            Caseless("TRIGGER").value(PropName::Rfc5545(Rfc5545PropName::Trigger)),
-            Caseless("TRANSP").value(PropName::Rfc5545(Rfc5545PropName::TimeTransparency)),
+            Caseless("TZOFFSETFROM")
+                .value(PropName::Rfc5545(Rfc5545PropName::TimeZoneOffsetFrom)),
+            Caseless("TZOFFSETTO")
+                .value(PropName::Rfc5545(Rfc5545PropName::TimeZoneOffsetTo)),
+            Caseless("TZNAME")
+                .value(PropName::Rfc5545(Rfc5545PropName::TimeZoneName)),
+            Caseless("TZURL")
+                .value(PropName::Rfc5545(Rfc5545PropName::TimeZoneUrl)),
+            Caseless("TZID")
+                .value(PropName::Rfc5545(Rfc5545PropName::TimeZoneIdentifier)),
+            Caseless("TRIGGER")
+                .value(PropName::Rfc5545(Rfc5545PropName::Trigger)),
+            Caseless("TRANSP")
+                .value(PropName::Rfc5545(Rfc5545PropName::TimeTransparency)),
             other,
         ))
         .parse_next(input)
@@ -205,8 +251,11 @@ pub fn property_name<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
 
     fn u_names<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
         alt((
-            Caseless("URL").value(PropName::Rfc5545(Rfc5545PropName::UniformResourceLocator)),
-            Caseless("UID").value(PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier)),
+            Caseless("URL").value(PropName::Rfc5545(
+                Rfc5545PropName::UniformResourceLocator,
+            )),
+            Caseless("UID")
+                .value(PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier)),
             other,
         ))
         .parse_next(input)
@@ -214,7 +263,8 @@ pub fn property_name<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
 
     fn v_names<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
         alt((
-            Caseless("VERSION").value(PropName::Rfc5545(Rfc5545PropName::Version)),
+            Caseless("VERSION")
+                .value(PropName::Rfc5545(Rfc5545PropName::Version)),
             other,
         ))
         .parse_next(input)
@@ -403,20 +453,38 @@ mod tests {
             "CALSCALE",
             PropName::Rfc5545(Rfc5545PropName::CalendarScale),
         );
-        assert_prop_name_eq("METHOD", PropName::Rfc5545(Rfc5545PropName::Method));
+        assert_prop_name_eq(
+            "METHOD",
+            PropName::Rfc5545(Rfc5545PropName::Method),
+        );
         assert_prop_name_eq(
             "PRODID",
             PropName::Rfc5545(Rfc5545PropName::ProductIdentifier),
         );
-        assert_prop_name_eq("VERSION", PropName::Rfc5545(Rfc5545PropName::Version));
+        assert_prop_name_eq(
+            "VERSION",
+            PropName::Rfc5545(Rfc5545PropName::Version),
+        );
     }
 
     #[test]
     fn rfc5545_descriptive_property_names() {
-        assert_prop_name_eq("ATTACH", PropName::Rfc5545(Rfc5545PropName::Attachment));
-        assert_prop_name_eq("CATEGORIES", PropName::Rfc5545(Rfc5545PropName::Categories));
-        assert_prop_name_eq("CLASS", PropName::Rfc5545(Rfc5545PropName::Classification));
-        assert_prop_name_eq("COMMENT", PropName::Rfc5545(Rfc5545PropName::Comment));
+        assert_prop_name_eq(
+            "ATTACH",
+            PropName::Rfc5545(Rfc5545PropName::Attachment),
+        );
+        assert_prop_name_eq(
+            "CATEGORIES",
+            PropName::Rfc5545(Rfc5545PropName::Categories),
+        );
+        assert_prop_name_eq(
+            "CLASS",
+            PropName::Rfc5545(Rfc5545PropName::Classification),
+        );
+        assert_prop_name_eq(
+            "COMMENT",
+            PropName::Rfc5545(Rfc5545PropName::Comment),
+        );
         assert_prop_name_eq(
             "DESCRIPTION",
             PropName::Rfc5545(Rfc5545PropName::Description),
@@ -425,15 +493,30 @@ mod tests {
             "GEO",
             PropName::Rfc5545(Rfc5545PropName::GeographicPosition),
         );
-        assert_prop_name_eq("LOCATION", PropName::Rfc5545(Rfc5545PropName::Location));
+        assert_prop_name_eq(
+            "LOCATION",
+            PropName::Rfc5545(Rfc5545PropName::Location),
+        );
         assert_prop_name_eq(
             "PERCENT-COMPLETE",
             PropName::Rfc5545(Rfc5545PropName::PercentComplete),
         );
-        assert_prop_name_eq("PRIORITY", PropName::Rfc5545(Rfc5545PropName::Priority));
-        assert_prop_name_eq("RESOURCES", PropName::Rfc5545(Rfc5545PropName::Resources));
-        assert_prop_name_eq("STATUS", PropName::Rfc5545(Rfc5545PropName::Status));
-        assert_prop_name_eq("SUMMARY", PropName::Rfc5545(Rfc5545PropName::Summary));
+        assert_prop_name_eq(
+            "PRIORITY",
+            PropName::Rfc5545(Rfc5545PropName::Priority),
+        );
+        assert_prop_name_eq(
+            "RESOURCES",
+            PropName::Rfc5545(Rfc5545PropName::Resources),
+        );
+        assert_prop_name_eq(
+            "STATUS",
+            PropName::Rfc5545(Rfc5545PropName::Status),
+        );
+        assert_prop_name_eq(
+            "SUMMARY",
+            PropName::Rfc5545(Rfc5545PropName::Summary),
+        );
     }
 
     #[test]
@@ -442,16 +525,34 @@ mod tests {
             "COMPLETED",
             PropName::Rfc5545(Rfc5545PropName::DateTimeCompleted),
         );
-        assert_prop_name_eq("DTEND", PropName::Rfc5545(Rfc5545PropName::DateTimeEnd));
-        assert_prop_name_eq("DUE", PropName::Rfc5545(Rfc5545PropName::DateTimeDue));
-        assert_prop_name_eq("DTSTART", PropName::Rfc5545(Rfc5545PropName::DateTimeStart));
-        assert_prop_name_eq("DURATION", PropName::Rfc5545(Rfc5545PropName::Duration));
-        assert_prop_name_eq("FREEBUSY", PropName::Rfc5545(Rfc5545PropName::FreeBusyTime));
+        assert_prop_name_eq(
+            "DTEND",
+            PropName::Rfc5545(Rfc5545PropName::DateTimeEnd),
+        );
+        assert_prop_name_eq(
+            "DUE",
+            PropName::Rfc5545(Rfc5545PropName::DateTimeDue),
+        );
+        assert_prop_name_eq(
+            "DTSTART",
+            PropName::Rfc5545(Rfc5545PropName::DateTimeStart),
+        );
+        assert_prop_name_eq(
+            "DURATION",
+            PropName::Rfc5545(Rfc5545PropName::Duration),
+        );
+        assert_prop_name_eq(
+            "FREEBUSY",
+            PropName::Rfc5545(Rfc5545PropName::FreeBusyTime),
+        );
         assert_prop_name_eq(
             "TRANSP",
             PropName::Rfc5545(Rfc5545PropName::TimeTransparency),
         );
-        assert_prop_name_eq("DTSTAMP", PropName::Rfc5545(Rfc5545PropName::DateTimeStamp));
+        assert_prop_name_eq(
+            "DTSTAMP",
+            PropName::Rfc5545(Rfc5545PropName::DateTimeStamp),
+        );
     }
 
     #[test]
@@ -460,7 +561,10 @@ mod tests {
             "TZID",
             PropName::Rfc5545(Rfc5545PropName::TimeZoneIdentifier),
         );
-        assert_prop_name_eq("TZNAME", PropName::Rfc5545(Rfc5545PropName::TimeZoneName));
+        assert_prop_name_eq(
+            "TZNAME",
+            PropName::Rfc5545(Rfc5545PropName::TimeZoneName),
+        );
         assert_prop_name_eq(
             "TZOFFSETFROM",
             PropName::Rfc5545(Rfc5545PropName::TimeZoneOffsetFrom),
@@ -469,24 +573,42 @@ mod tests {
             "TZOFFSETTO",
             PropName::Rfc5545(Rfc5545PropName::TimeZoneOffsetTo),
         );
-        assert_prop_name_eq("TZURL", PropName::Rfc5545(Rfc5545PropName::TimeZoneUrl));
+        assert_prop_name_eq(
+            "TZURL",
+            PropName::Rfc5545(Rfc5545PropName::TimeZoneUrl),
+        );
     }
 
     #[test]
     fn rfc5545_relationship_property_names() {
-        assert_prop_name_eq("ATTENDEE", PropName::Rfc5545(Rfc5545PropName::Attendee));
-        assert_prop_name_eq("CONTACT", PropName::Rfc5545(Rfc5545PropName::Contact));
-        assert_prop_name_eq("ORGANIZER", PropName::Rfc5545(Rfc5545PropName::Organizer));
+        assert_prop_name_eq(
+            "ATTENDEE",
+            PropName::Rfc5545(Rfc5545PropName::Attendee),
+        );
+        assert_prop_name_eq(
+            "CONTACT",
+            PropName::Rfc5545(Rfc5545PropName::Contact),
+        );
+        assert_prop_name_eq(
+            "ORGANIZER",
+            PropName::Rfc5545(Rfc5545PropName::Organizer),
+        );
         assert_prop_name_eq(
             "RECURRENCE-ID",
             PropName::Rfc5545(Rfc5545PropName::RecurrenceId),
         );
-        assert_prop_name_eq("RELATED-TO", PropName::Rfc5545(Rfc5545PropName::RelatedTo));
+        assert_prop_name_eq(
+            "RELATED-TO",
+            PropName::Rfc5545(Rfc5545PropName::RelatedTo),
+        );
         assert_prop_name_eq(
             "URL",
             PropName::Rfc5545(Rfc5545PropName::UniformResourceLocator),
         );
-        assert_prop_name_eq("UID", PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier));
+        assert_prop_name_eq(
+            "UID",
+            PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier),
+        );
     }
 
     #[test]
@@ -499,14 +621,26 @@ mod tests {
             "RDATE",
             PropName::Rfc5545(Rfc5545PropName::RecurrenceDateTimes),
         );
-        assert_prop_name_eq("RRULE", PropName::Rfc5545(Rfc5545PropName::RecurrenceRule));
+        assert_prop_name_eq(
+            "RRULE",
+            PropName::Rfc5545(Rfc5545PropName::RecurrenceRule),
+        );
     }
 
     #[test]
     fn rfc5545_alarm_property_names() {
-        assert_prop_name_eq("ACTION", PropName::Rfc5545(Rfc5545PropName::Action));
-        assert_prop_name_eq("REPEAT", PropName::Rfc5545(Rfc5545PropName::RepeatCount));
-        assert_prop_name_eq("TRIGGER", PropName::Rfc5545(Rfc5545PropName::Trigger));
+        assert_prop_name_eq(
+            "ACTION",
+            PropName::Rfc5545(Rfc5545PropName::Action),
+        );
+        assert_prop_name_eq(
+            "REPEAT",
+            PropName::Rfc5545(Rfc5545PropName::RepeatCount),
+        );
+        assert_prop_name_eq(
+            "TRIGGER",
+            PropName::Rfc5545(Rfc5545PropName::Trigger),
+        );
     }
 
     #[test]
@@ -540,29 +674,59 @@ mod tests {
             "REFRESH-INTERVAL",
             PropName::Rfc7986(Rfc7986PropName::RefreshInterval),
         );
-        assert_prop_name_eq("SOURCE", PropName::Rfc7986(Rfc7986PropName::Source));
+        assert_prop_name_eq(
+            "SOURCE",
+            PropName::Rfc7986(Rfc7986PropName::Source),
+        );
         assert_prop_name_eq("COLOR", PropName::Rfc7986(Rfc7986PropName::Color));
         assert_prop_name_eq("IMAGE", PropName::Rfc7986(Rfc7986PropName::Image));
-        assert_prop_name_eq("CONFERENCE", PropName::Rfc7986(Rfc7986PropName::Conference));
+        assert_prop_name_eq(
+            "CONFERENCE",
+            PropName::Rfc7986(Rfc7986PropName::Conference),
+        );
     }
 
     #[test]
     fn property_name_case_insensitivity() {
-        assert_prop_name_eq("dtstart", PropName::Rfc5545(Rfc5545PropName::DateTimeStart));
-        assert_prop_name_eq("DTSTART", PropName::Rfc5545(Rfc5545PropName::DateTimeStart));
-        assert_prop_name_eq("DtStArT", PropName::Rfc5545(Rfc5545PropName::DateTimeStart));
-        assert_prop_name_eq("dtSTART", PropName::Rfc5545(Rfc5545PropName::DateTimeStart));
+        assert_prop_name_eq(
+            "dtstart",
+            PropName::Rfc5545(Rfc5545PropName::DateTimeStart),
+        );
+        assert_prop_name_eq(
+            "DTSTART",
+            PropName::Rfc5545(Rfc5545PropName::DateTimeStart),
+        );
+        assert_prop_name_eq(
+            "DtStArT",
+            PropName::Rfc5545(Rfc5545PropName::DateTimeStart),
+        );
+        assert_prop_name_eq(
+            "dtSTART",
+            PropName::Rfc5545(Rfc5545PropName::DateTimeStart),
+        );
 
-        assert_prop_name_eq("conference", PropName::Rfc7986(Rfc7986PropName::Conference));
-        assert_prop_name_eq("Conference", PropName::Rfc7986(Rfc7986PropName::Conference));
-        assert_prop_name_eq("CONFERENCE", PropName::Rfc7986(Rfc7986PropName::Conference));
+        assert_prop_name_eq(
+            "conference",
+            PropName::Rfc7986(Rfc7986PropName::Conference),
+        );
+        assert_prop_name_eq(
+            "Conference",
+            PropName::Rfc7986(Rfc7986PropName::Conference),
+        );
+        assert_prop_name_eq(
+            "CONFERENCE",
+            PropName::Rfc7986(Rfc7986PropName::Conference),
+        );
     }
 
     #[test]
     fn iana_property_names() {
         assert_prop_name_eq("UNKNOWN-PROP", PropName::Other("UNKNOWN-PROP"));
         assert_prop_name_eq("CUSTOM", PropName::Other("CUSTOM"));
-        assert_prop_name_eq("VENDOR-SPECIFIC", PropName::Other("VENDOR-SPECIFIC"));
+        assert_prop_name_eq(
+            "VENDOR-SPECIFIC",
+            PropName::Other("VENDOR-SPECIFIC"),
+        );
         assert_prop_name_eq("NEW-FEATURE", PropName::Other("NEW-FEATURE"));
     }
 

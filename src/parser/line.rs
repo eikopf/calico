@@ -127,7 +127,9 @@ mod tests {
 
         assert_eq!(
             lines,
-            vec!["DESCRIPTION:This is a long description that is folded across multiple lines"]
+            vec![
+                "DESCRIPTION:This is a long description that is folded across multiple lines"
+            ]
         );
     }
 
