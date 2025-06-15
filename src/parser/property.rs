@@ -18,6 +18,7 @@ use crate::parser::{
 use super::parameter::{ParamValue, StaticParamName, parameter};
 
 /// A textual property.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Property<'a> {
     /// The name of the property.
     pub name: PropName<'a>,
@@ -527,7 +528,50 @@ pub enum Rfc7986PropName {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::parser::parameter::Rfc5545ParamName;
     use winnow::Parser;
+
+    #[test]
+    fn basic_property_parsing() {
+        // snippet from RFC 5545 (page 145)
+        let input = "ATTENDEE;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=GROUP:mailto:employee-A@example.com";
+
+        let (tail, prop) = property.parse_peek(input).unwrap();
+        assert!(tail.is_empty());
+        assert_eq!(prop.name, PropName::Rfc5545(Rfc5545PropName::Attendee));
+        assert_eq!(prop.static_params.len(), 3);
+        assert!(prop.unknown_params.is_empty());
+        assert_eq!(prop.value, "mailto:employee-A@example.com");
+
+        for param in &[
+            StaticParamName::Rfc5545(Rfc5545ParamName::RsvpExpectation),
+            StaticParamName::Rfc5545(Rfc5545ParamName::ParticipationRole),
+            StaticParamName::Rfc5545(Rfc5545ParamName::CalendarUserType),
+        ] {
+            assert!(prop.static_params.contains_key(param));
+        }
+    }
+
+    #[test]
+    fn unknown_property_parameter_accumulation() {
+        let input = "X-NAME;X-A=foo;X-A=bar;X-A=baz:foo";
+        let (tail, prop) = property.parse_peek(input).unwrap();
+        assert!(tail.is_empty());
+        assert_eq!(prop.name, PropName::Other("X-NAME"));
+        assert!(prop.static_params.is_empty());
+        assert_eq!(prop.unknown_params.len(), 1);
+        assert_eq!(
+            prop.unknown_params.get("X-A"),
+            Some(vec![
+                ParamValue::Safe("foo"),
+                ParamValue::Safe("bar"),
+                ParamValue::Safe("baz"),
+            ])
+        );
+        assert_eq!(prop.value, "foo");
+    }
+
+    // PROPERTY NAME TESTS
 
     /// Asserts that the inputs are equal under [`property_name`].
     fn assert_prop_name_eq<'i>(input: &'i str, expected: PropName<'i>) {
