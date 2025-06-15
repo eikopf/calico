@@ -5,7 +5,7 @@ use std::{borrow::Cow, str::FromStr};
 use chrono::{NaiveDate, Utc};
 use winnow::{
     ModalResult, Parser,
-    ascii::digit1,
+    ascii::{Caseless, digit1},
     combinator::{alt, empty, preceded, repeat, trace},
     stream::Accumulate,
     token::{any, none_of, take},
@@ -30,7 +30,7 @@ use crate::model::primitive::{
 /// assert!(gregorian.parse_peek("GRUGORIAN").is_err());
 /// ```
 pub fn gregorian(input: &mut &str) -> ModalResult<()> {
-    "GREGORIAN".void().parse_next(input)
+    Caseless("GREGORIAN").void().parse_next(input)
 }
 
 /// Parses the exact string `2.0`, which occurs in the version property. This
@@ -178,7 +178,7 @@ pub fn binary(input: &mut &str) -> ModalResult<Binary> {
 /// );
 ///
 /// assert_eq!(
-///     calendar_user_type.parse_peek("ROOM").unwrap().1,
+///     calendar_user_type.parse_peek("room").unwrap().1,
 ///     CalendarUserType::Room,
 /// );
 ///
@@ -189,11 +189,11 @@ pub fn binary(input: &mut &str) -> ModalResult<Binary> {
 /// ```
 pub fn calendar_user_type(input: &mut &str) -> ModalResult<CalendarUserType> {
     alt((
-        "INDIVIDUAL".value(CalendarUserType::Individual),
-        "GROUP".value(CalendarUserType::Group),
-        "RESOURCE".value(CalendarUserType::Resource),
-        "ROOM".value(CalendarUserType::Room),
-        "UNKNOWN".value(CalendarUserType::Unknown),
+        Caseless("INDIVIDUAL").value(CalendarUserType::Individual),
+        Caseless("GROUP").value(CalendarUserType::Group),
+        Caseless("RESOURCE").value(CalendarUserType::Resource),
+        Caseless("ROOM").value(CalendarUserType::Room),
+        Caseless("UNKNOWN").value(CalendarUserType::Unknown),
         iana_token.map(|s| CalendarUserType::Other(s.into())),
     ))
     .parse_next(input)
