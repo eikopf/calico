@@ -33,8 +33,54 @@ pub fn parameter<'i>(input: &mut &'i str) -> ModalResult<RawParam<'i>> {
         .parse_next(input)
 }
 
+/// A static property parameter name from RFC 5545 or RFC 7986.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum StaticParamName {
+    Rfc5545(Rfc5545ParamName),
+    Rfc7986(Rfc7986ParamName),
+}
+
+impl StaticParamName {
+    /// Returns `true` if the static param name is [`Rfc5545`].
+    ///
+    /// [`Rfc5545`]: StaticParamName::Rfc5545
+    #[must_use]
+    pub fn is_rfc5545(&self) -> bool {
+        matches!(self, Self::Rfc5545(..))
+    }
+
+    /// Returns `true` if the static param name is [`Rfc7986`].
+    ///
+    /// [`Rfc7986`]: StaticParamName::Rfc7986
+    #[must_use]
+    pub fn is_rfc7986(&self) -> bool {
+        matches!(self, Self::Rfc7986(..))
+    }
+}
+
+/// Parses a [`StaticParamName`].
+///
+/// # Examples
+///
+/// ```
+/// use calico::parser::parameter::static_param_name;
+/// use winnow::Parser;
+///
+/// assert!(static_param_name.parse_peek("Range").is_ok_and(|r| r.1.is_rfc5545()));
+/// assert!(static_param_name.parse_peek("EMAIL").is_ok_and(|r| r.1.is_rfc7986()));
+/// assert!(static_param_name.parse_peek("other").is_err());
+/// assert!(static_param_name.parse_peek(",bad,").is_err());
+/// ```
+pub fn static_param_name(input: &mut &str) -> ModalResult<StaticParamName> {
+    alt((
+        rfc5545_param_name.map(StaticParamName::Rfc5545),
+        rfc7986_param_name.map(StaticParamName::Rfc7986),
+    ))
+    .parse_next(input)
+}
+
 /// A property parameter name from RFC 5545, RFC 7986, or an arbitrary token.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ParamName<'a> {
     Rfc5545(Rfc5545ParamName),
     Rfc7986(Rfc7986ParamName),
@@ -95,7 +141,7 @@ pub fn param_name<'i>(input: &mut &'i str) -> ModalResult<ParamName<'i>> {
 }
 
 /// A statically known property parameter name from RFC 5545.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Rfc5545ParamName {
     /// RFC 5545 §3.2.1 (ALTREP)
     AlternateTextRepresentation,
@@ -140,7 +186,7 @@ pub enum Rfc5545ParamName {
 }
 
 /// A statically known property parameter name from RFC 7986.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Rfc7986ParamName {
     /// RFC 7986 §6.1 (DISPLAY)
     Display,

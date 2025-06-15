@@ -1,13 +1,115 @@
-//! Parsers for iCalendar content lines.
+//! Parsers for properties.
+
+use std::collections::HashMap;
 
 use winnow::{
     ModalResult, Parser,
     ascii::Caseless,
-    combinator::{alt, fail},
+    combinator::{alt, fail, preceded, repeat},
     stream::Stream,
+    token::none_of,
 };
 
-use crate::parser::primitive::iana_token;
+use crate::parser::{
+    parameter::{ParamName, RawParam},
+    primitive::iana_token,
+};
+
+use super::parameter::{ParamValue, StaticParamName, parameter};
+
+/// A textual property.
+pub struct Property<'a> {
+    /// The name of the property.
+    pub name: PropName<'a>,
+    /// The statically-known parameters of the property.
+    pub static_params: HashMap<StaticParamName, ParamValue<'a>>,
+    /// The unknown parameters of the property.
+    pub unknown_params: HashMap<&'a str, Vec<ParamValue<'a>>>,
+    /// The raw textual value of the property, which cannot include control
+    /// characters (U+0000 through U+001F and U+007F).
+    pub value: &'a str,
+}
+
+/// Parses a [`Property`].
+///
+/// # Examples
+///
+/// ```
+/// use calico::parser::property::property;
+/// use winnow::Parser;
+///
+/// assert!(property.parse_peek("TZNAME:EST").is_ok());
+/// assert!(property.parse_peek("ATTENDEE;RSVP=TRUE;ROLE=REQ:foo").is_ok());
+/// ```
+pub fn property<'i>(input: &mut &'i str) -> ModalResult<Property<'i>> {
+    /// Parses the value string of a property line.
+    fn value<'i>(input: &mut &'i str) -> ModalResult<&'i str> {
+        repeat::<_, _, (), _, _>(0.., none_of((..' ', '\u{007F}')))
+            .take()
+            .parse_next(input)
+    }
+
+    type Params<'a> = (
+        HashMap<StaticParamName, ParamValue<'a>>,
+        HashMap<&'a str, Vec<ParamValue<'a>>>,
+    );
+
+    fn process_raw_params<'i>(
+        raw_params: Vec<RawParam<'i>>,
+    ) -> Option<Params<'i>> {
+        // NOTE: we assume all the parameters are statically known to begin with
+        let mut static_params = HashMap::with_capacity(raw_params.len());
+        let mut unknown_params = HashMap::new();
+
+        for RawParam { name, value } in raw_params {
+            match name {
+                ParamName::Rfc5545(name) => {
+                    let name = StaticParamName::Rfc5545(name);
+
+                    match static_params.contains_key(&name) {
+                        true => return None,
+                        false => static_params.insert(name, value),
+                    };
+                }
+                ParamName::Rfc7986(name) => {
+                    let name = StaticParamName::Rfc7986(name);
+
+                    match static_params.contains_key(&name) {
+                        true => return None,
+                        false => static_params.insert(name, value),
+                    };
+                }
+                ParamName::Other(name) => {
+                    unknown_params
+                        .entry(name)
+                        .and_modify(|values: &mut Vec<_>| values.push(value))
+                        .or_insert_with(|| vec![value]);
+                }
+            }
+        }
+
+        static_params.shrink_to_fit();
+        unknown_params.shrink_to_fit();
+        Some((static_params, unknown_params))
+    }
+
+    (
+        property_name,
+        repeat::<_, _, Vec<_>, _, _>(0.., preceded(';', parameter))
+            .verify_map(process_raw_params),
+        ':',
+        value,
+    )
+        .map(
+            |(name, (static_params, unknown_params), _, value)| Property {
+                name,
+                static_params,
+                unknown_params,
+                value,
+            },
+        )
+        .parse_next(input)
+}
 
 /// A property name, which may be statically known from RFC 5545 or RFC 7986, or
 /// otherwise may be some arbitrary [`iana_token`].
@@ -23,7 +125,7 @@ pub enum PropName<'a> {
 /// # Examples
 ///
 /// ```
-/// use calico::parser::content_line::{
+/// use calico::parser::property::{
 ///     property_name,
 ///     PropName,
 ///     Rfc5545PropName
