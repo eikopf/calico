@@ -1,4 +1,4 @@
-//! An RFC 5545 and RFC 7986 compliant iCalendar implementation.
+#![doc = include_str!("../README.md")]
 
 pub mod model;
 pub mod parser;
