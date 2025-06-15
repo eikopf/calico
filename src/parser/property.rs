@@ -562,7 +562,7 @@ mod tests {
         assert_eq!(prop.unknown_params.len(), 1);
         assert_eq!(
             prop.unknown_params.get("X-A"),
-            Some(vec![
+            Some(&vec![
                 ParamValue::Safe("foo"),
                 ParamValue::Safe("bar"),
                 ParamValue::Safe("baz"),
