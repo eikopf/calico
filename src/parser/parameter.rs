@@ -2,6 +2,7 @@
 
 use winnow::{
     ModalResult, Parser,
+    ascii::Caseless,
     combinator::{alt, delimited, repeat, separated_pair},
     token::none_of,
 };
@@ -75,7 +76,7 @@ impl<'a> ParamName<'a> {
 /// use winnow::Parser;
 ///
 /// assert!(param_name.parse_peek("RANGE").is_ok_and(|r| r.1.is_rfc5545()));
-/// assert!(param_name.parse_peek("EMAIL").is_ok_and(|r| r.1.is_rfc7986()));
+/// assert!(param_name.parse_peek("email").is_ok_and(|r| r.1.is_rfc7986()));
 /// assert!(param_name.parse_peek("OTHER").is_ok_and(|r| r.1.is_other()));
 /// assert!(param_name.parse_peek(",bad,").is_err());
 /// ```
@@ -166,12 +167,12 @@ pub enum Rfc7986ParamName {
 /// );
 ///
 /// assert_eq!(
-///     rfc5545_param_name.parse_peek("LANGUAGE").unwrap().1,
+///     rfc5545_param_name.parse_peek("Language").unwrap().1,
 ///     Rfc5545ParamName::Language,
 /// );
 ///
 /// assert_eq!(
-///     rfc5545_param_name.parse_peek("ENCODING").unwrap().1,
+///     rfc5545_param_name.parse_peek("encoding").unwrap().1,
 ///     Rfc5545ParamName::InlineEncoding,
 /// );
 ///
@@ -181,26 +182,26 @@ pub enum Rfc7986ParamName {
 pub fn rfc5545_param_name(input: &mut &str) -> ModalResult<Rfc5545ParamName> {
     alt((
         // RFC 5545
-        "ALTREP".value(Rfc5545ParamName::AlternateTextRepresentation),
-        "CN".value(Rfc5545ParamName::CommonName),
-        "CUTYPE".value(Rfc5545ParamName::CalendarUserType),
-        "DELEGATED-FROM".value(Rfc5545ParamName::Delegators),
-        "DELEGATED-TO".value(Rfc5545ParamName::Delegatees),
-        "DIR".value(Rfc5545ParamName::DirectoryEntryReference),
-        "ENCODING".value(Rfc5545ParamName::InlineEncoding),
-        "FMTTYPE".value(Rfc5545ParamName::FormatType),
-        "FBTYPE".value(Rfc5545ParamName::FreeBusyTimeType),
-        "LANGUAGE".value(Rfc5545ParamName::Language),
-        "MEMBER".value(Rfc5545ParamName::GroupOrListMembership),
-        "PARTSTAT".value(Rfc5545ParamName::ParticipationStatus),
-        "RANGE".value(Rfc5545ParamName::RecurrenceIdentifierRange),
-        "RELATED".value(Rfc5545ParamName::AlarmTriggerRelationship),
-        "RELTYPE".value(Rfc5545ParamName::RelationshipType),
-        "ROLE".value(Rfc5545ParamName::ParticipationRole),
-        "RSVP".value(Rfc5545ParamName::RsvpExpectation),
-        "SENT-BY".value(Rfc5545ParamName::SentBy),
-        "TZID".value(Rfc5545ParamName::TimeZoneIdentifier),
-        "VALUE".value(Rfc5545ParamName::ValueDataType),
+        Caseless("ALTREP").value(Rfc5545ParamName::AlternateTextRepresentation),
+        Caseless("CN").value(Rfc5545ParamName::CommonName),
+        Caseless("CUTYPE").value(Rfc5545ParamName::CalendarUserType),
+        Caseless("DELEGATED-FROM").value(Rfc5545ParamName::Delegators),
+        Caseless("DELEGATED-TO").value(Rfc5545ParamName::Delegatees),
+        Caseless("DIR").value(Rfc5545ParamName::DirectoryEntryReference),
+        Caseless("ENCODING").value(Rfc5545ParamName::InlineEncoding),
+        Caseless("FMTTYPE").value(Rfc5545ParamName::FormatType),
+        Caseless("FBTYPE").value(Rfc5545ParamName::FreeBusyTimeType),
+        Caseless("LANGUAGE").value(Rfc5545ParamName::Language),
+        Caseless("MEMBER").value(Rfc5545ParamName::GroupOrListMembership),
+        Caseless("PARTSTAT").value(Rfc5545ParamName::ParticipationStatus),
+        Caseless("RANGE").value(Rfc5545ParamName::RecurrenceIdentifierRange),
+        Caseless("RELATED").value(Rfc5545ParamName::AlarmTriggerRelationship),
+        Caseless("RELTYPE").value(Rfc5545ParamName::RelationshipType),
+        Caseless("ROLE").value(Rfc5545ParamName::ParticipationRole),
+        Caseless("RSVP").value(Rfc5545ParamName::RsvpExpectation),
+        Caseless("SENT-BY").value(Rfc5545ParamName::SentBy),
+        Caseless("TZID").value(Rfc5545ParamName::TimeZoneIdentifier),
+        Caseless("VALUE").value(Rfc5545ParamName::ValueDataType),
     ))
     .parse_next(input)
 }
@@ -229,10 +230,10 @@ pub fn rfc5545_param_name(input: &mut &str) -> ModalResult<Rfc5545ParamName> {
 /// ```
 pub fn rfc7986_param_name(input: &mut &str) -> ModalResult<Rfc7986ParamName> {
     alt((
-        "DISPLAY".value(Rfc7986ParamName::Display),
-        "EMAIL".value(Rfc7986ParamName::Email),
-        "FEATURE".value(Rfc7986ParamName::Feature),
-        "LABEL".value(Rfc7986ParamName::Label),
+        Caseless("DISPLAY").value(Rfc7986ParamName::Display),
+        Caseless("EMAIL").value(Rfc7986ParamName::Email),
+        Caseless("FEATURE").value(Rfc7986ParamName::Feature),
+        Caseless("LABEL").value(Rfc7986ParamName::Label),
     ))
     .parse_next(input)
 }
