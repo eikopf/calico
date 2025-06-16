@@ -1,6 +1,8 @@
 //! Primitive types for the object model.
 
 use chrono::NaiveDate;
+pub use iri_string::types::{UriStr, UriString};
+use mime::Mime;
 use oxilangtag::LanguageTag;
 use uuid::Uuid;
 
@@ -14,12 +16,12 @@ pub struct Method(pub(crate) http::Method);
 /// preferred over arbitrary string UIDs whenever possible, and especially
 /// when generating new UIDs.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Uid {
+pub enum Uid<S = Box<str>> {
     Uuid(Uuid),
-    String(Box<str>),
+    String(S),
 }
 
-impl Uid {
+impl<S> Uid<S> {
     /// Returns `true` if the uid is [`Uuid`].
     ///
     /// [`Uuid`]: Uid::Uuid
@@ -31,18 +33,7 @@ impl Uid {
 
 /// An RFC 5646 language tag.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Language(pub(crate) LanguageTag<String>);
-
-/// An RFC 3986 uniform resource identifier (URI).
-///
-/// # Compatibility
-///
-/// This type is _not_ equivalent to [`http::Uri`], and instead strictly
-/// represents a URI as defined in RFC 3986. Most other URI types can be
-/// converted into this type, but the converse is not true: not all RFC 3986
-/// URIs are representable by all URI types!
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Uri(pub(crate) iri_string::types::UriString);
+pub struct Language<S = Box<str>>(pub(crate) LanguageTag<S>);
 
 /// The data of a BINARY property.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -97,36 +88,39 @@ pub enum Classification {
     Confidential,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum RelationshipType {
-    Parent,
-    Child,
-    Sibling,
+/// The possible values of the ENCODING parameter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Encoding {
+    /// The `8bit` text encoding defined in RFC 2045.
+    Bit8,
+    /// The `BASE64` binary encoding defined in RFC 4648.
+    Base64,
 }
 
 /// The data of an RFC 7986 IMAGE property.
 #[derive(Debug, Clone)]
-pub enum ImageData {
-    Uri(Uri),
+pub enum ImageData<U = UriString> {
+    Uri(U),
     Binary(Binary),
 }
 
 /// RFC 5545 §3.2.8
-#[derive(Debug, Clone)]
-pub struct FormatType;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FormatType(pub(crate) Mime);
 
 /// DISPLAY parameter values (RFC 7986)
-#[derive(Debug, Clone, Copy)]
-pub enum DisplayType {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DisplayType<S = Box<str>> {
     Badge,
     Graphic,
     Fullsize,
     Thumbnail,
+    Other(S),
 }
 
 /// FEATURE parameter values (RFC 7986)
-#[derive(Debug, Clone)]
-pub enum FeatureType {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FeatureType<S = Box<str>> {
     Audio,
     Chat,
     Feed,
@@ -134,7 +128,7 @@ pub enum FeatureType {
     Phone,
     Screen,
     Video,
-    Other(Box<str>),
+    Other(S),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -172,26 +166,33 @@ pub enum Transparency {
     Transparent,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CalendarUserType {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CalendarUserType<S = Box<str>> {
     Individual,
     Group,
     Resource,
     Room,
     Unknown,
-    Other(Box<str>),
+    Other(S),
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum ParticipationRole {
+impl<S> Default for CalendarUserType<S> {
+    fn default() -> Self {
+        Self::Individual
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParticipationRole<S = Box<str>> {
     Chair,
     ReqParticipant,
     OptParticipant,
     NonParticipant,
+    Other(S),
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum ParticipationStatus {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParticipationStatus<S = Box<str>> {
     NeedsAction,
     Accepted,
     Declined,
@@ -199,27 +200,56 @@ pub enum ParticipationStatus {
     Delegated,
     Completed,
     InProcess,
+    Other(S),
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum FreeBusyType {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FreeBusyType<S = Box<str>> {
     Free,
     Busy,
     BusyUnavailable,
     BusyTentative,
+    Other(S),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AlarmAction {
     Audio,
     Display,
     Email,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TriggerRelation {
     Start,
     End,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RelationshipType<S = Box<str>> {
+    Parent,
+    Child,
+    Sibling,
+    Other(S),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ValueType<S = Box<str>> {
+    Binary,
+    Boolean,
+    CalAddress,
+    Date,
+    DateTime,
+    Duration,
+    Float,
+    Integer,
+    Period,
+    Recur,
+    Text,
+    Time,
+    Uri,
+    UtcOffset,
+    Other(S),
 }
 
 /// Period of time.

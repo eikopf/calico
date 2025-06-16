@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use super::primitive::{
-    DisplayType, FeatureType, FormatType, ImageData, Language, Uri,
+    DisplayType, FeatureType, FormatType, ImageData, Language, UriString,
 };
 
 /// An ordinary textual property.
@@ -13,7 +13,7 @@ pub type TextProp = Prop<Box<str>, TextParams>;
 pub type ImageProp = Prop<ImageData, ImageParams>;
 
 /// A conference property.
-pub type ConfProp = Prop<Uri, ConfParams>;
+pub type ConfProp = Prop<UriString, ConfParams>;
 
 /// A property generic over values and parameters.
 #[derive(Debug, Clone)]
@@ -27,7 +27,7 @@ pub struct Prop<V, P = ()> {
 #[derive(Debug, Clone)]
 pub struct TextParams {
     pub language: Option<Language>,
-    pub alternate_representation: Option<Uri>,
+    pub alternate_representation: Option<UriString>,
 }
 
 /// The parameters usually associated with image data.
@@ -35,7 +35,7 @@ pub struct TextParams {
 pub struct ImageParams {
     pub format_type: Option<FormatType>,
     pub display: Option<DisplayType>,
-    pub alternate_representation: Option<Uri>,
+    pub alternate_representation: Option<UriString>,
 }
 
 /// The parameters associated with the CONFERENCE property.

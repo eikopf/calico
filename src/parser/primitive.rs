@@ -8,13 +8,72 @@ use winnow::{
     ascii::{Caseless, digit1},
     combinator::{alt, empty, preceded, repeat, trace},
     stream::Accumulate,
-    token::{any, none_of, take},
+    token::{any, none_of, one_of, take},
 };
 
 use crate::model::primitive::{
-    Binary, CalendarUserType, Date, DateTime, Language, Method, RawTime, Time,
-    TimeFormat, Uid, Uri,
+    Binary, CalendarUserType, Date, DateTime, DisplayType, Encoding,
+    FeatureType, FormatType, FreeBusyType, Language, Method, ParticipationRole,
+    ParticipationStatus, RawTime, RelationshipType, Time, TimeFormat,
+    TriggerRelation, Uid, UriStr, ValueType,
 };
+
+/// Parses a [`FeatureType`].
+///
+/// # Examples
+///
+/// ```
+/// use calico::parser::primitive::feature_type;
+/// use calico::model::primitive::FeatureType;
+/// use winnow::Parser;
+///
+/// assert_eq!(feature_type.parse_peek("chat").unwrap().1, FeatureType::Chat);
+/// assert_eq!(feature_type.parse_peek("SCREEN").unwrap().1, FeatureType::Screen);
+/// ```
+pub fn feature_type<'i>(
+    input: &mut &'i str,
+) -> ModalResult<FeatureType<&'i str>> {
+    alt((
+        Caseless("MODERATOR").value(FeatureType::Moderator),
+        Caseless("SCREEN").value(FeatureType::Screen),
+        Caseless("AUDIO").value(FeatureType::Audio),
+        Caseless("PHONE").value(FeatureType::Phone),
+        Caseless("VIDEO").value(FeatureType::Video),
+        Caseless("CHAT").value(FeatureType::Chat),
+        Caseless("FEED").value(FeatureType::Feed),
+        iana_token.map(FeatureType::Other),
+    ))
+    .parse_next(input)
+}
+
+/// Parses a [`DisplayType`].
+///
+/// # Examples
+///
+/// ```
+/// use calico::parser::primitive::display_type;
+/// use calico::model::primitive::DisplayType;
+/// use winnow::Parser;
+///
+/// assert_eq!(display_type.parse_peek("badge").unwrap().1, DisplayType::Badge);
+/// assert_eq!(display_type.parse_peek("GRAPHIC").unwrap().1, DisplayType::Graphic);
+/// assert_eq!(
+///     display_type.parse_peek("X-OTHER").unwrap().1,
+///     DisplayType::Other("X-OTHER"),
+/// );
+/// ```
+pub fn display_type<'i>(
+    input: &mut &'i str,
+) -> ModalResult<DisplayType<&'i str>> {
+    alt((
+        Caseless("THUMBNAIL").value(DisplayType::Thumbnail),
+        Caseless("FULLSIZE").value(DisplayType::Fullsize),
+        Caseless("GRAPHIC").value(DisplayType::Graphic),
+        Caseless("BADGE").value(DisplayType::Badge),
+        iana_token.map(DisplayType::Other),
+    ))
+    .parse_next(input)
+}
 
 /// Parses the exact string `GREGORIAN`, which occurs in the calendar scale
 /// property. This parser returns `()` because the Gregorian calendar is the
@@ -73,10 +132,10 @@ pub fn method(input: &mut &str) -> ModalResult<Method> {
 /// assert!(!uid.parse_peek("some random text").unwrap().1.is_uuid());
 /// assert!(uid.parse_peek("550e8400e29b41d4a716446655440000").unwrap().1.is_uuid());
 /// ```
-pub fn uid(input: &mut &str) -> ModalResult<Uid> {
+pub fn uid<'i>(input: &mut &'i str) -> ModalResult<Uid<Cow<'i, str>>> {
     text.map(|s| match uuid::Uuid::try_parse(&s) {
         Ok(uuid) => Uid::Uuid(uuid),
-        Err(_) => Uid::String(s.into_owned().into_boxed_str()),
+        Err(_) => Uid::String(s),
     })
     .parse_next(input)
 }
@@ -93,8 +152,9 @@ pub fn uid(input: &mut &str) -> ModalResult<Uid> {
 /// assert!(language.parse_peek("de-CH").is_ok());
 /// assert!(language.parse_peek("!!!garbage").is_err());
 /// ```
-pub fn language(input: &mut &str) -> ModalResult<Language> {
-    text.try_map(|s| oxilangtag::LanguageTag::parse(s.into_owned()))
+pub fn language<'i>(input: &mut &'i str) -> ModalResult<Language<&'i str>> {
+    iana_token
+        .try_map(oxilangtag::LanguageTag::parse)
         .map(Language)
         .parse_next(input)
 }
@@ -114,7 +174,7 @@ pub fn language(input: &mut &str) -> ModalResult<Language> {
 /// assert!(uri.parse_peek("foo://example.com:8042/over/there?name=ferret#nose").is_ok());
 /// assert!(uri.parse_peek("urn:example:animal:ferret:nose").is_ok());
 /// ```
-pub fn uri(input: &mut &str) -> ModalResult<Uri> {
+pub fn uri<'i>(input: &mut &'i str) -> ModalResult<&'i UriStr> {
     /// Parses the longest sequence of characters which can occur in a URI. See
     /// RFC 3986 sections 2.1, 2.2, and 2.3 for details.
     fn uri_character(input: &mut &str) -> ModalResult<char> {
@@ -134,8 +194,7 @@ pub fn uri(input: &mut &str) -> ModalResult<Uri> {
 
     repeat::<_, _, (), _, _>(1.., uri_character)
         .take()
-        .try_map(iri_string::types::UriString::from_str)
-        .map(Uri)
+        .try_map(UriStr::new)
         .parse_next(input)
 }
 
@@ -187,14 +246,283 @@ pub fn binary(input: &mut &str) -> ModalResult<Binary> {
 ///     CalendarUserType::Other("iana-token".into()),
 /// );
 /// ```
-pub fn calendar_user_type(input: &mut &str) -> ModalResult<CalendarUserType> {
+pub fn calendar_user_type<'i>(
+    input: &mut &'i str,
+) -> ModalResult<CalendarUserType<&'i str>> {
     alt((
         Caseless("INDIVIDUAL").value(CalendarUserType::Individual),
         Caseless("GROUP").value(CalendarUserType::Group),
         Caseless("RESOURCE").value(CalendarUserType::Resource),
         Caseless("ROOM").value(CalendarUserType::Room),
         Caseless("UNKNOWN").value(CalendarUserType::Unknown),
-        iana_token.map(|s| CalendarUserType::Other(s.into())),
+        iana_token.map(CalendarUserType::Other),
+    ))
+    .parse_next(input)
+}
+
+/// Parses an [`Encoding`].
+///
+/// # Examples
+///
+/// ```
+/// use calico::parser::primitive::inline_encoding;
+/// use winnow::Parser;
+///
+/// assert_eq!(
+///     inline_encoding.parse_peek("8bit"),
+///     inline_encoding.parse_peek("8BIT"),
+/// );
+///
+/// assert_eq!(
+///     inline_encoding.parse_peek("Base64"),
+///     inline_encoding.parse_peek("BASE64"),
+/// );
+///
+/// assert!(inline_encoding.parse_peek("anything_else").is_err());
+/// ```
+pub fn inline_encoding(input: &mut &str) -> ModalResult<Encoding> {
+    alt((
+        Caseless("8BIT").value(Encoding::Bit8),
+        Caseless("BASE64").value(Encoding::Base64),
+    ))
+    .parse_next(input)
+}
+
+/// Parses a [`FormatType`] (effectively a MIME type).
+///
+/// # Examples
+///
+/// ```
+/// use calico::parser::primitive::format_type;
+/// use winnow::Parser;
+///
+/// assert!(format_type.parse_peek("application/msword").is_ok());
+/// assert!(format_type.parse_peek("image/bmp").is_ok());
+/// assert!(format_type.parse_peek("garbage").is_err());
+/// ```
+pub fn format_type(input: &mut &str) -> ModalResult<FormatType> {
+    /// The `reg-name` grammar rule as in RFC 4288 §4.2
+    fn reg_name<'i>(input: &mut &'i str) -> ModalResult<&'i str> {
+        repeat::<_, _, (), _, _>(
+            1..,
+            one_of((
+                'a'..='z',
+                'A'..='Z',
+                '!',
+                '#',
+                '$',
+                '&',
+                '.',
+                '+',
+                '-',
+                '^',
+                '_',
+            )),
+        )
+        .take()
+        .parse_next(input)
+    }
+
+    (reg_name, '/', reg_name)
+        .take()
+        .try_map(mime::Mime::from_str)
+        .map(FormatType)
+        .parse_next(input)
+}
+
+/// Parses a [`FreeBusyType`].
+///
+/// # Examples
+///
+/// ```
+/// use calico::parser::primitive::free_busy_type;
+/// use calico::model::primitive::FreeBusyType;
+/// use winnow::Parser;
+///
+/// assert_eq!(free_busy_type.parse_peek("busy"), Ok(("", FreeBusyType::Busy)));
+/// assert_eq!(free_busy_type.parse_peek("Free"), Ok(("", FreeBusyType::Free)));
+/// ```
+pub fn free_busy_type<'i>(
+    input: &mut &'i str,
+) -> ModalResult<FreeBusyType<&'i str>> {
+    alt((
+        Caseless("BUSY-UNAVAILABLE").value(FreeBusyType::BusyUnavailable),
+        Caseless("BUSY-TENTATIVE").value(FreeBusyType::BusyTentative),
+        Caseless("BUSY").value(FreeBusyType::Busy),
+        Caseless("FREE").value(FreeBusyType::Free),
+        iana_token.map(FreeBusyType::Other),
+    ))
+    .parse_next(input)
+}
+
+/// Parses a [`ParticipationStatus`].
+///
+/// # Examples
+///
+/// ```
+/// use calico::parser::primitive::participation_status;
+/// use winnow::Parser;
+///
+/// assert!(participation_status.parse_peek("NEEDS-ACTION").is_ok());
+/// assert!(participation_status.parse_peek("in-process").is_ok());
+/// assert!(participation_status.parse_peek("some-iana-token").is_ok());
+/// assert!(participation_status.parse_peek(",garbage").is_err());
+/// ```
+pub fn participation_status<'i>(
+    input: &mut &'i str,
+) -> ModalResult<ParticipationStatus<&'i str>> {
+    alt((
+        Caseless("NEEDS-ACTION").value(ParticipationStatus::NeedsAction),
+        Caseless("IN-PROCESS").value(ParticipationStatus::InProcess),
+        Caseless("COMPLETED").value(ParticipationStatus::Completed),
+        Caseless("DELEGATED").value(ParticipationStatus::Delegated),
+        Caseless("TENTATIVE").value(ParticipationStatus::Tentative),
+        Caseless("ACCEPTED").value(ParticipationStatus::Accepted),
+        Caseless("DECLINED").value(ParticipationStatus::Declined),
+        iana_token.map(ParticipationStatus::Other),
+    ))
+    .parse_next(input)
+}
+
+/// Parses a [`TriggerRelation`].
+///
+/// # Examples
+///
+/// ```
+/// use calico::parser::primitive::alarm_trigger_relationship;
+/// use calico::model::primitive::TriggerRelation;
+/// use winnow::Parser;
+///
+/// assert_eq!(
+///     alarm_trigger_relationship.parse_peek("START"),
+///     Ok(("", TriggerRelation::Start)),
+/// );
+///
+/// assert_eq!(
+///     alarm_trigger_relationship.parse_peek("END"),
+///     Ok(("", TriggerRelation::End)),
+/// );
+///
+/// assert!(alarm_trigger_relationship.parse_peek("anything_else").is_err());
+/// ```
+pub fn alarm_trigger_relationship(
+    input: &mut &str,
+) -> ModalResult<TriggerRelation> {
+    alt((
+        Caseless("START").value(TriggerRelation::Start),
+        Caseless("END").value(TriggerRelation::End),
+    ))
+    .parse_next(input)
+}
+
+/// Parses a [`RelationshipType`].
+///
+/// # Examples
+///
+/// ```
+/// use calico::parser::primitive::relationship_type;
+/// use calico::model::primitive::RelationshipType;
+/// use winnow::Parser;
+///
+/// assert_eq!(
+///     relationship_type.parse_peek("SIBLING"),
+///     Ok(("", RelationshipType::Sibling)),
+/// );
+///
+/// assert_eq!(
+///     relationship_type.parse_peek("parent"),
+///     Ok(("", RelationshipType::Parent)),
+/// );
+///
+/// assert_eq!(
+///     relationship_type.parse_peek("Child"),
+///     Ok(("", RelationshipType::Child)),
+/// );
+///
+/// assert_eq!(
+///     relationship_type.parse_peek("X-SOMETHING-ELSE"),
+///     Ok(("", RelationshipType::Other("X-SOMETHING-ELSE"))),
+/// );
+/// ```
+pub fn relationship_type<'i>(
+    input: &mut &'i str,
+) -> ModalResult<RelationshipType<&'i str>> {
+    alt((
+        Caseless("SIBLING").value(RelationshipType::Sibling),
+        Caseless("PARENT").value(RelationshipType::Parent),
+        Caseless("CHILD").value(RelationshipType::Child),
+        iana_token.map(RelationshipType::Other),
+    ))
+    .parse_next(input)
+}
+
+/// Parses a [`ParticipationRole`].
+///
+/// # Examples
+///
+/// ```
+/// use calico::parser::primitive::participation_role;
+/// use calico::model::primitive::ParticipationRole;
+/// use winnow::Parser;
+///
+/// assert_eq!(
+///     participation_role.parse_peek("req-participant"),
+///     Ok(("", ParticipationRole::ReqParticipant)),
+/// );
+///
+/// assert_eq!(
+///     participation_role.parse_peek("Chair"),
+///     Ok(("", ParticipationRole::Chair)),
+/// );
+///
+/// assert_eq!(
+///     participation_role.parse_peek("X-ANYTHING"),
+///     Ok(("", ParticipationRole::Other("X-ANYTHING"))),
+/// );
+/// ```
+pub fn participation_role<'i>(
+    input: &mut &'i str,
+) -> ModalResult<ParticipationRole<&'i str>> {
+    alt((
+        Caseless("REQ-PARTICIPANT").value(ParticipationRole::ReqParticipant),
+        Caseless("OPT-PARTICIPANT").value(ParticipationRole::OptParticipant),
+        Caseless("NON-PARTICIPANT").value(ParticipationRole::NonParticipant),
+        Caseless("CHAIR").value(ParticipationRole::Chair),
+        iana_token.map(ParticipationRole::Other),
+    ))
+    .parse_next(input)
+}
+
+/// Parses a [`ValueType`].
+///
+/// # Examples
+///
+/// ```
+/// use calico::parser::primitive::value_type;
+/// use calico::model::primitive::ValueType;
+/// use winnow::Parser;
+///
+/// assert_eq!(value_type.parse_peek("float"), Ok(("", ValueType::Float)));
+/// assert_eq!(value_type.parse_peek("TIME"), Ok(("", ValueType::Time)));
+/// assert_eq!(value_type.parse_peek("Recur"), Ok(("", ValueType::Recur)));
+/// ```
+pub fn value_type<'i>(input: &mut &'i str) -> ModalResult<ValueType<&'i str>> {
+    alt((
+        Caseless("CAL-ADDRESS").value(ValueType::CalAddress),
+        Caseless("UTC-OFFSET").value(ValueType::UtcOffset),
+        Caseless("DATE-TIME").value(ValueType::DateTime),
+        Caseless("DURATION").value(ValueType::Duration),
+        Caseless("BOOLEAN").value(ValueType::Boolean),
+        Caseless("INTEGER").value(ValueType::Integer),
+        Caseless("BINARY").value(ValueType::Binary),
+        Caseless("PERIOD").value(ValueType::Period),
+        Caseless("FLOAT").value(ValueType::Float),
+        Caseless("RECUR").value(ValueType::Recur),
+        Caseless("DATE").value(ValueType::Date),
+        Caseless("TEXT").value(ValueType::Text),
+        Caseless("TIME").value(ValueType::Time),
+        Caseless("URI").value(ValueType::Uri),
+        iana_token.map(ValueType::Other),
     ))
     .parse_next(input)
 }
@@ -479,6 +807,26 @@ pub fn time_format(input: &mut &str) -> ModalResult<TimeFormat> {
 /// ```
 pub fn utc_marker(input: &mut &str) -> ModalResult<()> {
     'Z'.void().parse_next(input)
+}
+
+/// Parses the boolean value of `TRUE` or `FALSE`, ignoring case.
+///
+/// # Examples
+///
+/// ```
+/// use calico::parser::primitive::bool_caseless;
+/// use winnow::Parser;
+///
+/// assert_eq!(bool_caseless.parse_peek("TRUE"), Ok(("", true)));
+/// assert_eq!(bool_caseless.parse_peek("FALSE"), Ok(("", false)));
+/// assert_eq!(bool_caseless.parse_peek("True"), Ok(("", true)));
+/// assert_eq!(bool_caseless.parse_peek("False"), Ok(("", false)));
+/// assert_eq!(bool_caseless.parse_peek("true"), Ok(("", true)));
+/// assert_eq!(bool_caseless.parse_peek("false"), Ok(("", false)));
+/// ```
+pub fn bool_caseless(input: &mut &str) -> ModalResult<bool> {
+    alt((Caseless("TRUE").value(true), Caseless("FALSE").value(false)))
+        .parse_next(input)
 }
 
 /// A version of [`dec_uint`] that accepts leading zeros.

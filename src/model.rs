@@ -22,7 +22,7 @@ use primitive::{
     FreeBusyType, Geo, ImageData, JournalStatus, Language, Method,
     ParticipationRole, ParticipationStatus, Period, RDateValue,
     RelationshipType, Status, Time, TodoStatus, Transparency, TriggerRelation,
-    Uid, Uri, UtcOffset,
+    Uid, UriString, UtcOffset,
 };
 use property::{ConfProp, ImageProp, Prop, TextProp};
 use rrule::RecurrenceRule;
@@ -58,13 +58,13 @@ pub struct Calendar {
     /// RFC 7986 §5.4
     pub last_modified: Option<Prop<DateTime>>,
     /// RFC 7986 §5.5
-    pub url: Option<Prop<Uri>>,
+    pub url: Option<Prop<UriString>>,
     /// RFC 7986 §5.6
     pub categories: Vec<TextProp>,
     /// RFC 7986 §5.7
     pub refresh_interval: Option<Prop<Duration>>,
     /// RFC 7986 §5.8
-    pub source: Option<Prop<Uri>>,
+    pub source: Option<Prop<UriString>>,
     /// RFC 7986 §5.9
     pub color: Option<Prop<Css3Color>>,
     /// RFC 7986 §5.10
@@ -106,7 +106,7 @@ pub struct DescriptiveProperties {
     pub description: Option<Text>,
     pub categories: Vec<String>,
     pub class: Option<Classification>,
-    pub url: Option<Uri>,
+    pub url: Option<UriString>,
     pub attachments: Vec<Attachment>,
     pub contact: Option<Text>,
     pub comments: Vec<Text>,
@@ -220,7 +220,7 @@ pub struct FreeBusy {
     pub dtend: Option<DateTime<Utc>>,
     pub organizer: Option<CalendarUser>,
     pub attendee: Option<CalendarUser>,
-    pub url: Option<Uri>,
+    pub url: Option<UriString>,
     pub freebusy_periods: Vec<FreeBusyPeriod>,
     pub contact: Option<Text>,
     pub comments: Vec<Text>,
@@ -231,7 +231,7 @@ pub struct FreeBusy {
 pub struct TimeZone {
     pub tzid: String,
     pub last_modified: Option<DateTime<Utc>>,
-    pub tzurl: Option<Uri>,
+    pub tzurl: Option<UriString>,
     pub standard_time: Vec<TimeZoneRule>,
     pub daylight_time: Vec<TimeZoneRule>,
     pub x_properties: HashMap<String, XProperty>,
@@ -298,7 +298,7 @@ pub enum Property {
     TzName(Text),
     TzOffsetFrom(UtcOffset),
     TzOffsetTo(UtcOffset),
-    TzUrl(Uri),
+    TzUrl(UriString),
 
     // Relationship properties
     Attendee(Attendee),
@@ -306,7 +306,7 @@ pub enum Property {
     Organizer(CalendarUser),
     RecurrenceId(RecurrenceId),
     RelatedTo(RelatedTo),
-    Url(Uri),
+    Url(UriString),
     Uid(Uid),
 
     // Recurrence properties
@@ -328,7 +328,7 @@ pub enum Property {
     // RFC 7986 new properties
     Name(Text),
     RefreshInterval(Duration),
-    Source(Uri),
+    Source(UriString),
     Color(String),
     Image(Image),
     Conference(Conference),
@@ -343,13 +343,13 @@ pub struct Image {
     pub data: ImageData,
     pub fmttype: Option<String>,
     pub display: Vec<DisplayType>,
-    pub alternate_representation: Option<Uri>,
+    pub alternate_representation: Option<UriString>,
 }
 
 /// RFC 7986 CONFERENCE property.
 #[derive(Debug, Clone)]
 pub struct Conference {
-    pub uri: Uri,
+    pub uri: UriString,
     pub feature: Vec<FeatureType>,
     pub label: Option<String>,
     pub language: Option<Language>,
@@ -360,7 +360,7 @@ pub struct Conference {
 pub struct Text {
     pub contents: String,
     pub language: Option<Language>,
-    pub alternate_representation: Option<Uri>,
+    pub alternate_representation: Option<UriString>,
 }
 
 /// X-Property (non-standard property).
@@ -404,7 +404,7 @@ pub enum ParameterValue {
 pub struct CalendarUser {
     pub email: String,
     pub common_name: Option<String>,
-    pub dir: Option<Uri>,
+    pub dir: Option<UriString>,
     pub sent_by: Option<String>,
     pub language: Option<String>,
     pub email_param: Option<String>, // RFC 7986 extension
@@ -427,7 +427,7 @@ pub struct Attendee {
 #[derive(Debug, Clone)]
 pub enum Attachment {
     Uri {
-        uri: Uri,
+        uri: UriString,
         fmttype: Option<String>,
     },
     Binary {

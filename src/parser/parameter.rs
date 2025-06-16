@@ -1,36 +1,227 @@
 //! Property parameters.
 
+use iri_string::types::UriStr;
 use winnow::{
     ModalResult, Parser,
     ascii::Caseless,
-    combinator::{alt, delimited, repeat, separated_pair},
-    token::none_of,
+    combinator::{
+        alt, delimited, eof, opt, preceded, repeat, separated, separated_pair,
+        terminated,
+    },
+    error::{ContextError, ErrMode},
+    token::{none_of, rest},
 };
 
-use super::primitive::iana_token;
+use crate::{
+    model::primitive::{
+        CalendarUserType, DisplayType, Encoding, FeatureType, FormatType,
+        FreeBusyType, Language, ParticipationRole, ParticipationStatus,
+        RelationshipType, TriggerRelation, ValueType,
+    },
+    parser::primitive::{
+        alarm_trigger_relationship, bool_caseless, feature_type, format_type,
+        free_busy_type, inline_encoding, language, participation_role,
+        participation_status, relationship_type, uri, value_type,
+    },
+};
 
-/// A property parameter with an unstructured textual value.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RawParam<'a> {
-    pub name: ParamName<'a>,
-    pub value: ParamValue<'a>,
+use super::primitive::{calendar_user_type, display_type, iana_token};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Param<'a> {
+    AltRep(&'a UriStr),
+    CommonName(ParamValue<'a>),
+    CUType(CalendarUserType<&'a str>),
+    DelFrom(Box<[&'a UriStr]>),
+    DelTo(Box<[&'a UriStr]>),
+    Dir(&'a UriStr),
+    Encoding(Encoding),
+    FormatType(FormatType),
+    FBType(FreeBusyType<&'a str>),
+    Language(Language<&'a str>),
+    Member(Box<[&'a UriStr]>),
+    PartStatus(ParticipationStatus<&'a str>),
+    RecurrenceIdentifierRange,
+    AlarmTrigger(TriggerRelation),
+    RelType(RelationshipType<&'a str>),
+    Role(ParticipationRole<&'a str>),
+    Rsvp(bool),
+    SentBy(&'a UriStr),
+    TzId(&'a str),
+    Value(ValueType<&'a str>),
+    Display(DisplayType<&'a str>),
+    Email(ParamValue<'a>),
+    Feature(FeatureType<&'a str>),
+    Label(ParamValue<'a>),
+    Other {
+        name: &'a str,
+        value: ParamValue<'a>,
+    },
 }
 
-/// Parses a [`RawParam`].
+/// Parses a [`Param`].
 ///
 /// # Examples
 ///
 /// ```
-/// use calico::parser::parameter::parameter;
+/// use calico::parser::parameter::{parameter, Param};
 /// use winnow::Parser;
 ///
-/// assert!(parameter.parse_peek("CUTYPE=GROUP").is_ok());
-/// assert!(parameter.parse_peek("TZID=America/New_York").is_ok());
+/// assert!(parameter.parse_peek("EMAIL=user@example.com").is_ok());
+/// assert!(parameter.parse_peek("ALTREP=\"CID:foo.bar@baz.com\"").is_ok());
+/// assert!(parameter.parse_peek("ALTREP=CID:foo.bar@baz.com").is_err());
 /// ```
-pub fn parameter<'i>(input: &mut &'i str) -> ModalResult<RawParam<'i>> {
-    separated_pair(param_name, '=', param_value)
-        .map(|(name, value)| RawParam { name, value })
-        .parse_next(input)
+pub fn parameter<'i>(input: &mut &'i str) -> ModalResult<Param<'i>> {
+    /// Parses a single URI delimited by double quotes.
+    fn quoted_uri<'i>(value: ParamValue<'i>) -> ModalResult<&'i UriStr> {
+        let mut value =
+            value.as_quoted().ok_or(ErrMode::Cut(ContextError::new()))?;
+        terminated(uri, eof).parse_next(&mut value)
+    }
+
+    /// Parses a sequence of at least one URI delimited by double quotes and
+    /// separated by commas.
+    fn quoted_uris<'i>(
+        value: ParamValue<'i>,
+    ) -> ModalResult<Box<[&'i UriStr]>> {
+        let mut value =
+            value.as_quoted().ok_or(ErrMode::Cut(ContextError::new()))?;
+
+        let addresses: Vec<_> =
+            terminated(separated(1.., uri, ","), eof).parse_next(&mut value)?;
+
+        Ok(addresses.into_boxed_slice())
+    }
+
+    let (name, value) =
+        separated_pair(param_name, '=', param_value).parse_next(input)?;
+
+    match name {
+        ParamName::Other(name) => Ok(Param::Other { name, value }),
+        ParamName::Rfc5545(name) => match name {
+            Rfc5545ParamName::AlternateTextRepresentation => {
+                let value = quoted_uri(value)?;
+                Ok(Param::AltRep(value))
+            }
+            Rfc5545ParamName::CommonName => Ok(Param::CommonName(value)),
+            Rfc5545ParamName::CalendarUserType => {
+                let mut value = value.as_str();
+                let value = terminated(calendar_user_type, eof)
+                    .parse_next(&mut value)?;
+                Ok(Param::CUType(value))
+            }
+            Rfc5545ParamName::Delegators => {
+                let addresses = quoted_uris(value)?;
+                Ok(Param::DelFrom(addresses))
+            }
+            Rfc5545ParamName::Delegatees => {
+                let addresses = quoted_uris(value)?;
+                Ok(Param::DelTo(addresses))
+            }
+            Rfc5545ParamName::DirectoryEntryReference => {
+                let value = quoted_uri(value)?;
+                Ok(Param::Dir(value))
+            }
+            Rfc5545ParamName::InlineEncoding => {
+                let mut value = value.as_str();
+                let value =
+                    terminated(inline_encoding, eof).parse_next(&mut value)?;
+                Ok(Param::Encoding(value))
+            }
+            Rfc5545ParamName::FormatType => {
+                let mut value = value.as_str();
+                let value =
+                    terminated(format_type, eof).parse_next(&mut value)?;
+                Ok(Param::FormatType(value))
+            }
+            Rfc5545ParamName::FreeBusyTimeType => {
+                let mut value = value.as_str();
+                let value =
+                    terminated(free_busy_type, eof).parse_next(&mut value)?;
+                Ok(Param::FBType(value))
+            }
+            Rfc5545ParamName::Language => {
+                let mut value = value.as_str();
+                let value = terminated(language, eof).parse_next(&mut value)?;
+                Ok(Param::Language(value))
+            }
+            Rfc5545ParamName::GroupOrListMembership => {
+                let addresses = quoted_uris(value)?;
+                Ok(Param::Member(addresses))
+            }
+            Rfc5545ParamName::ParticipationStatus => {
+                let mut value = value.as_str();
+                let value = terminated(participation_status, eof)
+                    .parse_next(&mut value)?;
+                Ok(Param::PartStatus(value))
+            }
+            Rfc5545ParamName::RecurrenceIdentifierRange => {
+                let mut value = value.as_str();
+                let () = terminated(Caseless("THISANDFUTURE"), eof)
+                    .void()
+                    .parse_next(&mut value)?;
+                Ok(Param::RecurrenceIdentifierRange)
+            }
+            Rfc5545ParamName::AlarmTriggerRelationship => {
+                let mut value = value.as_str();
+                let value = terminated(alarm_trigger_relationship, eof)
+                    .parse_next(&mut value)?;
+                Ok(Param::AlarmTrigger(value))
+            }
+            Rfc5545ParamName::RelationshipType => {
+                let mut value = value.as_str();
+                let value = terminated(relationship_type, eof)
+                    .parse_next(&mut value)?;
+                Ok(Param::RelType(value))
+            }
+            Rfc5545ParamName::ParticipationRole => {
+                let mut value = value.as_str();
+                let value = terminated(participation_role, eof)
+                    .parse_next(&mut value)?;
+                Ok(Param::Role(value))
+            }
+            Rfc5545ParamName::RsvpExpectation => {
+                let mut value = value.as_str();
+                let value =
+                    terminated(bool_caseless, eof).parse_next(&mut value)?;
+                Ok(Param::Rsvp(value))
+            }
+            Rfc5545ParamName::SentBy => {
+                let value = quoted_uri(value)?;
+                Ok(Param::SentBy(value))
+            }
+            Rfc5545ParamName::TimeZoneIdentifier => {
+                let mut value =
+                    value.as_safe().ok_or(ErrMode::Cut(ContextError::new()))?;
+                let value =
+                    preceded(opt('/'), rest).take().parse_next(&mut value)?;
+                Ok(Param::TzId(value))
+            }
+            Rfc5545ParamName::ValueDataType => {
+                let mut value =
+                    value.as_safe().ok_or(ErrMode::Cut(ContextError::new()))?;
+                let value =
+                    terminated(value_type, eof).parse_next(&mut value)?;
+                Ok(Param::Value(value))
+            }
+        },
+        ParamName::Rfc7986(name) => match name {
+            Rfc7986ParamName::Display => {
+                let mut value = value.as_str();
+                let value =
+                    terminated(display_type, eof).parse_next(&mut value)?;
+                Ok(Param::Display(value))
+            }
+            Rfc7986ParamName::Feature => {
+                let mut value = value.as_str();
+                let value =
+                    terminated(feature_type, eof).parse_next(&mut value)?;
+                Ok(Param::Feature(value))
+            }
+            Rfc7986ParamName::Email => Ok(Param::Email(value)),
+            Rfc7986ParamName::Label => Ok(Param::Label(value)),
+        },
+    }
 }
 
 /// A static property parameter name from RFC 5545 or RFC 7986.
@@ -310,6 +501,29 @@ impl<'a> ParamValue<'a> {
     pub fn is_quoted(&self) -> bool {
         matches!(self, Self::Quoted(..))
     }
+
+    pub fn as_str(&self) -> &'a str {
+        match self {
+            ParamValue::Safe(s) => s,
+            ParamValue::Quoted(s) => s,
+        }
+    }
+
+    pub fn as_safe(&self) -> Option<&'a str> {
+        if let Self::Safe(v) = self {
+            Some(v)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_quoted(&self) -> Option<&'a str> {
+        if let Self::Quoted(v) = self {
+            Some(v)
+        } else {
+            None
+        }
+    }
 }
 
 /// Parses a [`ParamValue`], stripping quotes if they occur.
@@ -348,4 +562,85 @@ pub fn param_value<'i>(input: &mut &'i str) -> ModalResult<ParamValue<'i>> {
         param_text.map(ParamValue::Safe),
     ))
     .parse_next(input)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn simple_parameter_parsing() {
+        assert_eq!(
+            parameter.parse_peek("VALUE=CAL-ADDRESS"),
+            Ok(("", Param::Value(ValueType::CalAddress))),
+        );
+
+        assert_eq!(
+            parameter.parse_peek("tzid=America/New_York"),
+            Ok(("", Param::TzId("America/New_York"))),
+        );
+
+        assert_eq!(
+            parameter.parse_peek("Rsvp=FALSE"),
+            Ok(("", Param::Rsvp(false))),
+        );
+
+        assert_eq!(
+            parameter.parse_peek("RANGE=thisandfuture"),
+            Ok(("", Param::RecurrenceIdentifierRange)),
+        );
+    }
+
+    #[test]
+    fn rfc7986_parameter_parsing() {
+        assert_eq!(
+            parameter.parse_peek("DISPLAY=THUMBNAIL"),
+            Ok(("", Param::Display(DisplayType::Thumbnail))),
+        );
+
+        assert_eq!(
+            parameter.parse_peek("display=Badge"),
+            Ok(("", Param::Display(DisplayType::Badge))),
+        );
+
+        assert_eq!(
+            parameter.parse_peek("DISPLAY=X-SOMETHING-ELSE"),
+            Ok(("", Param::Display(DisplayType::Other("X-SOMETHING-ELSE")))),
+        );
+
+        assert_eq!(
+            parameter.parse_peek("Email=literally anything"),
+            Ok(("", Param::Email(ParamValue::Safe("literally anything")))),
+        );
+
+        assert_eq!(
+            parameter.parse_peek("EMAIL=\"a quoted string\""),
+            Ok(("", Param::Email(ParamValue::Quoted("a quoted string")))),
+        );
+
+        assert_eq!(
+            parameter.parse_peek("FEATURE=moderator"),
+            Ok(("", Param::Feature(FeatureType::Moderator))),
+        );
+
+        assert_eq!(
+            parameter.parse_peek("feature=Screen"),
+            Ok(("", Param::Feature(FeatureType::Screen))),
+        );
+
+        assert_eq!(
+            parameter.parse_peek("feature=random-iana-token"),
+            Ok(("", Param::Feature(FeatureType::Other("random-iana-token")))),
+        );
+
+        assert_eq!(
+            parameter.parse_peek("LABEL=some text"),
+            Ok(("", Param::Label(ParamValue::Safe("some text")))),
+        );
+
+        assert_eq!(
+            parameter.parse_peek("label=\"some quoted text\""),
+            Ok(("", Param::Label(ParamValue::Quoted("some quoted text")))),
+        );
+    }
 }
