@@ -1,28 +1,25 @@
 //! Parsers for properties.
 
-use std::collections::HashMap;
-
 use winnow::{
     ModalResult, Parser,
     ascii::Caseless,
-    combinator::{alt, fail, repeat},
+    combinator::{alt, fail, preceded, repeat},
     stream::Stream,
     token::none_of,
 };
 
-use crate::parser::primitive::iana_token;
-
-use super::parameter::{ParamValue, StaticParamName};
+use crate::parser::{
+    parameter::{Param, parameter},
+    primitive::iana_token,
+};
 
 /// A textual property.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Property<'a> {
     /// The name of the property.
     pub name: PropName<'a>,
-    /// The statically-known parameters of the property.
-    pub static_params: HashMap<StaticParamName, ParamValue<'a>>,
-    /// The unknown parameters of the property.
-    pub unknown_params: HashMap<&'a str, Vec<ParamValue<'a>>>,
+    /// The parameters of the property.
+    pub params: Box<[Param<'a>]>,
     /// The raw textual value of the property, which cannot include control
     /// characters (U+0000 through U+001F and U+007F).
     pub value: &'a str,
@@ -47,7 +44,18 @@ pub fn property<'i>(input: &mut &'i str) -> ModalResult<Property<'i>> {
             .parse_next(input)
     }
 
-    todo!()
+    (
+        property_name,
+        repeat::<_, _, Vec<_>, _, _>(0.., preceded(';', parameter)),
+        ':',
+        value,
+    )
+        .map(|(name, params, _, value)| Property {
+            name,
+            params: params.into_boxed_slice(),
+            value,
+        })
+        .parse_next(input)
 }
 
 /// A property name, which may be statically known from RFC 5545 or RFC 7986, or
@@ -465,11 +473,15 @@ pub enum Rfc7986PropName {
 
 #[cfg(test)]
 mod tests {
+    use crate::{
+        model::primitive::{CalendarUserType, ParticipationRole},
+        parser::parameter::ParamValue,
+    };
+
     use super::*;
-    use crate::parser::parameter::Rfc5545ParamName;
     use winnow::Parser;
 
-    //#[test]
+    #[test]
     fn basic_property_parsing() {
         // snippet from RFC 5545 (page 145)
         let input = "ATTENDEE;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=GROUP:mailto:employee-A@example.com";
@@ -477,36 +489,47 @@ mod tests {
         let (tail, prop) = property.parse_peek(input).unwrap();
         assert!(tail.is_empty());
         assert_eq!(prop.name, PropName::Rfc5545(Rfc5545PropName::Attendee));
-        assert_eq!(prop.static_params.len(), 3);
-        assert!(prop.unknown_params.is_empty());
+        assert_eq!(prop.params.len(), 3);
         assert_eq!(prop.value, "mailto:employee-A@example.com");
 
-        for param in &[
-            StaticParamName::Rfc5545(Rfc5545ParamName::RsvpExpectation),
-            StaticParamName::Rfc5545(Rfc5545ParamName::ParticipationRole),
-            StaticParamName::Rfc5545(Rfc5545ParamName::CalendarUserType),
-        ] {
-            assert!(prop.static_params.contains_key(param));
+        let expected_params = vec![
+            Param::Rsvp(true),
+            Param::Role(ParticipationRole::ReqParticipant),
+            Param::CUType(CalendarUserType::Group),
+        ];
+
+        for (got, expected) in prop.params.iter().zip(expected_params) {
+            assert_eq!(*got, expected);
         }
     }
 
-    //#[test]
+    #[test]
     fn unknown_property_parameter_accumulation() {
         let input = "X-NAME;X-A=foo;X-A=bar;X-A=baz:foo";
         let (tail, prop) = property.parse_peek(input).unwrap();
         assert!(tail.is_empty());
         assert_eq!(prop.name, PropName::Other("X-NAME"));
-        assert!(prop.static_params.is_empty());
-        assert_eq!(prop.unknown_params.len(), 1);
-        assert_eq!(
-            prop.unknown_params.get("X-A"),
-            Some(&vec![
-                ParamValue::Safe("foo"),
-                ParamValue::Safe("bar"),
-                ParamValue::Safe("baz"),
-            ])
-        );
+        assert_eq!(prop.params.len(), 3);
         assert_eq!(prop.value, "foo");
+
+        let expected_params = vec![
+            Param::Other {
+                name: "X-A",
+                value: ParamValue::Safe("foo"),
+            },
+            Param::Other {
+                name: "X-A",
+                value: ParamValue::Safe("bar"),
+            },
+            Param::Other {
+                name: "X-A",
+                value: ParamValue::Safe("baz"),
+            },
+        ];
+
+        for (got, expected) in prop.params.iter().zip(expected_params) {
+            assert_eq!(*got, expected);
+        }
     }
 
     // PROPERTY NAME TESTS
