@@ -105,6 +105,90 @@ mod tests {
 
     use super::*;
 
+    const EXAMPLE1: &str =
+        include_str!("../../examples/rfc5545-section-4-example-1.ics");
+
+    const EXAMPLE2: &str =
+        include_str!("../../examples/rfc5545-section-4-example-2.ics");
+
+    #[test]
+    fn rfc5545_section_4_example_1() {
+        let reader = Cursor::new(EXAMPLE1);
+        let lines: Result<Vec<_>, _> = Lines { reader }.collect();
+        let lines = lines.unwrap();
+
+        let expected_lines = vec![
+            "BEGIN:VCALENDAR",
+            "PRODID:-//xyz Corp//NONSGML PDA Calendar Version 1.0//EN",
+            "VERSION:2.0",
+            "BEGIN:VEVENT",
+            "DTSTAMP:19960704T120000Z",
+            "UID:uid1@example.com",
+            "ORGANIZER:mailto:jsmith@example.com",
+            "DTSTART:19960918T143000Z",
+            "DTEND:19960920T220000Z",
+            "STATUS:CONFIRMED",
+            "CATEGORIES:CONFERENCE",
+            "SUMMARY:Networld+Interop Conference",
+            "DESCRIPTION:Networld+Interop Conference and Exhibit\\nAtlanta World Congress Center\\nAtlanta\\, Georgia",
+            "END:VEVENT",
+            "END:VCALENDAR",
+        ];
+
+        assert_eq!(lines.len(), expected_lines.len());
+        for (got, expected) in lines.iter().zip(expected_lines) {
+            assert_eq!(got, expected);
+        }
+    }
+
+    #[test]
+    fn rfc5545_section_4_example_2() {
+        let reader = Cursor::new(EXAMPLE2);
+        let lines: Result<Vec<_>, _> = Lines { reader }.collect();
+        let lines = lines.unwrap();
+
+        let expected_lines = vec![
+            "BEGIN:VCALENDAR",
+            "PRODID:-//RDU Software//NONSGML HandCal//EN",
+            "VERSION:2.0",
+            "BEGIN:VTIMEZONE",
+            "TZID:America/New_York",
+            "BEGIN:STANDARD",
+            "DTSTART:19981025T020000",
+            "TZOFFSETFROM:-0400",
+            "TZOFFSETTO:-0500",
+            "TZNAME:EST",
+            "END:STANDARD",
+            "BEGIN:DAYLIGHT",
+            "DTSTART:19990404T020000",
+            "TZOFFSETFROM:-0500",
+            "TZOFFSETTO:-0400",
+            "TZNAME:EDT",
+            "END:DAYLIGHT",
+            "END:VTIMEZONE",
+            "BEGIN:VEVENT",
+            "DTSTAMP:19980309T231000Z",
+            "UID:guid-1.example.com",
+            "ORGANIZER:mailto:mrbig@example.com",
+            "ATTENDEE;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=GROUP:mailto:employee-A@example.com",
+            "DESCRIPTION:Project XYZ Review Meeting",
+            "CATEGORIES:MEETING",
+            "CLASS:PUBLIC",
+            "CREATED:19980309T130000Z",
+            "SUMMARY:XYZ Project Review",
+            "DTSTART;TZID=America/New_York:19980312T083000",
+            "DTEND;TZID=America/New_York:19980312T093000",
+            "LOCATION:1CP Conference Room 4350",
+            "END:VEVENT",
+            "END:VCALENDAR",
+        ];
+
+        assert_eq!(lines.len(), expected_lines.len());
+        for (got, expected) in lines.iter().zip(expected_lines) {
+            assert_eq!(got, expected);
+        }
+    }
+
     #[test]
     fn basic_line_splitting() {
         let input = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR\r\n";
