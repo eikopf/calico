@@ -560,6 +560,99 @@ mod tests {
     }
 
     #[test]
+    fn inline_encoding() {
+        for input in ["ENCODING=8BIT", "ENCODING=8Bit", "ENCODING=8bit"] {
+            assert_eq!(
+                parameter.parse_peek(input),
+                Ok(("", Param::Encoding(Encoding::Bit8)))
+            );
+        }
+
+        for input in ["ENCODING=BASE64", "ENCODING=Base64", "ENCODING=base64"] {
+            assert_eq!(
+                parameter.parse_peek(input),
+                Ok(("", Param::Encoding(Encoding::Base64)))
+            );
+        }
+
+        for input in
+            ["ENCODING=base", "ENCODING=bit", "ENCODING=64", "ENCODING=8"]
+        {
+            assert!(parameter.parse_peek(input).is_err());
+        }
+    }
+
+    #[test]
+    fn format_type() {
+        for input in [
+            "FMTTYPE=audio/aac",
+            "FMTTYPE=image/bmp",
+            "FMTTYPE=text/css",
+            "FMTTYPE=application/x-bzip",
+        ] {
+            assert!(matches!(
+                parameter.parse_peek(input),
+                Ok(("", Param::FormatType(_)))
+            ));
+        }
+
+        for input in
+            ["FMTTYPE=", "FMTTYPE=missing slash", "FMTTYPE=back\\slash"]
+        {
+            assert!(parameter.parse_peek(input).is_err());
+        }
+    }
+
+    #[test]
+    fn recurrence_identifier_range() {
+        for input in [
+            "RANGE=THISANDFUTURE",
+            "RANGE=ThisAndFuture",
+            "RANGE=thisandfuture",
+        ] {
+            assert_eq!(
+                parameter.parse_peek(input),
+                Ok(("", Param::RecurrenceIdentifierRange))
+            );
+        }
+
+        for input in ["RANGE=", "RANGE=garbage", "RANGE=this-and-future"] {
+            assert!(parameter.parse_peek(input).is_err());
+        }
+    }
+
+    #[test]
+    fn alarm_trigger_relationship() {
+        for input in ["RELATED=START", "RELATED=Start", "RELATED=start"] {
+            assert_eq!(
+                parameter.parse_peek(input),
+                Ok(("", Param::AlarmTrigger(TriggerRelation::Start))),
+            );
+        }
+
+        for input in ["RELATED=END", "RELATED=End", "RELATED=end"] {
+            assert_eq!(
+                parameter.parse_peek(input),
+                Ok(("", Param::AlarmTrigger(TriggerRelation::End))),
+            );
+        }
+
+        for input in ["RELATED=", "RELATED=,garbage", "RELATED=anything-else"] {
+            assert!(parameter.parse_peek(input).is_err());
+        }
+    }
+
+    #[test]
+    fn parameter_edge_cases() {
+        assert!(parameter.parse_peek("VALUE=").is_err()); // missing value
+        assert!(parameter.parse_peek("=RECUR").is_err()); // missing name
+        assert!(parameter.parse_peek("=").is_err()); // missing name & value
+
+        // trailing semicolon should not be stripped
+        assert_eq!(parameter.parse_peek("LANGUAGE=en-GB;").unwrap().0, ";");
+    }
+
+    #[test]
     fn rfc7986_parameter_parsing() {
         assert_eq!(
             parameter.parse_peek("DISPLAY=THUMBNAIL"),
@@ -609,6 +702,30 @@ mod tests {
         assert_eq!(
             parameter.parse_peek("label=\"some quoted text\""),
             Ok(("", Param::Label(ParamValue::Quoted("some quoted text")))),
+        );
+    }
+
+    #[test]
+    fn multiple_uris() {
+        let param = concat!(
+            "DELEGATED-FROM=",
+            "\"mailto:alice@place.com\",",
+            "\"mailto:brice@place.com\",",
+            "\"mailto:carla@place.com\"",
+        );
+
+        assert_eq!(
+            parameter.parse_peek(param).map(|(_, p)| p),
+            Ok(Param::DelFrom(
+                [
+                    "mailto:alice@place.com",
+                    "mailto:brice@place.com",
+                    "mailto:carla@place.com",
+                ]
+                .into_iter()
+                .map(|s| UriStr::new(s).unwrap())
+                .collect()
+            )),
         );
     }
 }
