@@ -203,6 +203,12 @@ pub enum ParticipationStatus<S = Box<str>> {
     Other(S),
 }
 
+impl<S> Default for ParticipationStatus<S> {
+    fn default() -> Self {
+        Self::NeedsAction
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FreeBusyType<S = Box<str>> {
     Free,
