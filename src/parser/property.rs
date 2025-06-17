@@ -515,15 +515,15 @@ mod tests {
         let expected_params = vec![
             Param::Other {
                 name: "X-A",
-                value: ParamValue::Safe("foo"),
+                value: vec![ParamValue::Safe("foo")].into(),
             },
             Param::Other {
                 name: "X-A",
-                value: ParamValue::Safe("bar"),
+                value: vec![ParamValue::Safe("bar")].into(),
             },
             Param::Other {
                 name: "X-A",
-                value: ParamValue::Safe("baz"),
+                value: vec![ParamValue::Safe("baz")].into(),
             },
         ];
 

@@ -1,15 +1,26 @@
 //! Property parameters.
+//!
+//! # Grammar
+//!
+//! The ABNF grammar in RFC 5545 §3.1 defines a parameter as follows:
+//!
+//! ```custom,{class=language-abnf}
+//! param       = param-name "=" param-value *("," param-value)
+//! param-name  = iana-token / x-name
+//! param-value = paramtext / quoted-string
+//! paramtext   = *SAFE-CHAR
+//! ```
+//!
+//! This is a rough general rule, and each `param-name` is associated with a
+//! more specific grammar for the corresponding value on the right-hand side of
+//! the `=` character.
 
 use iri_string::types::UriStr;
 use winnow::{
     ModalResult, Parser,
     ascii::Caseless,
-    combinator::{
-        alt, delimited, eof, opt, preceded, repeat, separated, separated_pair,
-        terminated,
-    },
-    error::{ContextError, ErrMode},
-    token::{none_of, rest},
+    combinator::{alt, delimited, opt, repeat, separated, terminated},
+    token::none_of,
 };
 
 use crate::{
@@ -55,7 +66,7 @@ pub enum Param<'a> {
     Label(ParamValue<'a>),
     Other {
         name: &'a str,
-        value: ParamValue<'a>,
+        value: Box<[ParamValue<'a>]>,
     },
 }
 
@@ -73,153 +84,110 @@ pub enum Param<'a> {
 /// ```
 pub fn parameter<'i>(input: &mut &'i str) -> ModalResult<Param<'i>> {
     /// Parses a single URI delimited by double quotes.
-    fn quoted_uri<'i>(value: ParamValue<'i>) -> ModalResult<&'i UriStr> {
-        let mut value =
-            value.as_quoted().ok_or(ErrMode::Cut(ContextError::new()))?;
-        terminated(uri, eof).parse_next(&mut value)
+    fn quoted_uri<'i>(input: &mut &'i str) -> ModalResult<&'i UriStr> {
+        delimited('"', uri, '"').parse_next(input)
     }
 
     /// Parses a sequence of at least one URI delimited by double quotes and
     /// separated by commas.
-    fn quoted_uris<'i>(
-        value: ParamValue<'i>,
-    ) -> ModalResult<Box<[&'i UriStr]>> {
-        let mut value =
-            value.as_quoted().ok_or(ErrMode::Cut(ContextError::new()))?;
-
-        let addresses: Vec<_> =
-            terminated(separated(1.., uri, ","), eof).parse_next(&mut value)?;
-
-        Ok(addresses.into_boxed_slice())
+    fn quoted_uris<'i>(input: &mut &'i str) -> ModalResult<Box<[&'i UriStr]>> {
+        let uris: Vec<_> = separated(1.., quoted_uri, ",").parse_next(input)?;
+        Ok(uris.into_boxed_slice())
     }
 
-    let (name, value) =
-        separated_pair(param_name, '=', param_value).parse_next(input)?;
+    let name = terminated(param_name, '=').parse_next(input)?;
 
     match name {
-        ParamName::Other(name) => Ok(Param::Other { name, value }),
+        ParamName::Other(name) => {
+            let value: Vec<_> =
+                separated(1.., param_value, ",").parse_next(input)?;
+            Ok(Param::Other {
+                name,
+                value: value.into_boxed_slice(),
+            })
+        }
         ParamName::Rfc5545(name) => match name {
             Rfc5545ParamName::AlternateTextRepresentation => {
-                let value = quoted_uri(value)?;
-                Ok(Param::AltRep(value))
+                quoted_uri.map(Param::AltRep).parse_next(input)
             }
-            Rfc5545ParamName::CommonName => Ok(Param::CommonName(value)),
+            Rfc5545ParamName::CommonName => {
+                param_value.map(Param::CommonName).parse_next(input)
+            }
             Rfc5545ParamName::CalendarUserType => {
-                let mut value = value.as_str();
-                let value = terminated(calendar_user_type, eof)
-                    .parse_next(&mut value)?;
-                Ok(Param::CUType(value))
+                calendar_user_type.map(Param::CUType).parse_next(input)
             }
             Rfc5545ParamName::Delegators => {
-                let addresses = quoted_uris(value)?;
-                Ok(Param::DelFrom(addresses))
+                quoted_uris.map(Param::DelFrom).parse_next(input)
             }
             Rfc5545ParamName::Delegatees => {
-                let addresses = quoted_uris(value)?;
-                Ok(Param::DelTo(addresses))
+                quoted_uris.map(Param::DelTo).parse_next(input)
             }
             Rfc5545ParamName::DirectoryEntryReference => {
-                let value = quoted_uri(value)?;
-                Ok(Param::Dir(value))
+                quoted_uri.map(Param::Dir).parse_next(input)
             }
             Rfc5545ParamName::InlineEncoding => {
-                let mut value = value.as_str();
-                let value =
-                    terminated(inline_encoding, eof).parse_next(&mut value)?;
-                Ok(Param::Encoding(value))
+                inline_encoding.map(Param::Encoding).parse_next(input)
             }
             Rfc5545ParamName::FormatType => {
-                let mut value = value.as_str();
-                let value =
-                    terminated(format_type, eof).parse_next(&mut value)?;
-                Ok(Param::FormatType(value))
+                format_type.map(Param::FormatType).parse_next(input)
             }
             Rfc5545ParamName::FreeBusyTimeType => {
-                let mut value = value.as_str();
-                let value =
-                    terminated(free_busy_type, eof).parse_next(&mut value)?;
-                Ok(Param::FBType(value))
+                free_busy_type.map(Param::FBType).parse_next(input)
             }
             Rfc5545ParamName::Language => {
-                let mut value = value.as_str();
-                let value = terminated(language, eof).parse_next(&mut value)?;
-                Ok(Param::Language(value))
+                language.map(Param::Language).parse_next(input)
             }
             Rfc5545ParamName::GroupOrListMembership => {
-                let addresses = quoted_uris(value)?;
-                Ok(Param::Member(addresses))
+                quoted_uris.map(Param::Member).parse_next(input)
             }
-            Rfc5545ParamName::ParticipationStatus => {
-                let mut value = value.as_str();
-                let value = terminated(participation_status, eof)
-                    .parse_next(&mut value)?;
-                Ok(Param::PartStatus(value))
-            }
+            Rfc5545ParamName::ParticipationStatus => participation_status
+                .map(Param::PartStatus)
+                .parse_next(input),
             Rfc5545ParamName::RecurrenceIdentifierRange => {
-                let mut value = value.as_str();
-                let () = terminated(Caseless("THISANDFUTURE"), eof)
-                    .void()
-                    .parse_next(&mut value)?;
-                Ok(Param::RecurrenceIdentifierRange)
+                Caseless("THISANDFUTURE")
+                    .value(Param::RecurrenceIdentifierRange)
+                    .parse_next(input)
             }
             Rfc5545ParamName::AlarmTriggerRelationship => {
-                let mut value = value.as_str();
-                let value = terminated(alarm_trigger_relationship, eof)
-                    .parse_next(&mut value)?;
-                Ok(Param::AlarmTrigger(value))
+                alarm_trigger_relationship
+                    .map(Param::AlarmTrigger)
+                    .parse_next(input)
             }
             Rfc5545ParamName::RelationshipType => {
-                let mut value = value.as_str();
-                let value = terminated(relationship_type, eof)
-                    .parse_next(&mut value)?;
-                Ok(Param::RelType(value))
+                relationship_type.map(Param::RelType).parse_next(input)
             }
             Rfc5545ParamName::ParticipationRole => {
-                let mut value = value.as_str();
-                let value = terminated(participation_role, eof)
-                    .parse_next(&mut value)?;
-                Ok(Param::Role(value))
+                participation_role.map(Param::Role).parse_next(input)
             }
             Rfc5545ParamName::RsvpExpectation => {
-                let mut value = value.as_str();
-                let value =
-                    terminated(bool_caseless, eof).parse_next(&mut value)?;
-                Ok(Param::Rsvp(value))
+                bool_caseless.map(Param::Rsvp).parse_next(input)
             }
             Rfc5545ParamName::SentBy => {
-                let value = quoted_uri(value)?;
-                Ok(Param::SentBy(value))
+                quoted_uri.map(Param::SentBy).parse_next(input)
             }
             Rfc5545ParamName::TimeZoneIdentifier => {
-                let mut value =
-                    value.as_safe().ok_or(ErrMode::Cut(ContextError::new()))?;
-                let value =
-                    preceded(opt('/'), rest).take().parse_next(&mut value)?;
-                Ok(Param::TzId(value))
+                (opt('/'), param_value.verify(ParamValue::is_safe))
+                    .take()
+                    .map(Param::TzId)
+                    .parse_next(input)
             }
             Rfc5545ParamName::ValueDataType => {
-                let mut value =
-                    value.as_safe().ok_or(ErrMode::Cut(ContextError::new()))?;
-                let value =
-                    terminated(value_type, eof).parse_next(&mut value)?;
-                Ok(Param::Value(value))
+                value_type.map(Param::Value).parse_next(input)
             }
         },
         ParamName::Rfc7986(name) => match name {
             Rfc7986ParamName::Display => {
-                let mut value = value.as_str();
-                let value =
-                    terminated(display_type, eof).parse_next(&mut value)?;
-                Ok(Param::Display(value))
+                display_type.map(Param::Display).parse_next(input)
+            }
+            Rfc7986ParamName::Email => {
+                param_value.map(Param::Email).parse_next(input)
             }
             Rfc7986ParamName::Feature => {
-                let mut value = value.as_str();
-                let value =
-                    terminated(feature_type, eof).parse_next(&mut value)?;
-                Ok(Param::Feature(value))
+                feature_type.map(Param::Feature).parse_next(input)
             }
-            Rfc7986ParamName::Email => Ok(Param::Email(value)),
-            Rfc7986ParamName::Label => Ok(Param::Label(value)),
+            Rfc7986ParamName::Label => {
+                param_value.map(Param::Label).parse_next(input)
+            }
         },
     }
 }
