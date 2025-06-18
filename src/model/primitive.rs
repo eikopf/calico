@@ -6,9 +6,19 @@ use mime::Mime;
 use oxilangtag::LanguageTag;
 use uuid::Uuid;
 
-/// An HTTP method.
+/// A method as defined in RFC 5546 §1.4
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Method(pub(crate) http::Method);
+pub enum Method<S = Box<str>> {
+    Publish,
+    Request,
+    Reply,
+    Add,
+    Cancel,
+    Refresh,
+    Counter,
+    DeclineCounter,
+    Iana(S),
+}
 
 /// A unique identifier (RFC 5545 §3.8.4.7).
 ///

@@ -109,16 +109,23 @@ pub fn v2_0(input: &mut &str) -> ModalResult<()> {
 /// use calico::parser::primitive::method;
 /// use winnow::Parser;
 ///
-/// assert!(method.parse_peek("GET").is_ok());
-/// assert!(method.parse_peek("UPDATE").is_ok());
-/// assert!(method.parse_peek("DELETE").is_ok());
+/// assert!(method.parse_peek("REFRESH").is_ok());
+/// assert!(method.parse_peek("CANCEL").is_ok());
+/// assert!(method.parse_peek("ADD").is_ok());
 /// assert!(method.parse_peek("any-iana-token").is_ok());
 /// ```
-pub fn method(input: &mut &str) -> ModalResult<Method> {
-    iana_token
-        .try_map(http::Method::from_str)
-        .map(Method)
-        .parse_next(input)
+pub fn method<'i>(input: &mut &'i str) -> ModalResult<Method<&'i str>> {
+    alt((
+        Caseless("DECLINECOUNTER").value(Method::DeclineCounter),
+        Caseless("COUNTER").value(Method::Counter),
+        Caseless("PUBLISH").value(Method::Publish),
+        Caseless("REFRESH").value(Method::Refresh),
+        Caseless("CANCEL").value(Method::Cancel),
+        Caseless("REPLY").value(Method::Reply),
+        Caseless("ADD").value(Method::Add),
+        iana_token.map(Method::Iana),
+    ))
+    .parse_next(input)
 }
 
 /// Parses a UID, with special handling if it is a well-formed UUID.
