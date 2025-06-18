@@ -17,7 +17,7 @@
 use chrono::Utc;
 use css::Css3Color;
 use primitive::{
-    AlarmAction, Binary, CalendarUserType, Classification, Date, DateTime,
+    AlarmAction, Binary, CalendarUserType, ClassValue, Date, DateTime,
     DateTimeOrDate, DisplayType, Duration, EventStatus, FeatureType,
     FreeBusyType, Geo, ImageData, JournalStatus, Language, Method,
     ParticipationRole, ParticipationStatus, Period, RDateValue,
@@ -105,7 +105,7 @@ pub struct DescriptiveProperties {
     pub summary: Option<Text>,
     pub description: Option<Text>,
     pub categories: Vec<String>,
-    pub class: Option<Classification>,
+    pub class: Option<ClassValue>,
     pub url: Option<UriString>,
     pub attachments: Vec<Attachment>,
     pub contact: Option<Text>,
@@ -273,7 +273,7 @@ pub enum Property {
     // Descriptive properties
     Attach(Attachment),
     Categories(Vec<String>),
-    Class(Classification),
+    Class(ClassValue),
     Comment(Text),
     Description(Text),
     Geo(Geo),
