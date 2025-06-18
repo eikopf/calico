@@ -32,7 +32,7 @@ impl<S> Uid<S> {
 }
 
 /// An RFC 5646 language tag.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Language<S = Box<str>>(pub(crate) LanguageTag<S>);
 
 /// The data of a BINARY property.
@@ -41,8 +41,16 @@ pub struct Binary {
     pub(crate) bytes: Vec<u8>,
 }
 
+/// The subset of [`ValueType`] accepted by several datetime properties.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum DateTimeOrDateType {
+    #[default]
+    DateTime,
+    Date,
+}
+
 /// Date-time or date value.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DateTimeOrDate<F = TimeFormat> {
     DateTime(DateTime<F>),
     Date(Date),
@@ -79,13 +87,6 @@ pub enum TimeFormat {
     #[default]
     Local,
     Utc,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum Classification {
-    Public,
-    Private,
-    Confidential,
 }
 
 /// The possible values of the ENCODING parameter.
@@ -131,21 +132,21 @@ pub enum FeatureType<S = Box<str>> {
     Other(S),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Status {
     Event(EventStatus),
     Todo(TodoStatus),
     Journal(JournalStatus),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EventStatus {
     Tentative,
     Confirmed,
     Cancelled,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TodoStatus {
     NeedsAction,
     Completed,
@@ -153,15 +154,16 @@ pub enum TodoStatus {
     Cancelled,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JournalStatus {
     Draft,
     Final,
     Cancelled,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Transparency {
+    #[default]
     Opaque,
     Transparent,
 }
@@ -219,10 +221,11 @@ pub enum FreeBusyType<S = Box<str>> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AlarmAction {
+pub enum AlarmAction<S = Box<str>> {
     Audio,
     Display,
     Email,
+    Other(S),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -258,28 +261,62 @@ pub enum ValueType<S = Box<str>> {
     Other(S),
 }
 
+/// The possible values of the `ATTACH` property.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AttachValue<U = UriString> {
+    Uri(U),
+    Binary(Binary),
+}
+
+/// The value type of the `CLASS` property.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClassValue<S = Box<str>> {
+    Public,
+    Private,
+    Confidential,
+    Other(S),
+}
+
+impl<S> Default for ClassValue<S> {
+    fn default() -> Self {
+        Self::Public
+    }
+}
+
+/// The only possible value of the `RANGE` parameter.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ThisAndFuture;
+
 /// Period of time.
-#[derive(Debug, Clone)]
-pub enum Period {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Period<F = TimeFormat> {
     Explicit {
-        start: DateTimeOrDate,
-        end: DateTimeOrDate,
+        start: DateTimeOrDate<F>,
+        end: DateTimeOrDate<F>,
     },
     Start {
-        start: DateTimeOrDate,
+        start: DateTimeOrDate<F>,
         duration: Duration,
     },
 }
 
-/// RDATE values can be DATE-TIME, DATE, or PERIOD.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum RDateValue {
-    DateTime(DateTimeOrDate),
+    #[default]
+    DateTime,
+    Date,
+    Period,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RDate<F = TimeFormat> {
+    DateTime(DateTime<F>),
+    Date(Date),
     Period(Period),
 }
 
 /// Duration type.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Duration {
     pub weeks: Option<u32>,
     pub days: Option<u32>,
@@ -288,6 +325,9 @@ pub struct Duration {
     pub seconds: Option<u32>,
     pub negative: bool,
 }
+
+// TODO: it's unclear whether Geo is correct here, since the FLOAT type in RFC
+// 5545 is not explicitly defined with reference to IEEE 754.
 
 /// Geographic coordinates.
 #[derive(Debug, Clone)]

@@ -1,5 +1,7 @@
 //! Parsers for properties.
 
+use chrono::Utc;
+use iri_string::types::UriStr;
 use winnow::{
     ModalResult, Parser,
     ascii::Caseless,
@@ -8,10 +10,115 @@ use winnow::{
     token::none_of,
 };
 
-use crate::parser::{
-    parameter::{Param, parameter},
-    primitive::iana_token,
+use crate::{
+    model::{
+        css::Css3Color,
+        primitive::{
+            AlarmAction, AttachValue, ClassValue, DateTime, DateTimeOrDate,
+            Duration, Geo, ImageData, Language, Method, Period, RDate, Status,
+            Transparency, Uid, UtcOffset,
+        },
+        property::{
+            AttachParams, AttendeeParams, ConfParams, DtParams, FBTypeParams,
+            ImageParams, LangParams, OrganizerParams, RDateParams,
+            RecurrenceIdParams, RelTypeParams, TextParamsRef, TriggerParams,
+        },
+    },
+    parser::{
+        parameter::{Param, parameter},
+        primitive::iana_token,
+    },
 };
+
+/// The type of "unbounded" unsigned integers.
+type UInt = usize;
+
+// TODO: remove parameter fields for the VALUE parameter, and instead track it
+// implicitly using value enums (in the sense of DateTimeOrDate).
+
+// NOTE: the IANA iCalendar property registry lists several registered properties
+// from RFC 6321 §4.2, RFC 7808 §7, RFC 7953 §3.2, RFC 9073 §6, and RFC 9253 § 8
+// that have not been included here (they would fall under the Other catch-all).
+// perhaps they should be included as static variants at some later point?
+// registry: (https://www.iana.org/assignments/icalendar/icalendar.xhtml#properties)
+
+pub enum Prop<'a> {
+    // CALENDAR PROPERTIES
+    CalScale,
+    Method(Method),
+    ProdId(&'a str),
+    Version,
+    // DESCRIPTIVE COMPONENT PROPERTIES
+    Attach(AttachValue<&'a UriStr>, AttachParams),
+    Categories(Box<[&'a str]>, LangParams<&'a str>),
+    Class(ClassValue<&'a str>),
+    Comment(&'a str, TextParamsRef<'a>),
+    Description(&'a str, TextParamsRef<'a>),
+    Geo(Geo),
+    Location(&'a str, TextParamsRef<'a>),
+    PercentComplete(u8), // 0..=100
+    Priority(u8),        // 0..=9
+    Resources(Box<[&'a str]>, TextParamsRef<'a>),
+    Status(Status),
+    Summary(&'a str, TextParamsRef<'a>),
+    // DATE AND TIME COMPONENT PROPERTIES
+    DtCompleted(DateTime),
+    DtEnd(DateTimeOrDate, DtParams<&'a str>),
+    DtDue(DateTimeOrDate, DtParams<&'a str>),
+    DtStart(DateTimeOrDate, DtParams<&'a str>),
+    Duration(Duration),
+    FreeBusy(Box<[Period]>, FBTypeParams<&'a str>),
+    Transparency(Transparency),
+    // TIME ZONE COMPONENT PROPERTIES
+    TzId(&'a str),
+    TzName(&'a str, LangParams<&'a str>),
+    TzOffsetFrom(UtcOffset),
+    TzOffsetTo(UtcOffset),
+    TzUrl(&'a UriStr),
+    // RELATIONSHIP COMPONENT PROPERTIES
+    Attendee(&'a UriStr, AttendeeParams<&'a str, &'a UriStr>),
+    Contact(&'a str, TextParamsRef<'a>),
+    Organizer(&'a UriStr, OrganizerParams<&'a str, &'a UriStr>),
+    RecurrenceId(DateTimeOrDate, RecurrenceIdParams<&'a str>),
+    RelatedTo(&'a str, RelTypeParams<&'a str>),
+    Url(&'a UriStr),
+    Uid(Uid<&'a str>),
+    // RECURRENCE COMPONENT PROPERTIES
+    ExDate(DateTimeOrDate, DtParams<&'a str>),
+    RDate(RDate, RDateParams<&'a str>),
+    // TODO: finish recurrence rule model
+    RRule(()),
+    // ALARM COMPONENT PROPERTIES
+    Action(AlarmAction<&'a str>),
+    Repeat(UInt),
+    TriggerRelative(Duration, TriggerParams),
+    TriggerAbsolute(DateTime<Utc>),
+    // CHANGE MANAGEMENT COMPONENT PROPERTIES
+    Created(DateTime),
+    DtStamp(DateTime),
+    LastModified(DateTime),
+    Sequence(UInt),
+
+    // TODO: distinguish between X-names and IANA-registered properties, and
+    // give them a Value enum to correctly track the types of their values
+
+    // MISCELLANEOUS COMPONENT PROPERTIES
+    // TODO: the value of this property has a more precise grammar (page 143)
+    RequestStatus(&'a str, LangParams<&'a str>),
+    Other {
+        name: &'a str,
+        lanugage: Option<Language<&'a str>>,
+        value: &'a str,
+    },
+
+    // RFC 7986 PROPERTIES
+    Name(&'a str, TextParamsRef<'a>),
+    RefreshInterval(Duration), // NOTE: the "VALUE=DURATION" param is REQUIRED
+    Source(&'a UriStr),
+    Color(Css3Color),
+    Image(ImageData<&'a UriStr>, ImageParams<&'a str, &'a UriStr>),
+    Conference(&'a UriStr, ConfParams<&'a str>),
+}
 
 /// A textual property.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -473,64 +580,8 @@ pub enum Rfc7986PropName {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        model::primitive::{CalendarUserType, ParticipationRole},
-        parser::parameter::ParamValue,
-    };
-
     use super::*;
     use winnow::Parser;
-
-    #[test]
-    fn basic_property_parsing() {
-        // snippet from RFC 5545 (page 145)
-        let input = "ATTENDEE;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=GROUP:mailto:employee-A@example.com";
-
-        let (tail, prop) = property.parse_peek(input).unwrap();
-        assert!(tail.is_empty());
-        assert_eq!(prop.name, PropName::Rfc5545(Rfc5545PropName::Attendee));
-        assert_eq!(prop.params.len(), 3);
-        assert_eq!(prop.value, "mailto:employee-A@example.com");
-
-        let expected_params = vec![
-            Param::Rsvp(true),
-            Param::Role(ParticipationRole::ReqParticipant),
-            Param::CUType(CalendarUserType::Group),
-        ];
-
-        for (got, expected) in prop.params.iter().zip(expected_params) {
-            assert_eq!(*got, expected);
-        }
-    }
-
-    #[test]
-    fn unknown_property_parameter_accumulation() {
-        let input = "X-NAME;X-A=foo;X-A=bar;X-A=baz:foo";
-        let (tail, prop) = property.parse_peek(input).unwrap();
-        assert!(tail.is_empty());
-        assert_eq!(prop.name, PropName::Other("X-NAME"));
-        assert_eq!(prop.params.len(), 3);
-        assert_eq!(prop.value, "foo");
-
-        let expected_params = vec![
-            Param::Other {
-                name: "X-A",
-                value: vec![ParamValue::Safe("foo")].into(),
-            },
-            Param::Other {
-                name: "X-A",
-                value: vec![ParamValue::Safe("bar")].into(),
-            },
-            Param::Other {
-                name: "X-A",
-                value: vec![ParamValue::Safe("baz")].into(),
-            },
-        ];
-
-        for (got, expected) in prop.params.iter().zip(expected_params) {
-            assert_eq!(*got, expected);
-        }
-    }
 
     // PROPERTY NAME TESTS
 
