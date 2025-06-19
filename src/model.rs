@@ -14,7 +14,6 @@
 //! essentially always GREGORIAN, and the VERSION (iCalendar version requirement) property is
 //! essentially always 2.0.
 
-use chrono::Utc;
 use css::Css3Color;
 use primitive::{
     AlarmAction, Binary, CalendarUserType, ClassValue, Date, DateTime,
@@ -22,7 +21,7 @@ use primitive::{
     FreeBusyType, Geo, ImageData, JournalStatus, Language, Method,
     ParticipationRole, ParticipationStatus, Period, RDateValue,
     RelationshipType, Status, Time, TodoStatus, Transparency, TriggerRelation,
-    Uid, UriString, UtcOffset,
+    Uid, UriString, Utc, UtcOffset,
 };
 use property::{ConfProp, ImageProp, Prop, TextProp};
 use rrule::RecurrenceRule;

@@ -2,7 +2,7 @@
 
 use std::{borrow::Cow, str::FromStr};
 
-use chrono::{NaiveDate, Utc};
+use chrono::NaiveDate;
 use winnow::{
     ModalResult, Parser,
     ascii::{Caseless, digit1},
@@ -15,7 +15,7 @@ use crate::model::primitive::{
     Binary, CalendarUserType, Date, DateTime, DisplayType, Encoding,
     FeatureType, FormatType, FreeBusyType, Language, Method, ParticipationRole,
     ParticipationStatus, RawTime, RelationshipType, Time, TimeFormat,
-    TriggerRelation, Uid, UriStr, ValueType,
+    TriggerRelation, Uid, UriStr, Utc, ValueType,
 };
 
 /// Parses a [`FeatureType`].

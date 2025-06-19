@@ -91,12 +91,31 @@ pub struct RawTime {
     pub seconds: u8,
 }
 
+/// A marker struct for absolute UTC time.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Utc;
+/// A marker struct for local time.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Local;
+
 /// The format of a [`Time`], which may be local or absolute.
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum TimeFormat {
     #[default]
     Local,
     Utc,
+}
+
+/// One of the seven weekdays.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Weekday {
+    Monday,
+    Tuesday,
+    Wednesday,
+    Thursday,
+    Friday,
+    Saturday,
+    Sunday,
 }
 
 /// The possible values of the ENCODING parameter.

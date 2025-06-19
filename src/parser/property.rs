@@ -1,6 +1,5 @@
 //! Parsers for properties.
 
-use chrono::Utc;
 use iri_string::types::UriStr;
 use winnow::{
     ModalResult, Parser,
@@ -16,7 +15,7 @@ use crate::{
         primitive::{
             AlarmAction, AttachValue, ClassValue, DateTime, DateTimeOrDate,
             Duration, Geo, ImageData, Language, Method, Period, RDate, Status,
-            Transparency, Uid, UtcOffset,
+            Transparency, Uid, Utc, UtcOffset,
         },
         property::{
             AttachParams, AttendeeParams, ConfParams, DtParams, FBTypeParams,

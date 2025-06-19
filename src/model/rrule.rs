@@ -2,7 +2,7 @@
 
 use std::num::NonZero;
 
-use chrono::{DateTime, Utc, Weekday};
+use super::primitive::{DateTime, Utc, Weekday};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecurrenceRule {
