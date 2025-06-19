@@ -1,10 +1,12 @@
 //! Parsers for properties.
 
+use std::convert::Infallible;
+
 use iri_string::types::{UriStr, UriString};
 use winnow::{
     ModalResult, Parser,
     ascii::Caseless,
-    combinator::{alt, fail, repeat},
+    combinator::{alt, fail, preceded, repeat, terminated},
     stream::Stream,
     token::none_of,
 };
@@ -15,7 +17,7 @@ use crate::{
         primitive::{
             AlarmAction, AttachValue, ClassValue, DateTime, DateTimeOrDate,
             Duration, Geo, ImageData, Language, Method, Period, RDate, Status,
-            Transparency, Uid, Utc, UtcOffset, Value,
+            Transparency, Uid, Utc, UtcOffset, Value, ValueType,
         },
         property::{
             AttachParams, AttendeeParams, ConfParams, DtParams, FBTypeParams,
@@ -23,7 +25,15 @@ use crate::{
             RecurrenceIdParams, RelTypeParams, TextParams, TriggerParams,
         },
     },
-    parser::{parameter::Param, primitive::iana_token},
+    parser::{
+        parameter::{Param, parameter},
+        primitive::{iana_token, x_name},
+    },
+};
+
+use super::{
+    parameter::XParam,
+    primitive::{binary, bool_caseless, date, datetime, time, uri},
 };
 
 /// The type of "unbounded" unsigned integers.
@@ -97,7 +107,6 @@ pub enum Prop<S = Box<str>, U = UriString> {
     Iana {
         name: S,
         value: Value<S, U>,
-        params: Box<[Param<S, U>]>,
     },
     X {
         name: S,
@@ -113,19 +122,144 @@ pub enum Prop<S = Box<str>, U = UriString> {
     Conference(U, ConfParams<S>),
 }
 
-/// Parses a [`Prop`].
-///
-pub fn property<'i>(
+pub type ParsedProp<'a> = (
+    Prop<&'a str, &'a UriStr>,
+    Box<[Param<&'a str, &'a UriStr, Infallible>]>,
+    Box<[XParam<&'a str>]>,
+);
+
+fn parse_value<'i, S: AsRef<str> + ?Sized>(
+    value_type: ValueType<&'i S>,
     input: &mut &'i str,
-) -> ModalResult<Prop<&'i str, &'i UriStr>> {
-    /// Parses the value string of a property line.
-    fn value<'i>(input: &mut &'i str) -> ModalResult<&'i str> {
+) -> ModalResult<Value<&'i str, &'i UriStr>> {
+    /// Parses the raw text value of a property.
+    fn text<'i>(input: &mut &'i str) -> ModalResult<&'i str> {
         repeat::<_, _, (), _, _>(0.., none_of((..' ', '\u{007F}')))
             .take()
             .parse_next(input)
     }
 
-    todo!()
+    match value_type {
+        ValueType::Binary => binary.map(Value::Binary).parse_next(input),
+        ValueType::Boolean => {
+            bool_caseless.map(Value::Boolean).parse_next(input)
+        }
+        ValueType::CalAddress => uri.map(Value::CalAddress).parse_next(input),
+        ValueType::Date => date.map(Value::Date).parse_next(input),
+        ValueType::DateTime => datetime.map(Value::DateTime).parse_next(input),
+        ValueType::Duration => todo!(),
+        ValueType::Float => todo!(),
+        ValueType::Integer => todo!(),
+        ValueType::Period => todo!(),
+        ValueType::Recur => todo!(),
+        ValueType::Text => text.map(Value::Text).parse_next(input),
+        ValueType::Time => time.map(Value::Time).parse_next(input),
+        ValueType::Uri => uri.map(Value::Uri).parse_next(input),
+        ValueType::UtcOffset => todo!(),
+        ValueType::Iana(name) => text
+            .map(|value| Value::Iana {
+                name: name.as_ref(),
+                value,
+            })
+            .parse_next(input),
+        ValueType::X(name) => text
+            .map(|value| Value::X {
+                name: name.as_ref(),
+                value,
+            })
+            .parse_next(input),
+    }
+}
+
+/// Finds and removes a value from a vector by matching it against a pattern.
+///
+/// See rust-lang/rust#118682 for variable attribute bug.
+macro_rules! find_and_remove {
+    (let $name:ident = $p:pat => $binding:tt in $v:expr) => {
+        let $name = {
+            let index = ($v).iter().position(|x| matches!(x, $p));
+
+            match index {
+                Some(index) => {
+                    let item = ($v).swap_remove(index);
+                    #[allow(unused_variables)]
+                    match item {
+                        $p => Some($binding),
+                        _ => unreachable!(),
+                    }
+                }
+                None => None,
+            }
+        };
+    };
+}
+
+/// Parses a [`Prop`].
+///
+pub fn property<'i>(input: &mut &'i str) -> ModalResult<ParsedProp<'i>> {
+    let name = property_name.parse_next(input)?;
+    let params: Vec<_> = terminated(repeat(0.., preceded(';', parameter)), ':')
+        .parse_next(input)?;
+
+    let (mut iana_params, x_params) = {
+        let mut iana_params = Vec::with_capacity(params.len());
+        let mut x_params = Vec::new();
+
+        for param in params {
+            match param.as_non_x() {
+                Ok(param) => iana_params.push(param),
+                Err(x_param) => x_params.push(x_param),
+            }
+        }
+
+        iana_params.shrink_to_fit();
+        (iana_params, x_params.into_boxed_slice())
+    };
+
+    let prop = match name {
+        PropName::Rfc5545(name) => todo!(),
+        PropName::Rfc7986(name) => todo!(),
+        PropName::Iana(name) => {
+            find_and_remove! {
+                let value_type = Param::Value(_x) => _x in iana_params
+            };
+
+            let value =
+                parse_value(value_type.unwrap_or(ValueType::Text), input)?;
+
+            // TODO: check that the VALUE parameter does not occur more than
+            // once in iana_params
+
+            Prop::Iana { name, value }
+        }
+        PropName::X(name) => {
+            // NOTE: i'm assuming here that the LANGUAGE parameter is not allowed
+            // to occur more than once, since that is the case for every other
+            // property which admits that parameter
+
+            find_and_remove! {
+                let language = Param::Language(_x) => _x in iana_params
+            };
+
+            find_and_remove! {
+                let value_type = Param::Value(_x) => _x in iana_params
+            };
+
+            let value =
+                parse_value(value_type.unwrap_or(ValueType::Text), input)?;
+
+            // TODO: check that the LANGUAGE and VALUE parameters do not occur
+            // more than once in iana_params
+
+            Prop::X {
+                name,
+                value,
+                language,
+            }
+        }
+    };
+
+    Ok((prop, iana_params.into_boxed_slice(), x_params))
 }
 
 /// A property name, which may be statically known from RFC 5545 or RFC 7986, or
@@ -134,7 +268,8 @@ pub fn property<'i>(
 pub enum PropName<'a> {
     Rfc5545(Rfc5545PropName),
     Rfc7986(Rfc7986PropName),
-    Other(&'a str),
+    Iana(&'a str),
+    X(&'a str),
 }
 
 /// Parses a [`PropName`].
@@ -165,7 +300,8 @@ pub fn property_name<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
     // logos does token parser generation?
 
     fn other<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
-        iana_token.map(PropName::Other).parse_next(input)
+        alt((x_name.map(PropName::X), iana_token.map(PropName::Iana)))
+            .parse_next(input)
     }
 
     fn a_names<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
@@ -842,20 +978,16 @@ mod tests {
 
     #[test]
     fn iana_property_names() {
-        assert_prop_name_eq("UNKNOWN-PROP", PropName::Other("UNKNOWN-PROP"));
-        assert_prop_name_eq("CUSTOM", PropName::Other("CUSTOM"));
-        assert_prop_name_eq(
-            "VENDOR-SPECIFIC",
-            PropName::Other("VENDOR-SPECIFIC"),
-        );
-        assert_prop_name_eq("NEW-FEATURE", PropName::Other("NEW-FEATURE"));
+        assert_prop_name_eq("UNKNOWN-PROP", PropName::Iana("UNKNOWN-PROP"));
+        assert_prop_name_eq("CUSTOM", PropName::Iana("CUSTOM"));
+        assert_prop_name_eq("NEW-FEATURE", PropName::Iana("NEW-FEATURE"));
     }
 
     #[test]
     fn x_property_names() {
-        assert_prop_name_eq("X-CUSTOM", PropName::Other("X-CUSTOM"));
-        assert_prop_name_eq("X-VENDOR-PROP", PropName::Other("X-VENDOR-PROP"));
-        assert_prop_name_eq("x-custom", PropName::Other("x-custom"));
+        assert_prop_name_eq("X-CUSTOM", PropName::X("X-CUSTOM"));
+        assert_prop_name_eq("X-VENDOR-PROP", PropName::X("X-VENDOR-PROP"));
+        assert_prop_name_eq("X-custom", PropName::X("X-custom"));
     }
 
     #[test]
@@ -875,9 +1007,9 @@ mod tests {
         );
 
         // Make sure we don't match shorter prefixes
-        assert_prop_name_eq("REFRESH", PropName::Other("REFRESH"));
-        assert_prop_name_eq("REQUEST", PropName::Other("REQUEST"));
-        assert_prop_name_eq("RECURRENCE", PropName::Other("RECURRENCE"));
+        assert_prop_name_eq("REFRESH", PropName::Iana("REFRESH"));
+        assert_prop_name_eq("REQUEST", PropName::Iana("REQUEST"));
+        assert_prop_name_eq("RECURRENCE", PropName::Iana("RECURRENCE"));
     }
 
     #[test]
@@ -886,8 +1018,8 @@ mod tests {
         assert_prop_name_parse_failure("");
 
         // Single characters
-        assert_prop_name_eq("A", PropName::Other("A"));
-        assert_prop_name_eq("Z", PropName::Other("Z"));
+        assert_prop_name_eq("A", PropName::Iana("A"));
+        assert_prop_name_eq("Z", PropName::Iana("Z"));
 
         // Properties with hyphens
         assert_prop_name_eq(

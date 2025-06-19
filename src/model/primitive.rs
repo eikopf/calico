@@ -280,7 +280,8 @@ pub enum ValueType<S = Box<str>> {
     Time,
     Uri,
     UtcOffset,
-    Other(S),
+    Iana(S),
+    X(S),
 }
 
 ///A runtime-discriminated property value.
@@ -301,6 +302,29 @@ pub enum Value<S = Box<str>, U = UriString> {
     UtcOffset(UtcOffset),
     Iana { name: S, value: S },
     X { name: S, value: S },
+}
+
+impl<S, U> Value<S, U> {
+    pub fn as_value_type(&self) -> ValueType<&S> {
+        match self {
+            Value::Binary(_) => ValueType::Binary,
+            Value::Boolean(_) => ValueType::Boolean,
+            Value::CalAddress(_) => ValueType::CalAddress,
+            Value::Date(_) => ValueType::Date,
+            Value::DateTime(_) => ValueType::DateTime,
+            Value::Duration(_) => ValueType::Duration,
+            Value::Float(_) => ValueType::Float,
+            Value::Integer(_) => ValueType::Integer,
+            Value::Period(_) => ValueType::Period,
+            Value::Recur(_) => ValueType::Recur,
+            Value::Text(_) => ValueType::Text,
+            Value::Time(_) => ValueType::Time,
+            Value::Uri(_) => ValueType::Uri,
+            Value::UtcOffset(_) => ValueType::UtcOffset,
+            Value::Iana { name, .. } => ValueType::Iana(name),
+            Value::X { name, .. } => ValueType::X(name),
+        }
+    }
 }
 
 /// The possible values of the `ATTACH` property.

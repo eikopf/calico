@@ -15,6 +15,8 @@
 //! more specific grammar for the corresponding value on the right-hand side of
 //! the `=` character.
 
+use std::convert::Infallible;
+
 use iri_string::types::{UriStr, UriString};
 use winnow::{
     ModalResult, Parser,
@@ -36,10 +38,10 @@ use crate::{
     },
 };
 
-use super::primitive::{calendar_user_type, display_type, iana_token};
+use super::primitive::{calendar_user_type, display_type, iana_token, x_name};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Param<S = Box<str>, U = UriString> {
+pub enum Param<S = Box<str>, U = UriString, X = ()> {
     AltRep(U),
     CommonName(ParamValue<S>),
     CUType(CalendarUserType<S>),
@@ -64,10 +66,92 @@ pub enum Param<S = Box<str>, U = UriString> {
     Email(ParamValue<S>),
     Feature(FeatureType<S>),
     Label(ParamValue<S>),
-    Other {
+    Iana {
         name: S,
         value: Box<[ParamValue<S>]>,
     },
+    X {
+        name: S,
+        value: Box<[ParamValue<S>]>,
+        /// Extension descriptor (in the sense of Trees that Grow).
+        ext: X,
+    },
+}
+
+/// An X-name parameter.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct XParam<S = Box<str>> {
+    pub name: S,
+    pub value: Box<[ParamValue<S>]>,
+}
+
+impl<S, U, X> Param<S, U, X> {
+    /// Returns `true` if the param is [`X`].
+    ///
+    /// [`X`]: Param::X
+    #[must_use]
+    pub fn is_x(&self) -> bool {
+        matches!(self, Self::X { .. })
+    }
+
+    pub fn as_language(self) -> Option<Language<S>> {
+        if let Self::Language(v) = self {
+            Some(v)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_value(self) -> Option<ValueType<S>> {
+        if let Self::Value(v) = self {
+            Some(v)
+        } else {
+            None
+        }
+    }
+}
+
+impl<S, U> Param<S, U> {
+    pub fn as_x(self) -> Option<XParam<S>> {
+        if let Param::X { name, value, .. } = self {
+            Some(XParam { name, value })
+        } else {
+            None
+        }
+    }
+
+    pub fn as_non_x(self) -> Result<Param<S, U, Infallible>, XParam<S>> {
+        match self {
+            Param::AltRep(uri) => Ok(Param::AltRep(uri)),
+            Param::CommonName(name) => Ok(Param::CommonName(name)),
+            Param::CUType(cu_type) => Ok(Param::CUType(cu_type)),
+            Param::DelFrom(items) => Ok(Param::DelFrom(items)),
+            Param::DelTo(items) => Ok(Param::DelTo(items)),
+            Param::Dir(dir) => Ok(Param::Dir(dir)),
+            Param::Encoding(encoding) => Ok(Param::Encoding(encoding)),
+            Param::FormatType(fmttype) => Ok(Param::FormatType(fmttype)),
+            Param::FBType(fbtype) => Ok(Param::FBType(fbtype)),
+            Param::Language(language) => Ok(Param::Language(language)),
+            Param::Member(items) => Ok(Param::Member(items)),
+            Param::PartStatus(part_stat) => Ok(Param::PartStatus(part_stat)),
+            Param::RecurrenceIdentifierRange => {
+                Ok(Param::RecurrenceIdentifierRange)
+            }
+            Param::AlarmTrigger(trig_rel) => Ok(Param::AlarmTrigger(trig_rel)),
+            Param::RelType(rel_type) => Ok(Param::RelType(rel_type)),
+            Param::Role(part_role) => Ok(Param::Role(part_role)),
+            Param::Rsvp(rsvp) => Ok(Param::Rsvp(rsvp)),
+            Param::SentBy(sent_by) => Ok(Param::SentBy(sent_by)),
+            Param::TzId(tz_id) => Ok(Param::TzId(tz_id)),
+            Param::Value(value_type) => Ok(Param::Value(value_type)),
+            Param::Display(display_type) => Ok(Param::Display(display_type)),
+            Param::Email(param_value) => Ok(Param::Email(param_value)),
+            Param::Feature(feature_type) => Ok(Param::Feature(feature_type)),
+            Param::Label(param_value) => Ok(Param::Label(param_value)),
+            Param::Iana { name, value } => Ok(Param::Iana { name, value }),
+            Param::X { name, value, .. } => Err(XParam { name, value }),
+        }
+    }
 }
 
 /// Parses a [`Param`].
@@ -100,12 +184,21 @@ pub fn parameter<'i>(
     let name = terminated(param_name, '=').parse_next(input)?;
 
     match name {
-        ParamName::Other(name) => {
+        ParamName::Iana(name) => {
             let value: Vec<_> =
                 separated(1.., param_value, ",").parse_next(input)?;
-            Ok(Param::Other {
+            Ok(Param::Iana {
                 name,
                 value: value.into_boxed_slice(),
+            })
+        }
+        ParamName::X(name) => {
+            let value: Vec<_> =
+                separated(1.., param_value, ",").parse_next(input)?;
+            Ok(Param::X {
+                name,
+                value: value.into_boxed_slice(),
+                ext: (),
             })
         }
         ParamName::Rfc5545(name) => match name {
@@ -245,7 +338,8 @@ pub fn static_param_name(input: &mut &str) -> ModalResult<StaticParamName> {
 pub enum ParamName<'a> {
     Rfc5545(Rfc5545ParamName),
     Rfc7986(Rfc7986ParamName),
-    Other(&'a str),
+    Iana(&'a str),
+    X(&'a str),
 }
 
 impl<'a> ParamName<'a> {
@@ -265,12 +359,20 @@ impl<'a> ParamName<'a> {
         matches!(self, Self::Rfc7986(..))
     }
 
-    /// Returns `true` if the param name is [`Other`].
+    /// Returns `true` if the param name is [`Iana`].
     ///
-    /// [`Other`]: ParamName::Other
+    /// [`Iana`]: ParamName::Iana
     #[must_use]
-    pub fn is_other(&self) -> bool {
-        matches!(self, Self::Other(..))
+    pub fn is_iana(&self) -> bool {
+        matches!(self, Self::Iana(..))
+    }
+
+    /// Returns `true` if the param name is [`X`].
+    ///
+    /// [`X`]: ParamName::X
+    #[must_use]
+    pub fn is_x(&self) -> bool {
+        matches!(self, Self::X(..))
     }
 }
 
@@ -284,7 +386,7 @@ impl<'a> ParamName<'a> {
 ///
 /// assert!(param_name.parse_peek("RANGE").is_ok_and(|r| r.1.is_rfc5545()));
 /// assert!(param_name.parse_peek("email").is_ok_and(|r| r.1.is_rfc7986()));
-/// assert!(param_name.parse_peek("OTHER").is_ok_and(|r| r.1.is_other()));
+/// assert!(param_name.parse_peek("OTHER").is_ok_and(|r| r.1.is_iana()));
 /// assert!(param_name.parse_peek(",bad,").is_err());
 /// ```
 pub fn param_name<'i>(input: &mut &'i str) -> ModalResult<ParamName<'i>> {
@@ -296,7 +398,8 @@ pub fn param_name<'i>(input: &mut &'i str) -> ModalResult<ParamName<'i>> {
     alt((
         rfc5545_param_name.map(ParamName::Rfc5545),
         rfc7986_param_name.map(ParamName::Rfc7986),
-        iana_token.map(ParamName::Other),
+        x_name.map(ParamName::X),
+        iana_token.map(ParamName::Iana),
     ))
     .parse_next(input)
 }

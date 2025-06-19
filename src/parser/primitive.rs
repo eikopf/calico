@@ -527,7 +527,8 @@ pub fn value_type<'i>(input: &mut &'i str) -> ModalResult<ValueType<&'i str>> {
         Caseless("TEXT").value(ValueType::Text),
         Caseless("TIME").value(ValueType::Time),
         Caseless("URI").value(ValueType::Uri),
-        iana_token.map(ValueType::Other),
+        x_name.map(ValueType::X),
+        iana_token.map(ValueType::Iana),
     ))
     .parse_next(input)
 }
