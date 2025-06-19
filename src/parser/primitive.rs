@@ -99,9 +99,7 @@ pub fn v2_0(input: &mut &str) -> ModalResult<()> {
     "2.0".void().parse_next(input)
 }
 
-/// Parses an HTTP method; see [`http::Method`] for details. This parser will
-/// accept any IANA token, but special handling is done for the recognised HTTP
-/// methods and sufficiently small strings.
+/// Parses a [`Method`].
 ///
 /// # Examples
 ///
