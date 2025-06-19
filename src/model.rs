@@ -19,9 +19,9 @@ use primitive::{
     AlarmAction, Binary, CalendarUserType, ClassValue, Date, DateTime,
     DateTimeOrDate, DisplayType, Duration, EventStatus, FeatureType,
     FreeBusyType, Geo, ImageData, JournalStatus, Language, Method,
-    ParticipationRole, ParticipationStatus, Period, RDateValue,
-    RelationshipType, Status, Time, TodoStatus, Transparency, TriggerRelation,
-    Uid, UriString, Utc, UtcOffset,
+    ParticipationRole, ParticipationStatus, Period, RDate, RelationshipType,
+    Status, Time, TodoStatus, Transparency, TriggerRelation, Uid, UriString,
+    Utc, UtcOffset,
 };
 use property::{ConfProp, ImageProp, Prop, TextProp};
 use rrule::RecurrenceRule;
@@ -310,7 +310,7 @@ pub enum Property {
 
     // Recurrence properties
     ExDate(Vec<DateTimeOrDate>),
-    RDate(Vec<RDateValue>),
+    RDate(Vec<RDate>),
     RRule(RecurrenceRule),
 
     // Alarm properties

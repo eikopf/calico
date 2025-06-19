@@ -5,9 +5,9 @@ use std::collections::HashMap;
 use iri_string::types::UriStr;
 
 use super::primitive::{
-    CalendarUserType, DateTimeOrDateType, DisplayType, FeatureType, FormatType,
-    FreeBusyType, ImageData, Language, ParticipationRole, ParticipationStatus,
-    RDateValue, RelationshipType, ThisAndFuture, TriggerRelation, UriString,
+    CalendarUserType, DisplayType, FeatureType, FormatType, FreeBusyType,
+    ImageData, Language, ParticipationRole, ParticipationStatus,
+    RelationshipType, ThisAndFuture, TriggerRelation, UriString,
 };
 
 /// An ordinary textual property.
@@ -65,7 +65,6 @@ pub struct OrganizerParams<S = Box<str>, U = UriString> {
 /// The parameters associated with the `RECURRENCE-ID` property.
 #[derive(Debug, Clone, Copy)]
 pub struct RecurrenceIdParams<S = Box<str>> {
-    pub value: Option<DateTimeOrDateType>,
     pub tz_id: Option<S>,
     pub recurrence_identifier_range: Option<ThisAndFuture>,
 }
@@ -85,14 +84,12 @@ pub struct LangParams<S = Box<str>> {
 /// The parameters associated with several date and time properties.
 #[derive(Debug, Clone, Copy)]
 pub struct DtParams<S = Box<str>> {
-    pub value: Option<DateTimeOrDateType>,
     pub tz_id: Option<S>,
 }
 
 /// The parameters associated with the `RDATE` property.
 #[derive(Debug, Clone, Copy)]
 pub struct RDateParams<S = Box<str>> {
-    pub value: Option<RDateValue>,
     pub tz_id: Option<S>,
 }
 

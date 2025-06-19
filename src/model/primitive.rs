@@ -51,14 +51,6 @@ pub struct Binary {
     pub(crate) bytes: Vec<u8>,
 }
 
-/// The subset of [`ValueType`] accepted by several datetime properties.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum DateTimeOrDateType {
-    #[default]
-    DateTime,
-    Date,
-}
-
 /// Date-time or date value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DateTimeOrDate<F = TimeFormat> {
@@ -327,14 +319,6 @@ pub enum Period<F = TimeFormat> {
         start: DateTimeOrDate<F>,
         duration: Duration,
     },
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum RDateValue {
-    #[default]
-    DateTime,
-    Date,
-    Period,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

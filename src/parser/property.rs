@@ -32,9 +32,6 @@ use crate::{
 /// The type of "unbounded" unsigned integers.
 type UInt = usize;
 
-// TODO: remove parameter fields for the VALUE parameter, and instead track it
-// implicitly using value enums (in the sense of DateTimeOrDate).
-
 // NOTE: the IANA iCalendar property registry lists several registered properties
 // from RFC 6321 §4.2, RFC 7808 §7, RFC 7953 §3.2, RFC 9073 §6, and RFC 9253 § 8
 // that have not been included here (they would fall under the Other catch-all).
