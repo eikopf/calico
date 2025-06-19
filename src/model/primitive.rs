@@ -263,6 +263,7 @@ pub enum RelationshipType<S = Box<str>> {
     Other(S),
 }
 
+/// The type of a [`Value`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ValueType<S = Box<str>> {
     Binary,
@@ -280,6 +281,26 @@ pub enum ValueType<S = Box<str>> {
     Uri,
     UtcOffset,
     Other(S),
+}
+
+///A runtime-discriminated property value.
+pub enum Value<S = Box<str>, U = UriString> {
+    Binary(Binary),
+    Boolean(bool),
+    CalAddress(U),
+    Date(Date),
+    DateTime(DateTime),
+    Duration(Duration),
+    Float(f64),
+    Integer(usize),
+    Period(Period),
+    Recur(()),
+    Text(S),
+    Time(Time),
+    Uri(U),
+    UtcOffset(UtcOffset),
+    Iana { name: S, value: S },
+    X { name: S, value: S },
 }
 
 /// The possible values of the `ATTACH` property.

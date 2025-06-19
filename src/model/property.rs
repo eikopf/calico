@@ -2,8 +2,6 @@
 
 use std::collections::HashMap;
 
-use iri_string::types::UriStr;
-
 use super::primitive::{
     CalendarUserType, DisplayType, FeatureType, FormatType, FreeBusyType,
     ImageData, Language, ParticipationRole, ParticipationStatus,
@@ -103,8 +101,6 @@ pub struct TriggerParams {
 pub struct FBTypeParams<S = Box<str>> {
     pub fb_type: Option<FreeBusyType<S>>,
 }
-
-pub type TextParamsRef<'a> = TextParams<&'a str, &'a UriStr>;
 
 /// The parameters usually associated with text values.
 #[derive(Debug, Clone, Copy)]

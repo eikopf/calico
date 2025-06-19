@@ -1,10 +1,10 @@
 //! Parsers for properties.
 
-use iri_string::types::UriStr;
+use iri_string::types::{UriStr, UriString};
 use winnow::{
     ModalResult, Parser,
     ascii::Caseless,
-    combinator::{alt, fail, preceded, repeat},
+    combinator::{alt, fail, repeat},
     stream::Stream,
     token::none_of,
 };
@@ -15,18 +15,15 @@ use crate::{
         primitive::{
             AlarmAction, AttachValue, ClassValue, DateTime, DateTimeOrDate,
             Duration, Geo, ImageData, Language, Method, Period, RDate, Status,
-            Transparency, Uid, Utc, UtcOffset,
+            Transparency, Uid, Utc, UtcOffset, Value,
         },
         property::{
             AttachParams, AttendeeParams, ConfParams, DtParams, FBTypeParams,
             ImageParams, LangParams, OrganizerParams, RDateParams,
-            RecurrenceIdParams, RelTypeParams, TextParamsRef, TriggerParams,
+            RecurrenceIdParams, RelTypeParams, TextParams, TriggerParams,
         },
     },
-    parser::{
-        parameter::{Param, parameter},
-        primitive::iana_token,
-    },
+    parser::{parameter::Param, primitive::iana_token},
 };
 
 /// The type of "unbounded" unsigned integers.
@@ -38,54 +35,54 @@ type UInt = usize;
 // perhaps they should be included as static variants at some later point?
 // registry: (https://www.iana.org/assignments/icalendar/icalendar.xhtml#properties)
 
-pub enum Prop<'a> {
+pub enum Prop<S = Box<str>, U = UriString> {
     // CALENDAR PROPERTIES
     CalScale,
     Method(Method),
-    ProdId(&'a str),
+    ProdId(S),
     Version,
     // DESCRIPTIVE COMPONENT PROPERTIES
-    Attach(AttachValue<&'a UriStr>, AttachParams),
-    Categories(Box<[&'a str]>, LangParams<&'a str>),
-    Class(ClassValue<&'a str>),
-    Comment(&'a str, TextParamsRef<'a>),
-    Description(&'a str, TextParamsRef<'a>),
+    Attach(AttachValue<U>, AttachParams),
+    Categories(Box<[S]>, LangParams<S>),
+    Class(ClassValue<S>),
+    Comment(S, TextParams<S, U>),
+    Description(S, TextParams<S, U>),
     Geo(Geo),
-    Location(&'a str, TextParamsRef<'a>),
+    Location(S, TextParams<S, U>),
     PercentComplete(u8), // 0..=100
     Priority(u8),        // 0..=9
-    Resources(Box<[&'a str]>, TextParamsRef<'a>),
+    Resources(Box<[S]>, TextParams<S, U>),
     Status(Status),
-    Summary(&'a str, TextParamsRef<'a>),
+    Summary(S, TextParams<S, U>),
     // DATE AND TIME COMPONENT PROPERTIES
     DtCompleted(DateTime),
-    DtEnd(DateTimeOrDate, DtParams<&'a str>),
-    DtDue(DateTimeOrDate, DtParams<&'a str>),
-    DtStart(DateTimeOrDate, DtParams<&'a str>),
+    DtEnd(DateTimeOrDate, DtParams<S>),
+    DtDue(DateTimeOrDate, DtParams<S>),
+    DtStart(DateTimeOrDate, DtParams<S>),
     Duration(Duration),
-    FreeBusy(Box<[Period]>, FBTypeParams<&'a str>),
+    FreeBusy(Box<[Period]>, FBTypeParams<S>),
     Transparency(Transparency),
     // TIME ZONE COMPONENT PROPERTIES
-    TzId(&'a str),
-    TzName(&'a str, LangParams<&'a str>),
+    TzId(S),
+    TzName(S, LangParams<S>),
     TzOffsetFrom(UtcOffset),
     TzOffsetTo(UtcOffset),
-    TzUrl(&'a UriStr),
+    TzUrl(U),
     // RELATIONSHIP COMPONENT PROPERTIES
-    Attendee(&'a UriStr, AttendeeParams<&'a str, &'a UriStr>),
-    Contact(&'a str, TextParamsRef<'a>),
-    Organizer(&'a UriStr, OrganizerParams<&'a str, &'a UriStr>),
-    RecurrenceId(DateTimeOrDate, RecurrenceIdParams<&'a str>),
-    RelatedTo(&'a str, RelTypeParams<&'a str>),
-    Url(&'a UriStr),
-    Uid(Uid<&'a str>),
+    Attendee(U, AttendeeParams<S, U>),
+    Contact(S, TextParams<S, U>),
+    Organizer(U, OrganizerParams<S, U>),
+    RecurrenceId(DateTimeOrDate, RecurrenceIdParams<S>),
+    RelatedTo(S, RelTypeParams<S>),
+    Url(U),
+    Uid(Uid<S>),
     // RECURRENCE COMPONENT PROPERTIES
-    ExDate(DateTimeOrDate, DtParams<&'a str>),
-    RDate(RDate, RDateParams<&'a str>),
+    ExDate(DateTimeOrDate, DtParams<S>),
+    RDate(RDate, RDateParams<S>),
     // TODO: finish recurrence rule model
     RRule(()),
     // ALARM COMPONENT PROPERTIES
-    Action(AlarmAction<&'a str>),
+    Action(AlarmAction<S>),
     Repeat(UInt),
     TriggerRelative(Duration, TriggerParams),
     TriggerAbsolute(DateTime<Utc>),
@@ -94,52 +91,33 @@ pub enum Prop<'a> {
     DtStamp(DateTime),
     LastModified(DateTime),
     Sequence(UInt),
-
-    // TODO: distinguish between X-names and IANA-registered properties, and
-    // give them a Value enum to correctly track the types of their values
-
     // MISCELLANEOUS COMPONENT PROPERTIES
     // TODO: the value of this property has a more precise grammar (page 143)
-    RequestStatus(&'a str, LangParams<&'a str>),
-    Other {
-        name: &'a str,
-        lanugage: Option<Language<&'a str>>,
-        value: &'a str,
+    RequestStatus(S, LangParams<S>),
+    Iana {
+        name: S,
+        value: Value<S, U>,
+        params: Box<[Param<S, U>]>,
     },
-
+    X {
+        name: S,
+        value: Value<S, U>,
+        language: Option<Language<S>>,
+    },
     // RFC 7986 PROPERTIES
-    Name(&'a str, TextParamsRef<'a>),
-    RefreshInterval(Duration), // NOTE: the "VALUE=DURATION" param is REQUIRED
-    Source(&'a UriStr),
+    Name(S, TextParams<S, U>),
+    RefreshInterval(Duration),
+    Source(U),
     Color(Css3Color),
-    Image(ImageData<&'a UriStr>, ImageParams<&'a str, &'a UriStr>),
-    Conference(&'a UriStr, ConfParams<&'a str>),
+    Image(ImageData<U>, ImageParams<S, U>),
+    Conference(U, ConfParams<S>),
 }
 
-/// A textual property.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Property<'a> {
-    /// The name of the property.
-    pub name: PropName<'a>,
-    /// The parameters of the property.
-    pub params: Box<[Param<'a>]>,
-    /// The raw textual value of the property, which cannot include control
-    /// characters (U+0000 through U+001F and U+007F).
-    pub value: &'a str,
-}
-
-/// Parses a [`Property`].
+/// Parses a [`Prop`].
 ///
-/// # Examples
-///
-/// ```
-/// use calico::parser::property::property;
-/// use winnow::Parser;
-///
-/// assert!(property.parse_peek("TZNAME:EST").is_ok());
-/// assert!(property.parse_peek("ATTENDEE;RSVP=TRUE;ROLE=REQ:foo").is_ok());
-/// ```
-pub fn property<'i>(input: &mut &'i str) -> ModalResult<Property<'i>> {
+pub fn property<'i>(
+    input: &mut &'i str,
+) -> ModalResult<Prop<&'i str, &'i UriStr>> {
     /// Parses the value string of a property line.
     fn value<'i>(input: &mut &'i str) -> ModalResult<&'i str> {
         repeat::<_, _, (), _, _>(0.., none_of((..' ', '\u{007F}')))
@@ -147,18 +125,7 @@ pub fn property<'i>(input: &mut &'i str) -> ModalResult<Property<'i>> {
             .parse_next(input)
     }
 
-    (
-        property_name,
-        repeat::<_, _, Vec<_>, _, _>(0.., preceded(';', parameter)),
-        ':',
-        value,
-    )
-        .map(|(name, params, _, value)| Property {
-            name,
-            params: params.into_boxed_slice(),
-            value,
-        })
-        .parse_next(input)
+    todo!()
 }
 
 /// A property name, which may be statically known from RFC 5545 or RFC 7986, or

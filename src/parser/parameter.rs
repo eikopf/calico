@@ -15,7 +15,7 @@
 //! more specific grammar for the corresponding value on the right-hand side of
 //! the `=` character.
 
-use iri_string::types::UriStr;
+use iri_string::types::{UriStr, UriString};
 use winnow::{
     ModalResult, Parser,
     ascii::Caseless,
@@ -39,34 +39,34 @@ use crate::{
 use super::primitive::{calendar_user_type, display_type, iana_token};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Param<'a> {
-    AltRep(&'a UriStr),
-    CommonName(ParamValue<'a>),
-    CUType(CalendarUserType<&'a str>),
-    DelFrom(Box<[&'a UriStr]>),
-    DelTo(Box<[&'a UriStr]>),
-    Dir(&'a UriStr),
+pub enum Param<S = Box<str>, U = UriString> {
+    AltRep(U),
+    CommonName(ParamValue<S>),
+    CUType(CalendarUserType<S>),
+    DelFrom(Box<[U]>),
+    DelTo(Box<[U]>),
+    Dir(U),
     Encoding(Encoding),
     FormatType(FormatType),
-    FBType(FreeBusyType<&'a str>),
-    Language(Language<&'a str>),
-    Member(Box<[&'a UriStr]>),
-    PartStatus(ParticipationStatus<&'a str>),
+    FBType(FreeBusyType<S>),
+    Language(Language<S>),
+    Member(Box<[U]>),
+    PartStatus(ParticipationStatus<S>),
     RecurrenceIdentifierRange,
     AlarmTrigger(TriggerRelation),
-    RelType(RelationshipType<&'a str>),
-    Role(ParticipationRole<&'a str>),
+    RelType(RelationshipType<S>),
+    Role(ParticipationRole<S>),
     Rsvp(bool),
-    SentBy(&'a UriStr),
-    TzId(&'a str),
-    Value(ValueType<&'a str>),
-    Display(DisplayType<&'a str>),
-    Email(ParamValue<'a>),
-    Feature(FeatureType<&'a str>),
-    Label(ParamValue<'a>),
+    SentBy(U),
+    TzId(S),
+    Value(ValueType<S>),
+    Display(DisplayType<S>),
+    Email(ParamValue<S>),
+    Feature(FeatureType<S>),
+    Label(ParamValue<S>),
     Other {
-        name: &'a str,
-        value: Box<[ParamValue<'a>]>,
+        name: S,
+        value: Box<[ParamValue<S>]>,
     },
 }
 
@@ -82,7 +82,9 @@ pub enum Param<'a> {
 /// assert!(parameter.parse_peek("ALTREP=\"CID:foo.bar@baz.com\"").is_ok());
 /// assert!(parameter.parse_peek("ALTREP=CID:foo.bar@baz.com").is_err());
 /// ```
-pub fn parameter<'i>(input: &mut &'i str) -> ModalResult<Param<'i>> {
+pub fn parameter<'i>(
+    input: &mut &'i str,
+) -> ModalResult<Param<&'i str, &'i UriStr>> {
     /// Parses a single URI delimited by double quotes.
     fn quoted_uri<'i>(input: &mut &'i str) -> ModalResult<&'i UriStr> {
         delimited('"', uri, '"').parse_next(input)
@@ -448,12 +450,12 @@ pub fn rfc7986_param_name(input: &mut &str) -> ModalResult<Rfc7986ParamName> {
 /// [`Safe`]: ParamValue::Safe
 /// [`Quoted`]: ParamValue::Quoted
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ParamValue<'a> {
-    Safe(&'a str),
-    Quoted(&'a str),
+pub enum ParamValue<S = Box<str>> {
+    Safe(S),
+    Quoted(S),
 }
 
-impl<'a> ParamValue<'a> {
+impl<S> ParamValue<S> {
     /// Returns `true` if the param value is [`Safe`].
     ///
     /// [`Safe`]: ParamValue::Safe
@@ -470,14 +472,17 @@ impl<'a> ParamValue<'a> {
         matches!(self, Self::Quoted(..))
     }
 
-    pub fn as_str(&self) -> &'a str {
+    pub fn as_str(&self) -> &str
+    where
+        S: AsRef<str>,
+    {
         match self {
-            ParamValue::Safe(s) => s,
-            ParamValue::Quoted(s) => s,
+            ParamValue::Safe(s) => s.as_ref(),
+            ParamValue::Quoted(s) => s.as_ref(),
         }
     }
 
-    pub fn as_safe(&self) -> Option<&'a str> {
+    pub fn as_safe(&self) -> Option<&S> {
         if let Self::Safe(v) = self {
             Some(v)
         } else {
@@ -485,7 +490,7 @@ impl<'a> ParamValue<'a> {
         }
     }
 
-    pub fn as_quoted(&self) -> Option<&'a str> {
+    pub fn as_quoted(&self) -> Option<&S> {
         if let Self::Quoted(v) = self {
             Some(v)
         } else {
@@ -506,7 +511,9 @@ impl<'a> ParamValue<'a> {
 /// assert!(param_value.parse_peek("\"hello\"").is_ok_and(|r| r.1.is_quoted()));
 /// assert!(param_value.parse_peek(",hello").is_err());
 /// ```
-pub fn param_value<'i>(input: &mut &'i str) -> ModalResult<ParamValue<'i>> {
+pub fn param_value<'i>(
+    input: &mut &'i str,
+) -> ModalResult<ParamValue<&'i str>> {
     fn param_text<'i>(input: &mut &'i str) -> ModalResult<&'i str> {
         repeat(1.., none_of((..' ', '"', ',', ':', ';', '\u{007F}')))
             .map(|()| ())
