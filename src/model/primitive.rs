@@ -285,6 +285,7 @@ pub enum ValueType<S = Box<str>> {
 }
 
 ///A runtime-discriminated property value.
+#[derive(Debug, Clone)]
 pub enum Value<S = Box<str>, U = UriString> {
     Binary(Binary),
     Boolean(bool),

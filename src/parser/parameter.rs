@@ -15,8 +15,6 @@
 //! more specific grammar for the corresponding value on the right-hand side of
 //! the `=` character.
 
-use std::convert::Infallible;
-
 use iri_string::types::{UriStr, UriString};
 use winnow::{
     ModalResult, Parser,
@@ -41,7 +39,31 @@ use crate::{
 use super::primitive::{calendar_user_type, display_type, iana_token, x_name};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Param<S = Box<str>, U = UriString, X = ()> {
+pub enum Param<S = Box<str>, U = UriString> {
+    Known(KnownParam<S, U>),
+    Unknown(UnknownParam<S>),
+}
+
+impl<S, U> Param<S, U> {
+    pub fn try_into_unknown(self) -> Result<UnknownParam<S>, Self> {
+        if let Self::Unknown(v) = self {
+            Ok(v)
+        } else {
+            Err(self)
+        }
+    }
+
+    pub fn try_into_known(self) -> Result<KnownParam<S, U>, Self> {
+        if let Self::Known(v) = self {
+            Ok(v)
+        } else {
+            Err(self)
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum KnownParam<S = Box<str>, U = UriString> {
     AltRep(U),
     CommonName(ParamValue<S>),
     CUType(CalendarUserType<S>),
@@ -66,6 +88,10 @@ pub enum Param<S = Box<str>, U = UriString, X = ()> {
     Email(ParamValue<S>),
     Feature(FeatureType<S>),
     Label(ParamValue<S>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UnknownParam<S = Box<str>> {
     Iana {
         name: S,
         value: Box<[ParamValue<S>]>,
@@ -73,8 +99,6 @@ pub enum Param<S = Box<str>, U = UriString, X = ()> {
     X {
         name: S,
         value: Box<[ParamValue<S>]>,
-        /// Extension descriptor (in the sense of Trees that Grow).
-        ext: X,
     },
 }
 
@@ -83,75 +107,6 @@ pub enum Param<S = Box<str>, U = UriString, X = ()> {
 pub struct XParam<S = Box<str>> {
     pub name: S,
     pub value: Box<[ParamValue<S>]>,
-}
-
-impl<S, U, X> Param<S, U, X> {
-    /// Returns `true` if the param is [`X`].
-    ///
-    /// [`X`]: Param::X
-    #[must_use]
-    pub fn is_x(&self) -> bool {
-        matches!(self, Self::X { .. })
-    }
-
-    pub fn as_language(self) -> Option<Language<S>> {
-        if let Self::Language(v) = self {
-            Some(v)
-        } else {
-            None
-        }
-    }
-
-    pub fn as_value(self) -> Option<ValueType<S>> {
-        if let Self::Value(v) = self {
-            Some(v)
-        } else {
-            None
-        }
-    }
-}
-
-impl<S, U> Param<S, U> {
-    pub fn as_x(self) -> Option<XParam<S>> {
-        if let Param::X { name, value, .. } = self {
-            Some(XParam { name, value })
-        } else {
-            None
-        }
-    }
-
-    pub fn as_non_x(self) -> Result<Param<S, U, Infallible>, XParam<S>> {
-        match self {
-            Param::AltRep(uri) => Ok(Param::AltRep(uri)),
-            Param::CommonName(name) => Ok(Param::CommonName(name)),
-            Param::CUType(cu_type) => Ok(Param::CUType(cu_type)),
-            Param::DelFrom(items) => Ok(Param::DelFrom(items)),
-            Param::DelTo(items) => Ok(Param::DelTo(items)),
-            Param::Dir(dir) => Ok(Param::Dir(dir)),
-            Param::Encoding(encoding) => Ok(Param::Encoding(encoding)),
-            Param::FormatType(fmttype) => Ok(Param::FormatType(fmttype)),
-            Param::FBType(fbtype) => Ok(Param::FBType(fbtype)),
-            Param::Language(language) => Ok(Param::Language(language)),
-            Param::Member(items) => Ok(Param::Member(items)),
-            Param::PartStatus(part_stat) => Ok(Param::PartStatus(part_stat)),
-            Param::RecurrenceIdentifierRange => {
-                Ok(Param::RecurrenceIdentifierRange)
-            }
-            Param::AlarmTrigger(trig_rel) => Ok(Param::AlarmTrigger(trig_rel)),
-            Param::RelType(rel_type) => Ok(Param::RelType(rel_type)),
-            Param::Role(part_role) => Ok(Param::Role(part_role)),
-            Param::Rsvp(rsvp) => Ok(Param::Rsvp(rsvp)),
-            Param::SentBy(sent_by) => Ok(Param::SentBy(sent_by)),
-            Param::TzId(tz_id) => Ok(Param::TzId(tz_id)),
-            Param::Value(value_type) => Ok(Param::Value(value_type)),
-            Param::Display(display_type) => Ok(Param::Display(display_type)),
-            Param::Email(param_value) => Ok(Param::Email(param_value)),
-            Param::Feature(feature_type) => Ok(Param::Feature(feature_type)),
-            Param::Label(param_value) => Ok(Param::Label(param_value)),
-            Param::Iana { name, value } => Ok(Param::Iana { name, value }),
-            Param::X { name, value, .. } => Err(XParam { name, value }),
-        }
-    }
 }
 
 /// Parses a [`Param`].
@@ -187,102 +142,125 @@ pub fn parameter<'i>(
         ParamName::Iana(name) => {
             let value: Vec<_> =
                 separated(1.., param_value, ",").parse_next(input)?;
-            Ok(Param::Iana {
+            Ok(Param::Unknown(UnknownParam::Iana {
                 name,
                 value: value.into_boxed_slice(),
-            })
+            }))
         }
         ParamName::X(name) => {
             let value: Vec<_> =
                 separated(1.., param_value, ",").parse_next(input)?;
-            Ok(Param::X {
+            Ok(Param::Unknown(UnknownParam::X {
                 name,
                 value: value.into_boxed_slice(),
-                ext: (),
-            })
+            }))
         }
         ParamName::Rfc5545(name) => match name {
-            Rfc5545ParamName::AlternateTextRepresentation => {
-                quoted_uri.map(Param::AltRep).parse_next(input)
-            }
-            Rfc5545ParamName::CommonName => {
-                param_value.map(Param::CommonName).parse_next(input)
-            }
-            Rfc5545ParamName::CalendarUserType => {
-                calendar_user_type.map(Param::CUType).parse_next(input)
-            }
-            Rfc5545ParamName::Delegators => {
-                quoted_uris.map(Param::DelFrom).parse_next(input)
-            }
-            Rfc5545ParamName::Delegatees => {
-                quoted_uris.map(Param::DelTo).parse_next(input)
-            }
-            Rfc5545ParamName::DirectoryEntryReference => {
-                quoted_uri.map(Param::Dir).parse_next(input)
-            }
-            Rfc5545ParamName::InlineEncoding => {
-                inline_encoding.map(Param::Encoding).parse_next(input)
-            }
-            Rfc5545ParamName::FormatType => {
-                format_type.map(Param::FormatType).parse_next(input)
-            }
-            Rfc5545ParamName::FreeBusyTimeType => {
-                free_busy_type.map(Param::FBType).parse_next(input)
-            }
-            Rfc5545ParamName::Language => {
-                language.map(Param::Language).parse_next(input)
-            }
-            Rfc5545ParamName::GroupOrListMembership => {
-                quoted_uris.map(Param::Member).parse_next(input)
-            }
+            Rfc5545ParamName::AlternateTextRepresentation => quoted_uri
+                .map(KnownParam::AltRep)
+                .map(Param::Known)
+                .parse_next(input),
+            Rfc5545ParamName::CommonName => param_value
+                .map(KnownParam::CommonName)
+                .map(Param::Known)
+                .parse_next(input),
+            Rfc5545ParamName::CalendarUserType => calendar_user_type
+                .map(KnownParam::CUType)
+                .map(Param::Known)
+                .parse_next(input),
+            Rfc5545ParamName::Delegators => quoted_uris
+                .map(KnownParam::DelFrom)
+                .map(Param::Known)
+                .parse_next(input),
+            Rfc5545ParamName::Delegatees => quoted_uris
+                .map(KnownParam::DelTo)
+                .map(Param::Known)
+                .parse_next(input),
+            Rfc5545ParamName::DirectoryEntryReference => quoted_uri
+                .map(KnownParam::Dir)
+                .map(Param::Known)
+                .parse_next(input),
+            Rfc5545ParamName::InlineEncoding => inline_encoding
+                .map(KnownParam::Encoding)
+                .map(Param::Known)
+                .parse_next(input),
+            Rfc5545ParamName::FormatType => format_type
+                .map(KnownParam::FormatType)
+                .map(Param::Known)
+                .parse_next(input),
+            Rfc5545ParamName::FreeBusyTimeType => free_busy_type
+                .map(KnownParam::FBType)
+                .map(Param::Known)
+                .parse_next(input),
+            Rfc5545ParamName::Language => language
+                .map(KnownParam::Language)
+                .map(Param::Known)
+                .parse_next(input),
+            Rfc5545ParamName::GroupOrListMembership => quoted_uris
+                .map(KnownParam::Member)
+                .map(Param::Known)
+                .parse_next(input),
             Rfc5545ParamName::ParticipationStatus => participation_status
-                .map(Param::PartStatus)
+                .map(KnownParam::PartStatus)
+                .map(Param::Known)
                 .parse_next(input),
             Rfc5545ParamName::RecurrenceIdentifierRange => {
                 Caseless("THISANDFUTURE")
-                    .value(Param::RecurrenceIdentifierRange)
+                    .value(KnownParam::RecurrenceIdentifierRange)
+                    .map(Param::Known)
                     .parse_next(input)
             }
             Rfc5545ParamName::AlarmTriggerRelationship => {
                 alarm_trigger_relationship
-                    .map(Param::AlarmTrigger)
+                    .map(KnownParam::AlarmTrigger)
+                    .map(Param::Known)
                     .parse_next(input)
             }
-            Rfc5545ParamName::RelationshipType => {
-                relationship_type.map(Param::RelType).parse_next(input)
-            }
-            Rfc5545ParamName::ParticipationRole => {
-                participation_role.map(Param::Role).parse_next(input)
-            }
-            Rfc5545ParamName::RsvpExpectation => {
-                bool_caseless.map(Param::Rsvp).parse_next(input)
-            }
-            Rfc5545ParamName::SentBy => {
-                quoted_uri.map(Param::SentBy).parse_next(input)
-            }
+            Rfc5545ParamName::RelationshipType => relationship_type
+                .map(KnownParam::RelType)
+                .map(Param::Known)
+                .parse_next(input),
+            Rfc5545ParamName::ParticipationRole => participation_role
+                .map(KnownParam::Role)
+                .map(Param::Known)
+                .parse_next(input),
+            Rfc5545ParamName::RsvpExpectation => bool_caseless
+                .map(KnownParam::Rsvp)
+                .map(Param::Known)
+                .parse_next(input),
+            Rfc5545ParamName::SentBy => quoted_uri
+                .map(KnownParam::SentBy)
+                .map(Param::Known)
+                .parse_next(input),
             Rfc5545ParamName::TimeZoneIdentifier => {
                 (opt('/'), param_value.verify(ParamValue::is_safe))
                     .take()
-                    .map(Param::TzId)
+                    .map(KnownParam::TzId)
+                    .map(Param::Known)
                     .parse_next(input)
             }
-            Rfc5545ParamName::ValueDataType => {
-                value_type.map(Param::Value).parse_next(input)
-            }
+            Rfc5545ParamName::ValueDataType => value_type
+                .map(KnownParam::Value)
+                .map(Param::Known)
+                .parse_next(input),
         },
         ParamName::Rfc7986(name) => match name {
-            Rfc7986ParamName::Display => {
-                display_type.map(Param::Display).parse_next(input)
-            }
-            Rfc7986ParamName::Email => {
-                param_value.map(Param::Email).parse_next(input)
-            }
-            Rfc7986ParamName::Feature => {
-                feature_type.map(Param::Feature).parse_next(input)
-            }
-            Rfc7986ParamName::Label => {
-                param_value.map(Param::Label).parse_next(input)
-            }
+            Rfc7986ParamName::Display => display_type
+                .map(KnownParam::Display)
+                .map(Param::Known)
+                .parse_next(input),
+            Rfc7986ParamName::Email => param_value
+                .map(KnownParam::Email)
+                .map(Param::Known)
+                .parse_next(input),
+            Rfc7986ParamName::Feature => feature_type
+                .map(KnownParam::Feature)
+                .map(Param::Known)
+                .parse_next(input),
+            Rfc7986ParamName::Label => param_value
+                .map(KnownParam::Label)
+                .map(Param::Known)
+                .parse_next(input),
         },
     }
 }
@@ -649,23 +627,35 @@ mod tests {
     #[test]
     fn simple_parameter_parsing() {
         assert_eq!(
-            parameter.parse_peek("VALUE=CAL-ADDRESS"),
-            Ok(("", Param::Value(ValueType::CalAddress))),
+            parameter
+                .parse_peek("VALUE=CAL-ADDRESS")
+                .ok()
+                .and_then(|(_, p)| p.try_into_known().ok()),
+            Some(KnownParam::Value(ValueType::CalAddress)),
         );
 
         assert_eq!(
-            parameter.parse_peek("tzid=America/New_York"),
-            Ok(("", Param::TzId("America/New_York"))),
+            parameter
+                .parse_peek("tzid=America/New_York")
+                .ok()
+                .and_then(|(_, p)| p.try_into_known().ok()),
+            Some(KnownParam::TzId("America/New_York")),
         );
 
         assert_eq!(
-            parameter.parse_peek("Rsvp=FALSE"),
-            Ok(("", Param::Rsvp(false))),
+            parameter
+                .parse_peek("Rsvp=FALSE")
+                .ok()
+                .and_then(|(_, p)| p.try_into_known().ok()),
+            Some(KnownParam::Rsvp(false)),
         );
 
         assert_eq!(
-            parameter.parse_peek("RANGE=thisandfuture"),
-            Ok(("", Param::RecurrenceIdentifierRange)),
+            parameter
+                .parse_peek("RANGE=thisandfuture")
+                .ok()
+                .and_then(|(_, p)| p.try_into_known().ok()),
+            Some(KnownParam::RecurrenceIdentifierRange),
         );
     }
 
@@ -673,15 +663,21 @@ mod tests {
     fn inline_encoding() {
         for input in ["ENCODING=8BIT", "ENCODING=8Bit", "ENCODING=8bit"] {
             assert_eq!(
-                parameter.parse_peek(input),
-                Ok(("", Param::Encoding(Encoding::Bit8)))
+                parameter
+                    .parse_peek(input)
+                    .ok()
+                    .and_then(|(_, p)| p.try_into_known().ok()),
+                Some(KnownParam::Encoding(Encoding::Bit8)),
             );
         }
 
         for input in ["ENCODING=BASE64", "ENCODING=Base64", "ENCODING=base64"] {
             assert_eq!(
-                parameter.parse_peek(input),
-                Ok(("", Param::Encoding(Encoding::Base64)))
+                parameter
+                    .parse_peek(input)
+                    .ok()
+                    .and_then(|(_, p)| p.try_into_known().ok()),
+                Some(KnownParam::Encoding(Encoding::Base64)),
             );
         }
 
@@ -701,8 +697,11 @@ mod tests {
             "FMTTYPE=application/x-bzip",
         ] {
             assert!(matches!(
-                parameter.parse_peek(input),
-                Ok(("", Param::FormatType(_)))
+                parameter
+                    .parse_peek(input)
+                    .ok()
+                    .and_then(|(_, p)| p.try_into_known().ok()),
+                Some(KnownParam::FormatType(_))
             ));
         }
 
@@ -720,10 +719,13 @@ mod tests {
             "RANGE=ThisAndFuture",
             "RANGE=thisandfuture",
         ] {
-            assert_eq!(
-                parameter.parse_peek(input),
-                Ok(("", Param::RecurrenceIdentifierRange))
-            );
+            assert!(matches!(
+                parameter
+                    .parse_peek(input)
+                    .ok()
+                    .and_then(|(_, p)| p.try_into_known().ok()),
+                Some(KnownParam::RecurrenceIdentifierRange)
+            ));
         }
 
         for input in ["RANGE=", "RANGE=garbage", "RANGE=this-and-future"] {
@@ -734,17 +736,23 @@ mod tests {
     #[test]
     fn alarm_trigger_relationship() {
         for input in ["RELATED=START", "RELATED=Start", "RELATED=start"] {
-            assert_eq!(
-                parameter.parse_peek(input),
-                Ok(("", Param::AlarmTrigger(TriggerRelation::Start))),
-            );
+            assert!(matches!(
+                parameter
+                    .parse_peek(input)
+                    .ok()
+                    .and_then(|(_, p)| p.try_into_known().ok()),
+                Some(KnownParam::AlarmTrigger(TriggerRelation::Start)),
+            ));
         }
 
         for input in ["RELATED=END", "RELATED=End", "RELATED=end"] {
-            assert_eq!(
-                parameter.parse_peek(input),
-                Ok(("", Param::AlarmTrigger(TriggerRelation::End))),
-            );
+            assert!(matches!(
+                parameter
+                    .parse_peek(input)
+                    .ok()
+                    .and_then(|(_, p)| p.try_into_known().ok()),
+                Some(KnownParam::AlarmTrigger(TriggerRelation::End)),
+            ));
         }
 
         for input in ["RELATED=", "RELATED=,garbage", "RELATED=anything-else"] {
@@ -765,53 +773,83 @@ mod tests {
     #[test]
     fn rfc7986_parameter_parsing() {
         assert_eq!(
-            parameter.parse_peek("DISPLAY=THUMBNAIL"),
-            Ok(("", Param::Display(DisplayType::Thumbnail))),
+            parameter
+                .parse_peek("DISPLAY=THUMBNAIL")
+                .ok()
+                .and_then(|(_, p)| p.try_into_known().ok()),
+            Some(KnownParam::Display(DisplayType::Thumbnail)),
         );
 
         assert_eq!(
-            parameter.parse_peek("display=Badge"),
-            Ok(("", Param::Display(DisplayType::Badge))),
+            parameter
+                .parse_peek("display=Badge")
+                .ok()
+                .and_then(|(_, p)| p.try_into_known().ok()),
+            Some(KnownParam::Display(DisplayType::Badge)),
         );
 
         assert_eq!(
-            parameter.parse_peek("DISPLAY=X-SOMETHING-ELSE"),
-            Ok(("", Param::Display(DisplayType::Other("X-SOMETHING-ELSE")))),
+            parameter
+                .parse_peek("DISPLAY=X-SOMETHING-ELSE")
+                .ok()
+                .and_then(|(_, p)| p.try_into_known().ok()),
+            Some(KnownParam::Display(DisplayType::Other("X-SOMETHING-ELSE"))),
         );
 
         assert_eq!(
-            parameter.parse_peek("Email=literally anything"),
-            Ok(("", Param::Email(ParamValue::Safe("literally anything")))),
+            parameter
+                .parse_peek("Email=literally anything")
+                .ok()
+                .and_then(|(_, p)| p.try_into_known().ok()),
+            Some(KnownParam::Email(ParamValue::Safe("literally anything"))),
         );
 
         assert_eq!(
-            parameter.parse_peek("EMAIL=\"a quoted string\""),
-            Ok(("", Param::Email(ParamValue::Quoted("a quoted string")))),
+            parameter
+                .parse_peek("Email=\"a quoted string\"")
+                .ok()
+                .and_then(|(_, p)| p.try_into_known().ok()),
+            Some(KnownParam::Email(ParamValue::Quoted("a quoted string"))),
         );
 
         assert_eq!(
-            parameter.parse_peek("FEATURE=moderator"),
-            Ok(("", Param::Feature(FeatureType::Moderator))),
+            parameter
+                .parse_peek("FEATURE=moderator")
+                .ok()
+                .and_then(|(_, p)| p.try_into_known().ok()),
+            Some(KnownParam::Feature(FeatureType::Moderator)),
         );
 
         assert_eq!(
-            parameter.parse_peek("feature=Screen"),
-            Ok(("", Param::Feature(FeatureType::Screen))),
+            parameter
+                .parse_peek("feature=Screen")
+                .ok()
+                .and_then(|(_, p)| p.try_into_known().ok()),
+            Some(KnownParam::Feature(FeatureType::Screen)),
         );
 
         assert_eq!(
-            parameter.parse_peek("feature=random-iana-token"),
-            Ok(("", Param::Feature(FeatureType::Other("random-iana-token")))),
+            parameter
+                .parse_peek("feature=random-iana-token")
+                .ok()
+                .and_then(|(_, p)| p.try_into_known().ok()),
+            Some(KnownParam::Feature(FeatureType::Other("random-iana-token"))),
         );
 
         assert_eq!(
-            parameter.parse_peek("LABEL=some text"),
-            Ok(("", Param::Label(ParamValue::Safe("some text")))),
+            parameter
+                .parse_peek("LABEL=some text")
+                .ok()
+                .and_then(|(_, p)| p.try_into_known().ok()),
+            Some(KnownParam::Label(ParamValue::Safe("some text"))),
         );
 
         assert_eq!(
-            parameter.parse_peek("label=\"some quoted text\""),
-            Ok(("", Param::Label(ParamValue::Quoted("some quoted text")))),
+            parameter
+                .parse_peek("label=\"some quoted text\"")
+                .ok()
+                .and_then(|(_, p)| p.try_into_known().ok()),
+            Some(KnownParam::Label(ParamValue::Quoted("some quoted text"))),
         );
     }
 
@@ -826,7 +864,7 @@ mod tests {
 
         assert_eq!(
             parameter.parse_peek(param).map(|(_, p)| p),
-            Ok(Param::DelFrom(
+            Ok(Param::Known(KnownParam::DelFrom(
                 [
                     "mailto:alice@place.com",
                     "mailto:brice@place.com",
@@ -835,7 +873,7 @@ mod tests {
                 .into_iter()
                 .map(|s| UriStr::new(s).unwrap())
                 .collect()
-            )),
+            ))),
         );
     }
 }

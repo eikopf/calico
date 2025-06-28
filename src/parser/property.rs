@@ -1,7 +1,5 @@
 //! Parsers for properties.
 
-use std::convert::Infallible;
-
 use iri_string::types::{UriStr, UriString};
 use winnow::{
     ModalResult, Parser,
@@ -16,7 +14,7 @@ use crate::{
         css::Css3Color,
         primitive::{
             AlarmAction, AttachValue, ClassValue, DateTime, DateTimeOrDate,
-            Duration, Geo, ImageData, Language, Method, Period, RDate, Status,
+            Duration, Geo, ImageData, Method, Period, RDate, Status,
             Transparency, Uid, Utc, UtcOffset, Value, ValueType,
         },
         property::{
@@ -26,13 +24,13 @@ use crate::{
         },
     },
     parser::{
-        parameter::{Param, parameter},
+        parameter::{KnownParam, Param, parameter},
         primitive::{iana_token, x_name},
     },
 };
 
 use super::{
-    parameter::XParam,
+    parameter::UnknownParam,
     primitive::{binary, bool_caseless, date, datetime, time, uri},
 };
 
@@ -45,7 +43,32 @@ type UInt = usize;
 // perhaps they should be included as static variants at some later point?
 // registry: (https://www.iana.org/assignments/icalendar/icalendar.xhtml#properties)
 
+#[derive(Debug, Clone)]
 pub enum Prop<S = Box<str>, U = UriString> {
+    Known(KnownProp<S, U>),
+    Unknown(UnknownProp<S, U>),
+}
+
+impl<S, U> Prop<S, U> {
+    pub fn try_into_known(self) -> Result<KnownProp<S, U>, Self> {
+        if let Self::Known(v) = self {
+            Ok(v)
+        } else {
+            Err(self)
+        }
+    }
+
+    pub fn try_into_unknown(self) -> Result<UnknownProp<S, U>, Self> {
+        if let Self::Unknown(v) = self {
+            Ok(v)
+        } else {
+            Err(self)
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum KnownProp<S, U> {
     // CALENDAR PROPERTIES
     CalScale,
     Method(Method),
@@ -104,15 +127,6 @@ pub enum Prop<S = Box<str>, U = UriString> {
     // MISCELLANEOUS COMPONENT PROPERTIES
     // TODO: the value of this property has a more precise grammar (page 143)
     RequestStatus(S, LangParams<S>),
-    Iana {
-        name: S,
-        value: Value<S, U>,
-    },
-    X {
-        name: S,
-        value: Value<S, U>,
-        language: Option<Language<S>>,
-    },
     // RFC 7986 PROPERTIES
     Name(S, TextParams<S, U>),
     RefreshInterval(Duration),
@@ -122,11 +136,18 @@ pub enum Prop<S = Box<str>, U = UriString> {
     Conference(U, ConfParams<S>),
 }
 
-pub type ParsedProp<'a> = (
-    Prop<&'a str, &'a UriStr>,
-    Box<[Param<&'a str, &'a UriStr, Infallible>]>,
-    Box<[XParam<&'a str>]>,
-);
+#[derive(Debug, Clone)]
+pub enum UnknownProp<S, U> {
+    Iana {
+        name: S,
+        value: Value<S, U>,
+    },
+    X {
+        name: S,
+        value: Value<S, U>,
+        params: Box<[KnownParam<S, U>]>,
+    },
+}
 
 fn parse_value<'i, S: AsRef<str> + ?Sized>(
     value_type: ValueType<&'i S>,
@@ -194,34 +215,21 @@ macro_rules! find_and_remove {
     };
 }
 
+type ParsedProp<'a> = (Prop<&'a str, &'a UriStr>, Box<[UnknownParam<&'a str>]>);
+
 /// Parses a [`Prop`].
-///
 pub fn property<'i>(input: &mut &'i str) -> ModalResult<ParsedProp<'i>> {
     let name = property_name.parse_next(input)?;
-    let params: Vec<_> = terminated(repeat(0.., preceded(';', parameter)), ':')
-        .parse_next(input)?;
+    let mut params: Vec<_> =
+        terminated(repeat(0.., preceded(';', parameter)), ':')
+            .parse_next(input)?;
 
-    let (mut iana_params, x_params) = {
-        let mut iana_params = Vec::with_capacity(params.len());
-        let mut x_params = Vec::new();
-
-        for param in params {
-            match param.as_non_x() {
-                Ok(param) => iana_params.push(param),
-                Err(x_param) => x_params.push(x_param),
-            }
-        }
-
-        iana_params.shrink_to_fit();
-        (iana_params, x_params.into_boxed_slice())
-    };
-
-    let prop = match name {
+    Ok(match name {
         PropName::Rfc5545(name) => todo!(),
         PropName::Rfc7986(name) => todo!(),
         PropName::Iana(name) => {
             find_and_remove! {
-                let value_type = Param::Value(_x) => _x in iana_params
+                let value_type = Param::Known(KnownParam::Value(_x)) => _x in params
             };
 
             let value =
@@ -230,36 +238,60 @@ pub fn property<'i>(input: &mut &'i str) -> ModalResult<ParsedProp<'i>> {
             // TODO: check that the VALUE parameter does not occur more than
             // once in iana_params
 
-            Prop::Iana { name, value }
+            // assume all remaining parameters must be unknown IANA or X-names
+            let unknown_params = params
+                .into_iter()
+                .map(Param::try_into_unknown)
+                .collect::<Result<Box<_>, _>>()
+                .map_err(|_| todo!())?;
+
+            (
+                Prop::Unknown(UnknownProp::Iana { name, value }),
+                unknown_params,
+            )
         }
         PropName::X(name) => {
-            // NOTE: i'm assuming here that the LANGUAGE parameter is not allowed
-            // to occur more than once, since that is the case for every other
-            // property which admits that parameter
-
             find_and_remove! {
-                let language = Param::Language(_x) => _x in iana_params
-            };
-
-            find_and_remove! {
-                let value_type = Param::Value(_x) => _x in iana_params
+                let value_type = Param::Known(KnownParam::Value(_x)) => _x in params
             };
 
             let value =
                 parse_value(value_type.unwrap_or(ValueType::Text), input)?;
 
-            // TODO: check that the LANGUAGE and VALUE parameters do not occur
-            // more than once in iana_params
+            let (known_params, unknown_params) = {
+                let mut known_params = Vec::with_capacity(params.len() / 2);
+                let mut unknown_params = Vec::with_capacity(params.len() / 2);
 
-            Prop::X {
-                name,
-                value,
-                language,
-            }
+                for param in params.drain(..) {
+                    match param {
+                        // if we run into another VALUE parameter having already found one, that's
+                        // an error
+                        Param::Known(KnownParam::Value(_))
+                            if value_type.is_some() =>
+                        {
+                            todo!()
+                        }
+                        Param::Known(param) => known_params.push(param),
+                        Param::Unknown(param) => unknown_params.push(param),
+                    }
+                }
+
+                (
+                    known_params.into_boxed_slice(),
+                    unknown_params.into_boxed_slice(),
+                )
+            };
+
+            (
+                Prop::Unknown(UnknownProp::X {
+                    name,
+                    value,
+                    params: known_params,
+                }),
+                unknown_params,
+            )
         }
-    };
-
-    Ok((prop, iana_params.into_boxed_slice(), x_params))
+    })
 }
 
 /// A property name, which may be statically known from RFC 5545 or RFC 7986, or
@@ -682,26 +714,69 @@ mod tests {
     use super::*;
     use winnow::Parser;
 
+    // PROPERTY PARSING TESTS
+
+    #[test]
+    fn rfc_5545_example_iana_property() {
+        let mut input = "NON-SMOKING;VALUE=BOOLEAN:TRUE";
+        let prop = property(&mut input);
+        assert!(matches!(
+            prop,
+            Ok((
+                Prop::Unknown(UnknownProp::Iana {
+                    name: "NON-SMOKING",
+                    value: Value::Boolean(true),
+                }),
+                extras,
+            )) if extras.is_empty(),
+        ));
+
+        let mut input = "NON-SMOKING:TRUE";
+        let prop = property(&mut input);
+        assert!(matches!(
+            prop,
+            Ok((
+                Prop::Unknown(UnknownProp::Iana {
+                    name: "NON-SMOKING",
+                    value: Value::Text("TRUE"),
+                }),
+                extras,
+            )) if extras.is_empty(),
+        ));
+    }
+
+    #[test]
+    fn rfc_5545_example_x_property() {
+        let input = "X-ABC-MMSUBJ;VALUE=URI;FMTTYPE=audio/basic:http://www.example.org/mysubj.au";
+        let prop = property.parse_peek(input);
+        let expected_uri =
+            UriStr::new("http://www.example.org/mysubj.au").unwrap();
+
+        assert!(matches!(
+            prop, Ok(("", (Prop::Unknown(UnknownProp::X {
+                name: "X-ABC-MMSUBJ",
+                value: Value::Uri(uri),
+                params
+            }), extras))) if params.len() == 1 && extras.is_empty() && uri == expected_uri
+        ))
+    }
+
     // PROPERTY NAME TESTS
 
     /// Asserts that the inputs are equal under [`property_name`].
     fn assert_prop_name_eq<'i>(input: &'i str, expected: PropName<'i>) {
         let mut input_ref = input;
         let result = property_name.parse_next(&mut input_ref);
-        assert!(result.is_ok(), "Failed to parse '{}': {:?}", input, result);
+        assert!(result.is_ok());
         assert_eq!(result.unwrap(), expected);
-        assert!(
-            input_ref.is_empty(),
-            "Input not fully consumed: '{}'",
-            input_ref
-        );
+        assert!(input_ref.is_empty(),);
     }
 
     // Helper function to test parsing failures
     fn assert_prop_name_parse_failure(input: &str) {
         let mut input_ref = input;
         let result = property_name.parse_next(&mut input_ref);
-        assert!(result.is_err(), "Expected parsing to fail for '{}'", input);
+        assert!(result.is_err());
     }
 
     #[test]
