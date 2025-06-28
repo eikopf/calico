@@ -293,8 +293,8 @@ pub enum Value<S = Box<str>, U = UriString> {
     Date(Date),
     DateTime(DateTime),
     Duration(Duration),
-    Float(f64),
-    Integer(usize),
+    Float(Float<S>),
+    Integer(i32),
     Period(Period),
     Recur(()),
     Text(S),
@@ -328,6 +328,12 @@ impl<S, U> Value<S, U> {
     }
 }
 
+/// A string matching the regex `[\+\-]?[0-9]+\.[0-9]*` (RFC 5545 §3.3.7). Since
+/// the standard imposes no precision requirements for floats, representing them
+/// as strings after validation is the best option.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Float<S = Box<str>>(pub S);
+
 /// The possible values of the `ATTACH` property.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AttachValue<U = UriString> {
@@ -358,11 +364,11 @@ pub struct ThisAndFuture;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Period<F = TimeFormat> {
     Explicit {
-        start: DateTimeOrDate<F>,
-        end: DateTimeOrDate<F>,
+        start: DateTime<F>,
+        end: DateTime<F>,
     },
     Start {
-        start: DateTimeOrDate<F>,
+        start: DateTime<F>,
         duration: Duration,
     },
 }
@@ -374,15 +380,43 @@ pub enum RDate<F = TimeFormat> {
     Period(Period),
 }
 
-/// Duration type.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[repr(i8)]
+pub enum Sign {
+    #[default]
+    Positive = 1,
+    Negative = -1,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Duration {
-    pub weeks: Option<u32>,
-    pub days: Option<u32>,
-    pub hours: Option<u32>,
-    pub minutes: Option<u32>,
-    pub seconds: Option<u32>,
-    pub negative: bool,
+    pub sign: Option<Sign>,
+    pub kind: DurationKind,
+}
+
+/// The kind of a [`Duration`]. The type parameter `T` is the underlying integer type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DurationKind<T = usize> {
+    /// Some number of days with an optional time duration.
+    Date {
+        days: T,
+        time: Option<DurationTime<T>>,
+    },
+    /// An exact time duration.
+    Time { time: DurationTime<T> },
+    /// Some number of weeks.
+    Week { weeks: T },
+}
+
+/// The time portion of a [`Duration`], measured in hours, minutes, and seconds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DurationTime<T = usize> {
+    HMS { hours: T, minutes: T, seconds: T },
+    HM { hours: T, minutes: T },
+    MS { minutes: T, seconds: T },
+    H { hours: T },
+    M { minutes: T },
+    S { seconds: T },
 }
 
 // TODO: it's unclear whether Geo is correct here, since the FLOAT type in RFC

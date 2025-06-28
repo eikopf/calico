@@ -5,17 +5,20 @@ use std::{borrow::Cow, str::FromStr};
 use chrono::NaiveDate;
 use winnow::{
     ModalResult, Parser,
-    ascii::{Caseless, digit1},
-    combinator::{alt, empty, preceded, repeat, trace},
+    ascii::{Caseless, digit0, digit1},
+    combinator::{
+        alt, empty, opt, preceded, repeat, separated_pair, terminated, trace,
+    },
     stream::Accumulate,
     token::{any, none_of, one_of, take},
 };
 
 use crate::model::primitive::{
-    Binary, CalendarUserType, Date, DateTime, DisplayType, Encoding,
-    FeatureType, FormatType, FreeBusyType, Language, Method, ParticipationRole,
-    ParticipationStatus, RawTime, RelationshipType, Time, TimeFormat,
-    TriggerRelation, Uid, UriStr, Utc, ValueType,
+    Binary, CalendarUserType, Date, DateTime, DisplayType, Duration,
+    DurationKind, DurationTime, Encoding, FeatureType, Float, FormatType,
+    FreeBusyType, Language, Method, ParticipationRole, ParticipationStatus,
+    Period, RawTime, RelationshipType, Sign, Time, TimeFormat, TriggerRelation,
+    Uid, UriStr, Utc, ValueType,
 };
 
 /// Parses a [`FeatureType`].
@@ -639,6 +642,119 @@ pub fn text<'i>(input: &mut &'i str) -> ModalResult<Cow<'i, str>> {
     .map(|acc| acc.0)
 }
 
+/// Parses a [`Period`].
+///
+/// # Examples
+///
+/// ```
+/// use calico::parser::primitive::period;
+/// use calico::model::primitive::Period;
+/// use winnow::Parser;
+///
+/// assert!(matches!(
+///     period.parse_peek("19970101T180000Z/19970102T070000Z"),
+///     Ok(("", Period::Explicit { .. })),
+/// ));
+///
+/// assert!(matches!(
+///     period.parse_peek("19970101T180000Z/PT5H30M"),
+///     Ok(("", Period::Start { .. })),
+/// ));
+/// ```
+pub fn period(input: &mut &str) -> ModalResult<Period> {
+    enum DtOrDur {
+        Dt(DateTime),
+        Dur(Duration),
+    }
+
+    // TODO: check that start < end in the explicit case (RFC 5545 §3.3.9)
+
+    separated_pair(
+        datetime,
+        '/',
+        alt((datetime.map(DtOrDur::Dt), duration.map(DtOrDur::Dur))),
+    )
+    .map(|(start, end)| match end {
+        DtOrDur::Dt(end) => Period::Explicit { start, end },
+        DtOrDur::Dur(duration) => Period::Start { start, duration },
+    })
+    .parse_next(input)
+}
+
+/// Parses a [`Duration`].
+///
+/// # Examples
+///
+/// ```
+/// use calico::parser::primitive::duration;
+/// use calico::model::primitive::{Duration, Sign, DurationKind, DurationTime};
+/// use winnow::Parser;
+///
+/// assert_eq!(
+///     duration.parse_peek("P7W"),
+///     Ok(("", Duration { sign: None, kind: DurationKind::Week { weeks: 7 } })),
+/// );
+///
+/// assert_eq!(
+///     duration.parse_peek("+P15DT5H0M20S"),
+///     Ok(("", Duration {
+///         sign: Some(Sign::Positive),
+///         kind: DurationKind::Date {
+///             days: 15,
+///             time: Some(DurationTime::HMS { hours: 5, minutes: 0, seconds: 20 }),
+///         },
+///     })),
+/// );
+/// ```
+pub fn duration(input: &mut &str) -> ModalResult<Duration> {
+    fn time(input: &mut &str) -> ModalResult<DurationTime> {
+        preceded(
+            'T',
+            alt((
+                (lz_dec_uint, 'H', lz_dec_uint, 'M', lz_dec_uint, 'S').map(
+                    |(hours, _, minutes, _, seconds, _)| DurationTime::HMS {
+                        hours,
+                        minutes,
+                        seconds,
+                    },
+                ),
+                (lz_dec_uint, 'H', lz_dec_uint, 'M').map(
+                    |(hours, _, minutes, _)| DurationTime::HM {
+                        hours,
+                        minutes,
+                    },
+                ),
+                (lz_dec_uint, 'H').map(|(hours, _)| DurationTime::H { hours }),
+                (lz_dec_uint, 'M', lz_dec_uint, 'S').map(
+                    |(minutes, _, seconds, _)| DurationTime::MS {
+                        minutes,
+                        seconds,
+                    },
+                ),
+                (lz_dec_uint, 'M')
+                    .map(|(minutes, _)| DurationTime::M { minutes }),
+                (lz_dec_uint, 'S')
+                    .map(|(seconds, _)| DurationTime::S { seconds }),
+            )),
+        )
+        .parse_next(input)
+    }
+
+    separated_pair(
+        opt(sign),
+        'P',
+        alt((
+            time.map(|time| DurationKind::Time { time }),
+            separated_pair(lz_dec_uint, 'D', opt(time))
+                .map(|(days, time)| DurationKind::Date { days, time }),
+            terminated(lz_dec_uint, 'W')
+                .map(|weeks| DurationKind::Week { weeks }),
+        )),
+    )
+    .map(|(sign, kind)| Duration { sign, kind })
+    .parse_next(input)
+}
+
 /// Parses a datetime of the form `YYYYMMDDThhmmss`, with an optional time
 /// format suffix.
 ///
@@ -835,10 +951,49 @@ pub fn bool_caseless(input: &mut &str) -> ModalResult<bool> {
         .parse_next(input)
 }
 
+/// Parses a [`Float`].
+///
+/// # Examples
+///
+/// ```
+/// use calico::parser::primitive::float;
+/// use calico::model::primitive::Float;
+/// use winnow::Parser;
+///
+/// assert_eq!(float.parse_peek("1000000.0000001"), Ok(("", Float("1000000.0000001"))));
+/// assert_eq!(float.parse_peek("1.333"), Ok(("", Float("1.333"))));
+/// assert_eq!(float.parse_peek("-3.14"), Ok(("", Float("-3.14"))));
+/// assert_eq!(float.parse_peek("12."), Ok((".", Float("12"))));
+/// assert!(float.parse_peek("+.002").is_err());
+/// ```
+pub fn float<'i>(input: &mut &'i str) -> ModalResult<Float<&'i str>> {
+    (opt(sign), digit1, opt(('.', digit1)))
+        .take()
+        .map(Float)
+        .parse_next(input)
+}
+
+/// Parses a [`Sign`].
+///
+/// # Examples
+///
+/// ```
+/// use calico::parser::primitive::sign;
+/// use calico::model::primitive::Sign;
+/// use winnow::Parser;
+///
+/// assert_eq!(sign.parse_peek("+"), Ok(("", Sign::Positive)));
+/// assert_eq!(sign.parse_peek("-"), Ok(("", Sign::Negative)));
+/// ```
+pub fn sign(input: &mut &str) -> ModalResult<Sign> {
+    alt(('+'.value(Sign::Positive), '-'.value(Sign::Negative)))
+        .parse_next(input)
+}
+
 /// A version of [`dec_uint`] that accepts leading zeros.
 ///
 /// [`dec_uint`]: winnow::ascii::dec_uint
-fn lz_dec_uint<I, O, E>(input: &mut I) -> winnow::error::Result<O, E>
+pub(crate) fn lz_dec_uint<I, O, E>(input: &mut I) -> winnow::error::Result<O, E>
 where
     I: winnow::stream::StreamIsPartial + winnow::stream::Stream,
     <I as winnow::stream::Stream>::Slice: winnow::stream::AsBStr,

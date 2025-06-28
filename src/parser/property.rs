@@ -4,7 +4,7 @@ use iri_string::types::{UriStr, UriString};
 use winnow::{
     ModalResult, Parser,
     ascii::Caseless,
-    combinator::{alt, fail, preceded, repeat, terminated},
+    combinator::{alt, fail, opt, preceded, repeat, terminated},
     stream::Stream,
     token::none_of,
 };
@@ -25,7 +25,9 @@ use crate::{
     },
     parser::{
         parameter::{KnownParam, Param, parameter},
-        primitive::{iana_token, x_name},
+        primitive::{
+            duration, float, iana_token, lz_dec_uint, period, sign, x_name,
+        },
     },
 };
 
@@ -168,10 +170,15 @@ fn parse_value<'i, S: AsRef<str> + ?Sized>(
         ValueType::CalAddress => uri.map(Value::CalAddress).parse_next(input),
         ValueType::Date => date.map(Value::Date).parse_next(input),
         ValueType::DateTime => datetime.map(Value::DateTime).parse_next(input),
-        ValueType::Duration => todo!(),
-        ValueType::Float => todo!(),
-        ValueType::Integer => todo!(),
-        ValueType::Period => todo!(),
+        ValueType::Duration => duration.map(Value::Duration).parse_next(input),
+        ValueType::Float => float.map(Value::Float).parse_next(input),
+        ValueType::Integer => (opt(sign), lz_dec_uint::<_, u64, _>)
+            .try_map(|(s, d)| i64::try_from(d).map(|d| (s, d)))
+            .verify_map(|(s, d)| d.checked_mul(s.unwrap_or_default() as i64))
+            .try_map(i32::try_from)
+            .map(Value::Integer)
+            .parse_next(input),
+        ValueType::Period => period.map(Value::Period).parse_next(input),
         ValueType::Recur => todo!(),
         ValueType::Text => text.map(Value::Text).parse_next(input),
         ValueType::Time => time.map(Value::Time).parse_next(input),
@@ -759,6 +766,17 @@ mod tests {
                 params
             }), extras))) if params.len() == 1 && extras.is_empty() && uri == expected_uri
         ))
+    }
+
+    #[test]
+    fn integer_value_parsing() {
+        for mut i in ["0", "-2147483648", "2147483647"] {
+            assert!(parse_value(ValueType::<&str>::Integer, &mut i).is_ok());
+        }
+
+        for mut i in ["-2147483649", "2147483648"] {
+            assert!(parse_value(ValueType::<&str>::Integer, &mut i).is_err());
+        }
     }
 
     // PROPERTY NAME TESTS
