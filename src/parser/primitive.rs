@@ -5,7 +5,7 @@ use std::{borrow::Cow, str::FromStr};
 use chrono::NaiveDate;
 use winnow::{
     ModalResult, Parser,
-    ascii::{Caseless, digit0, digit1},
+    ascii::{Caseless, digit1},
     combinator::{
         alt, empty, opt, preceded, repeat, separated_pair, terminated, trace,
     },
