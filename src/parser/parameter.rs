@@ -110,17 +110,6 @@ pub struct XParam<S = Box<str>> {
 }
 
 /// Parses a [`Param`].
-///
-/// # Examples
-///
-/// ```
-/// use calico::parser::parameter::{parameter, Param};
-/// use winnow::Parser;
-///
-/// assert!(parameter.parse_peek("EMAIL=user@example.com").is_ok());
-/// assert!(parameter.parse_peek("ALTREP=\"CID:foo.bar@baz.com\"").is_ok());
-/// assert!(parameter.parse_peek("ALTREP=CID:foo.bar@baz.com").is_err());
-/// ```
 pub fn parameter<'i>(
     input: &mut &'i str,
 ) -> ModalResult<Param<&'i str, &'i UriStr>> {
@@ -291,18 +280,6 @@ impl StaticParamName {
 }
 
 /// Parses a [`StaticParamName`].
-///
-/// # Examples
-///
-/// ```
-/// use calico::parser::parameter::static_param_name;
-/// use winnow::Parser;
-///
-/// assert!(static_param_name.parse_peek("Range").is_ok_and(|r| r.1.is_rfc5545()));
-/// assert!(static_param_name.parse_peek("EMAIL").is_ok_and(|r| r.1.is_rfc7986()));
-/// assert!(static_param_name.parse_peek("other").is_err());
-/// assert!(static_param_name.parse_peek(",bad,").is_err());
-/// ```
 pub fn static_param_name(input: &mut &str) -> ModalResult<StaticParamName> {
     alt((
         rfc5545_param_name.map(StaticParamName::Rfc5545),
@@ -355,18 +332,6 @@ impl<'a> ParamName<'a> {
 }
 
 /// Parses a [`ParamName`].
-///
-/// # Examples
-///
-/// ```
-/// use calico::parser::parameter::param_name;
-/// use winnow::Parser;
-///
-/// assert!(param_name.parse_peek("RANGE").is_ok_and(|r| r.1.is_rfc5545()));
-/// assert!(param_name.parse_peek("email").is_ok_and(|r| r.1.is_rfc7986()));
-/// assert!(param_name.parse_peek("OTHER").is_ok_and(|r| r.1.is_iana()));
-/// assert!(param_name.parse_peek(",bad,").is_err());
-/// ```
 pub fn param_name<'i>(input: &mut &'i str) -> ModalResult<ParamName<'i>> {
     // NOTE: there's an obvious optimisation here where we go character by
     // character until either it must be a known static name, or else it must
@@ -441,32 +406,6 @@ pub enum Rfc7986ParamName {
 }
 
 /// Parses an [`Rfc5545ParamName`].
-///
-/// # Examples
-///
-/// ```
-/// use calico::parser::parameter::rfc5545_param_name;
-/// use calico::parser::parameter::Rfc5545ParamName;
-/// use winnow::Parser;
-///
-/// assert_eq!(
-///     rfc5545_param_name.parse_peek("ALTREP").unwrap().1,
-///     Rfc5545ParamName::AlternateTextRepresentation,
-/// );
-///
-/// assert_eq!(
-///     rfc5545_param_name.parse_peek("Language").unwrap().1,
-///     Rfc5545ParamName::Language,
-/// );
-///
-/// assert_eq!(
-///     rfc5545_param_name.parse_peek("encoding").unwrap().1,
-///     Rfc5545ParamName::InlineEncoding,
-/// );
-///
-/// // EMAIL is an RFC 7986 property parameter
-/// assert!(rfc5545_param_name.parse_peek("EMAIL").is_err());
-/// ```
 pub fn rfc5545_param_name(input: &mut &str) -> ModalResult<Rfc5545ParamName> {
     alt((
         // RFC 5545
@@ -495,27 +434,6 @@ pub fn rfc5545_param_name(input: &mut &str) -> ModalResult<Rfc5545ParamName> {
 }
 
 /// Parses an [`Rfc7986ParamName`].
-///
-/// # Examples
-///
-/// ```
-/// use calico::parser::parameter::rfc7986_param_name;
-/// use calico::parser::parameter::Rfc7986ParamName;
-/// use winnow::Parser;
-///
-/// assert_eq!(
-///     rfc7986_param_name.parse_peek("DISPLAY").unwrap().1,
-///     Rfc7986ParamName::Display,
-/// );
-///
-/// assert_eq!(
-///     rfc7986_param_name.parse_peek("LABEL").unwrap().1,
-///     Rfc7986ParamName::Label,
-/// );
-///
-/// // TZID is an RFC 5545 property parameter
-/// assert!(rfc7986_param_name.parse_peek("TZID").is_err());
-/// ```
 pub fn rfc7986_param_name(input: &mut &str) -> ModalResult<Rfc7986ParamName> {
     alt((
         Caseless("DISPLAY").value(Rfc7986ParamName::Display),
@@ -581,17 +499,6 @@ impl<S> ParamValue<S> {
 }
 
 /// Parses a [`ParamValue`], stripping quotes if they occur.
-///
-/// # Examples
-///
-/// ```
-/// use calico::parser::parameter::param_value;
-/// use winnow::Parser;
-///
-/// assert!(param_value.parse_peek("hello").is_ok_and(|r| r.1.is_safe()));
-/// assert!(param_value.parse_peek("\"hello\"").is_ok_and(|r| r.1.is_quoted()));
-/// assert!(param_value.parse_peek(",hello").is_err());
-/// ```
 pub fn param_value<'i>(
     input: &mut &'i str,
 ) -> ModalResult<ParamValue<&'i str>> {

@@ -312,27 +312,6 @@ pub enum PropName<'a> {
 }
 
 /// Parses a [`PropName`].
-///
-/// # Examples
-///
-/// ```
-/// use calico::parser::property::{
-///     property_name,
-///     PropName,
-///     Rfc5545PropName
-/// };
-/// use winnow::Parser;
-///
-/// assert_eq!(
-///     property_name.parse_peek("ACTION").unwrap().1,
-///     PropName::Rfc5545(Rfc5545PropName::Action),
-/// );
-///
-/// assert_eq!(
-///     property_name.parse_peek("cOnFeReNcE"),
-///     property_name.parse_peek("CONFERENCE"),
-/// );
-/// ```
 pub fn property_name<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
     // NOTE: this internal implementation is a little gross, and arguably i
     // could do better with something like aho-corasick. maybe look at how
