@@ -9,8 +9,9 @@ use winnow::{
     combinator::{
         alt, empty, opt, preceded, repeat, separated_pair, terminated, trace,
     },
-    stream::Accumulate,
-    token::{any, none_of, one_of, take},
+    error::{FromExternalError, ParserError},
+    stream::{Accumulate, AsBStr, AsChar, Compare, Stream, StreamIsPartial},
+    token::{any, none_of, one_of, take_while},
 };
 
 use crate::model::primitive::{
@@ -127,8 +128,14 @@ pub fn uri<'i>(input: &mut &'i str) -> ModalResult<&'i UriStr> {
 }
 
 /// Parses a base64-encoded character string.
-pub fn binary(input: &mut &str) -> ModalResult<Binary> {
-    text.take()
+pub fn binary<I, E>(input: &mut I) -> Result<Binary, E>
+where
+    I: StreamIsPartial + Stream,
+    <I as Stream>::Slice: AsRef<[u8]>,
+    <I as Stream>::Token: AsChar + Clone,
+    E: ParserError<I> + FromExternalError<I, base64::DecodeError>,
+{
+    take_while(1.., ('0'..='9', 'a'..='z', 'A'..='Z', '+', '/', '='))
         .try_map(|xs| {
             <base64::engine::GeneralPurpose as base64::Engine>::decode(
                 &base64::prelude::BASE64_STANDARD,
@@ -288,30 +295,35 @@ pub fn value_type<'i>(input: &mut &'i str) -> ModalResult<ValueType<&'i str>> {
 
 /// Parses an IANA token, which consists of ASCII alphanumeric characters and
 /// the `-` character.
-pub fn iana_token<'i>(input: &mut &'i str) -> ModalResult<&'i str> {
-    repeat::<_, _, (), _, _>(
-        1..,
-        alt((any.verify(|c: &char| c.is_ascii_alphanumeric()), '-')),
-    )
-    .take()
-    .parse_next(input)
+pub fn iana_token<I, E>(input: &mut I) -> Result<<I as Stream>::Slice, E>
+where
+    I: StreamIsPartial + Stream,
+    <I as Stream>::Token: AsChar + Clone,
+    E: ParserError<I>,
+{
+    take_while(1.., ('0'..='9', 'a'..='z', 'A'..='Z', '-')).parse_next(input)
 }
 
 /// Parses an X-name, effectively an [`iana_token`] prefixed with `X-`. Note
 /// that the grammar in RFC 5545 §3.1 includes an optional `vendorid` segment,
 /// but also that this introduces a grammar ambiguity between the `vendorid`
 /// and `iana-token` rules.
-pub fn x_name<'i>(input: &mut &'i str) -> ModalResult<&'i str> {
-    ("X-", iana_token).take().parse_next(input)
+pub fn x_name<I, E>(input: &mut I) -> Result<<I as Stream>::Slice, E>
+where
+    I: StreamIsPartial + Stream + Compare<char>,
+    <I as Stream>::Token: AsChar + Clone,
+    E: ParserError<I>,
+{
+    ('X', '-', iana_token).take().parse_next(input)
 }
-
-// TODO: return a type that lazily allocates if necessary (so essentialy Cow,
-// but allocating in the presence of escape sequences as needed)
 
 /// Parses an arbitrary sequence of text terminated by CRLF. The return type is
 /// `Cow<'_, str>` because a text value may contain escape sequences, in which
 /// case it must be modified.
-pub fn text<'i>(input: &mut &'i str) -> ModalResult<Cow<'i, str>> {
+pub fn text<'i, E>(input: &mut &'i str) -> winnow::Result<Cow<'i, str>, E>
+where
+    E: ParserError<&'i str>,
+{
     /// Wrapper struct for [`Accumulate`] impl on `Cow<'_, str>`.
     #[derive(Debug, Clone)]
     struct Acc<'a>(Cow<'a, str>);
@@ -329,7 +341,10 @@ pub fn text<'i>(input: &mut &'i str) -> ModalResult<Cow<'i, str>> {
     }
 
     /// A contiguous sequence of characters that don't need to be escaped.
-    fn safe_text<'j>(input: &mut &'j str) -> ModalResult<Acc<'j>> {
+    fn safe_text<'i, E>(input: &mut &'i str) -> winnow::Result<Acc<'i>, E>
+    where
+        E: ParserError<&'i str>,
+    {
         repeat::<_, _, (), _, _>(1.., none_of(('\\', ';', ',', ..' ')))
             .take()
             .map(Cow::Borrowed)
@@ -338,7 +353,10 @@ pub fn text<'i>(input: &mut &'i str) -> ModalResult<Cow<'i, str>> {
     }
 
     /// A single textual escape, which has to be allocated to be handled properly.
-    fn text_escape<'j>(input: &mut &'j str) -> ModalResult<Acc<'j>> {
+    fn text_escape<'i, E>(input: &mut &'i str) -> winnow::Result<Acc<'i>, E>
+    where
+        E: ParserError<&'i str>,
+    {
         preceded(
             '\\',
             alt((
@@ -364,13 +382,24 @@ pub fn text<'i>(input: &mut &'i str) -> ModalResult<Cow<'i, str>> {
 }
 
 /// Parses a [`Period`].
-pub fn period(input: &mut &str) -> ModalResult<Period> {
+///
+/// Since an explicit period may admit both absolute and local (floating) times
+/// in the same object, we cannot immediately determine whether a given period
+/// is valid as described in RFC 5545 §3.3.9.
+pub fn period<I, E>(input: &mut I) -> Result<Period, E>
+where
+    I: StreamIsPartial + Stream + Compare<char>,
+    <I as Stream>::Slice: AsBStr,
+    <I as Stream>::Token: AsChar + Clone,
+    E: ParserError<I>
+        + FromExternalError<I, InvalidDateError>
+        + FromExternalError<I, InvalidRawTimeError>
+        + FromExternalError<I, InvalidDurationTimeError>,
+{
     enum DtOrDur {
         Dt(DateTime),
         Dur(Duration),
     }
-
-    // TODO: check that start < end in the explicit case (RFC 5545 §3.3.9)
 
     separated_pair(
         datetime,
@@ -384,39 +413,65 @@ pub fn period(input: &mut &str) -> ModalResult<Period> {
     .parse_next(input)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InvalidDurationTimeError<T = usize> {
+    hours: Option<T>,
+    seconds: Option<T>,
+}
+
 /// Parses a [`Duration`].
-pub fn duration(input: &mut &str) -> ModalResult<Duration> {
-    fn time(input: &mut &str) -> ModalResult<DurationTime> {
-        preceded(
+pub fn duration<I, E>(input: &mut I) -> Result<Duration, E>
+where
+    I: StreamIsPartial + Stream + Compare<char>,
+    <I as Stream>::Slice: AsBStr,
+    <I as Stream>::Token: AsChar + Clone,
+    E: ParserError<I> + FromExternalError<I, InvalidDurationTimeError>,
+{
+    fn time<I, E>(input: &mut I) -> Result<DurationTime, E>
+    where
+        I: StreamIsPartial + Stream + Compare<char>,
+        <I as Stream>::Slice: AsBStr,
+        <I as Stream>::Token: AsChar + Clone,
+        E: ParserError<I> + FromExternalError<I, InvalidDurationTimeError>,
+    {
+        let checkpoint = input.checkpoint();
+
+        let components = preceded(
             'T',
-            alt((
-                (lz_dec_uint, 'H', lz_dec_uint, 'M', lz_dec_uint, 'S').map(
-                    |(hours, _, minutes, _, seconds, _)| DurationTime::HMS {
-                        hours,
-                        minutes,
-                        seconds,
-                    },
-                ),
-                (lz_dec_uint, 'H', lz_dec_uint, 'M').map(
-                    |(hours, _, minutes, _)| DurationTime::HM {
-                        hours,
-                        minutes,
-                    },
-                ),
-                (lz_dec_uint, 'H').map(|(hours, _)| DurationTime::H { hours }),
-                (lz_dec_uint, 'M', lz_dec_uint, 'S').map(
-                    |(minutes, _, seconds, _)| DurationTime::MS {
-                        minutes,
-                        seconds,
-                    },
-                ),
-                (lz_dec_uint, 'M')
-                    .map(|(minutes, _)| DurationTime::M { minutes }),
-                (lz_dec_uint, 'S')
-                    .map(|(seconds, _)| DurationTime::S { seconds }),
-            )),
+            (
+                opt(terminated(lz_dec_uint, 'H')),
+                opt(terminated(lz_dec_uint, 'M')),
+                opt(terminated(lz_dec_uint, 'S')),
+            ),
         )
-        .parse_next(input)
+        .parse_next(input)?;
+
+        match components {
+            (Some(hours), Some(minutes), Some(seconds)) => {
+                Ok(DurationTime::HMS {
+                    hours,
+                    minutes,
+                    seconds,
+                })
+            }
+            (Some(hours), Some(minutes), None) => {
+                Ok(DurationTime::HM { hours, minutes })
+            }
+            (None, Some(minutes), Some(seconds)) => {
+                Ok(DurationTime::MS { minutes, seconds })
+            }
+            (Some(hours), None, None) => Ok(DurationTime::H { hours }),
+            (None, Some(minutes), None) => Ok(DurationTime::M { minutes }),
+            (None, None, Some(seconds)) => Ok(DurationTime::S { seconds }),
+            (hours, None, seconds) => {
+                input.reset(&checkpoint);
+
+                Err(E::from_external_error(
+                    input,
+                    InvalidDurationTimeError { hours, seconds },
+                ))
+            }
+        }
     }
 
     separated_pair(
@@ -436,7 +491,14 @@ pub fn duration(input: &mut &str) -> ModalResult<Duration> {
 
 /// Parses a datetime of the form `YYYYMMDDThhmmss`, with an optional time
 /// format suffix.
-pub fn datetime(input: &mut &str) -> ModalResult<DateTime<TimeFormat>> {
+pub fn datetime<I, E>(input: &mut I) -> Result<DateTime<TimeFormat>, E>
+where
+    I: StreamIsPartial + Stream + Compare<char>,
+    <I as Stream>::Token: AsChar + Clone,
+    E: ParserError<I>
+        + FromExternalError<I, InvalidDateError>
+        + FromExternalError<I, InvalidRawTimeError>,
+{
     (date, 'T', time)
         .map(|(date, _, time)| DateTime { date, time })
         .parse_next(input)
@@ -444,61 +506,199 @@ pub fn datetime(input: &mut &str) -> ModalResult<DateTime<TimeFormat>> {
 
 /// Parses a datetime of the form `YYYYMMDDThhmmssZ`, including the mandatory
 /// UTC marker suffix.
-pub fn datetime_utc(input: &mut &str) -> ModalResult<DateTime<Utc>> {
+pub fn datetime_utc<I, E>(input: &mut I) -> Result<DateTime<Utc>, E>
+where
+    I: StreamIsPartial + Stream + Compare<char>,
+    <I as Stream>::Token: AsChar + Clone,
+    E: ParserError<I>
+        + FromExternalError<I, InvalidDateError>
+        + FromExternalError<I, InvalidRawTimeError>,
+{
     (date, 'T', time_utc)
         .map(|(date, _, time)| DateTime { date, time })
         .parse_next(input)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InvalidDateError {
+    year: u16,
+    month: u8,
+    day: u8,
+}
+
 /// Parses a date of the form YYYYMMDD.
-pub fn date(input: &mut &str) -> ModalResult<Date> {
-    (
-        take(4usize).and_then(lz_dec_uint::<_, u16, _>),
-        take(2usize).and_then(lz_dec_uint),
-        take(2usize).and_then(lz_dec_uint),
+pub fn date<I, E>(input: &mut I) -> Result<Date, E>
+where
+    I: StreamIsPartial + Stream,
+    <I as Stream>::Token: AsChar + Clone,
+    E: ParserError<I> + FromExternalError<I, InvalidDateError>,
+{
+    let checkpoint = input.checkpoint();
+
+    let year = (
+        one_of('0'..='9').map(AsChar::as_char),
+        one_of('0'..='9').map(AsChar::as_char),
+        one_of('0'..='9').map(AsChar::as_char),
+        one_of('0'..='9').map(AsChar::as_char),
     )
-        .verify_map(|(y, m, d)| NaiveDate::from_ymd_opt(y.into(), m, d))
-        .map(Date)
-        .parse_next(input)
+        .map(|(x, y, z, w)| {
+            // SAFETY: all of x, y, z, w are guaranteed to be in the range '0'..='9'.
+            let thou = unsafe { x.to_digit(10).unwrap_unchecked() } * 1000;
+            let hund = unsafe { y.to_digit(10).unwrap_unchecked() } * 100;
+            let tens = unsafe { z.to_digit(10).unwrap_unchecked() } * 10;
+            let ones = unsafe { w.to_digit(10).unwrap_unchecked() };
+
+            let year = (thou + hund + tens + ones) as u16;
+            debug_assert!((0..=9999).contains(&year));
+            year
+        })
+        .parse_next(input)?;
+
+    let month = (
+        one_of('0'..='9').map(AsChar::as_char),
+        one_of('0'..='9').map(AsChar::as_char),
+    )
+        .map(|(x, y)| {
+            // SAFETY: both x and y are guaranteed to be in the range '0'..='9'.
+            let tens = unsafe { x.to_digit(10).unwrap_unchecked() } * 10;
+            let ones = unsafe { y.to_digit(10).unwrap_unchecked() };
+
+            (tens + ones) as u8
+        })
+        .parse_next(input)?;
+
+    let day = (
+        one_of('0'..='9').map(AsChar::as_char),
+        one_of('0'..='9').map(AsChar::as_char),
+    )
+        .map(|(x, y)| {
+            // SAFETY: both x and y are guaranteed to be in the range '0'..='9'.
+            let tens = unsafe { x.to_digit(10).unwrap_unchecked() } * 10;
+            let ones = unsafe { y.to_digit(10).unwrap_unchecked() };
+
+            (tens + ones) as u8
+        })
+        .parse_next(input)?;
+
+    match NaiveDate::from_ymd_opt(year.into(), month.into(), day.into()) {
+        Some(date) => Ok(Date(date)),
+        None => {
+            input.reset(&checkpoint);
+
+            Err(E::from_external_error(
+                input,
+                InvalidDateError { year, month, day },
+            ))
+        }
+    }
 }
 
 /// Parses a [`Time<TimeFormat>`].
-pub fn time(input: &mut &str) -> ModalResult<Time<TimeFormat>> {
+pub fn time<I, E>(input: &mut I) -> Result<Time<TimeFormat>, E>
+where
+    I: StreamIsPartial + Stream + Compare<char>,
+    <I as Stream>::Token: AsChar + Clone,
+    E: ParserError<I> + FromExternalError<I, InvalidRawTimeError>,
+{
     (raw_time, time_format)
         .parse_next(input)
         .map(|(raw, format)| Time { raw, format })
 }
 
 /// Parses a [`Time<Utc>`].
-pub fn time_utc(input: &mut &str) -> ModalResult<Time<Utc>> {
+pub fn time_utc<I, E>(input: &mut I) -> Result<Time<Utc>, E>
+where
+    I: StreamIsPartial + Stream + Compare<char>,
+    <I as Stream>::Token: AsChar + Clone,
+    E: ParserError<I> + FromExternalError<I, InvalidRawTimeError>,
+{
     (raw_time, utc_marker)
         .parse_next(input)
         .map(|(raw, ())| Time { raw, format: Utc })
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InvalidRawTimeError {
+    hours: u8,
+    minutes: u8,
+    seconds: u8,
+}
+
 /// Parses a [`RawTime`].
-pub fn raw_time(input: &mut &str) -> ModalResult<RawTime> {
-    (
-        take(2usize)
-            .and_then(lz_dec_uint::<_, u8, _>)
-            .verify(|&x| x < 24),
-        take(2usize)
-            .and_then(lz_dec_uint::<_, u8, _>)
-            .verify(|&x| x < 60),
-        take(2usize)
-            .and_then(lz_dec_uint::<_, u8, _>)
-            .verify(|&x| x < 61),
+pub fn raw_time<I, E>(input: &mut I) -> Result<RawTime, E>
+where
+    I: StreamIsPartial + Stream,
+    <I as Stream>::Token: AsChar + Clone,
+    E: ParserError<I> + FromExternalError<I, InvalidRawTimeError>,
+{
+    let checkpoint = input.checkpoint();
+
+    let hours = (
+        one_of('0'..='9').map(AsChar::as_char),
+        one_of('0'..='9').map(AsChar::as_char),
     )
-        .parse_next(input)
-        .map(|(hours, minutes, seconds)| RawTime {
+        .map(|(x, y)| {
+            // SAFETY: both x and y are guaranteed to be in the range '0'..='9'.
+            let tens = unsafe { x.to_digit(10).unwrap_unchecked() } * 10;
+            let ones = unsafe { y.to_digit(10).unwrap_unchecked() };
+
+            (tens + ones) as u8
+        })
+        .parse_next(input)?;
+
+    let minutes = (
+        one_of('0'..='9').map(AsChar::as_char),
+        one_of('0'..='9').map(AsChar::as_char),
+    )
+        .map(|(x, y)| {
+            // SAFETY: both x and y are guaranteed to be in the range '0'..='9'.
+            let tens = unsafe { x.to_digit(10).unwrap_unchecked() } * 10;
+            let ones = unsafe { y.to_digit(10).unwrap_unchecked() };
+
+            (tens + ones) as u8
+        })
+        .parse_next(input)?;
+
+    let seconds = (
+        one_of('0'..='9').map(AsChar::as_char),
+        one_of('0'..='9').map(AsChar::as_char),
+    )
+        .map(|(x, y)| {
+            // SAFETY: both x and y are guaranteed to be in the range '0'..='9'.
+            let tens = unsafe { x.to_digit(10).unwrap_unchecked() } * 10;
+            let ones = unsafe { y.to_digit(10).unwrap_unchecked() };
+
+            (tens + ones) as u8
+        })
+        .parse_next(input)?;
+
+    match hours < 24 && minutes < 60 && seconds < 61 {
+        true => Ok(RawTime {
             hours,
             minutes,
             seconds,
-        })
+        }),
+        false => {
+            input.reset(&checkpoint);
+
+            Err(E::from_external_error(
+                input,
+                InvalidRawTimeError {
+                    hours,
+                    minutes,
+                    seconds,
+                },
+            ))
+        }
+    }
 }
 
 /// Parses the time format string suffix (an optional `Z`).
-pub fn time_format(input: &mut &str) -> ModalResult<TimeFormat> {
+pub fn time_format<I, E>(input: &mut I) -> Result<TimeFormat, E>
+where
+    I: StreamIsPartial + Stream + Compare<char>,
+    E: ParserError<I>,
+{
     alt((
         utc_marker.value(TimeFormat::Utc),
         empty.value(TimeFormat::Local),
@@ -507,26 +707,43 @@ pub fn time_format(input: &mut &str) -> ModalResult<TimeFormat> {
 }
 
 /// Parses the UTC marker string (`Z`).
-pub fn utc_marker(input: &mut &str) -> ModalResult<()> {
+pub fn utc_marker<I, E>(input: &mut I) -> Result<(), E>
+where
+    I: StreamIsPartial + Stream + Compare<char>,
+    E: ParserError<I>,
+{
     'Z'.void().parse_next(input)
 }
 
 /// Parses the boolean value of `TRUE` or `FALSE`, ignoring case.
-pub fn bool_caseless(input: &mut &str) -> ModalResult<bool> {
+pub fn bool_caseless<I, E>(input: &mut I) -> Result<bool, E>
+where
+    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
+    E: ParserError<I>,
+{
     alt((Caseless("TRUE").value(true), Caseless("FALSE").value(false)))
         .parse_next(input)
 }
 
 /// Parses a [`Float`].
-pub fn float<'i>(input: &mut &'i str) -> ModalResult<Float<&'i str>> {
-    (opt(sign), digit1, opt(('.', digit1)))
+pub fn float<I, E>(input: &mut I) -> Result<Float<<I as Stream>::Slice>, E>
+where
+    I: StreamIsPartial + Stream + Compare<char>,
+    <I as Stream>::Token: AsChar,
+    E: ParserError<I>,
+{
+    (opt(sign::<I, E>), digit1, opt(('.', digit1)))
         .take()
         .map(Float)
         .parse_next(input)
 }
 
 /// Parses a [`Sign`].
-pub fn sign(input: &mut &str) -> ModalResult<Sign> {
+pub fn sign<I, E>(input: &mut I) -> Result<Sign, E>
+where
+    I: StreamIsPartial + Stream + Compare<char>,
+    E: ParserError<I>,
+{
     alt(('+'.value(Sign::Positive), '-'.value(Sign::Negative)))
         .parse_next(input)
 }
@@ -534,20 +751,20 @@ pub fn sign(input: &mut &str) -> ModalResult<Sign> {
 /// A version of [`dec_uint`] that accepts leading zeros.
 ///
 /// [`dec_uint`]: winnow::ascii::dec_uint
-pub(crate) fn lz_dec_uint<I, O, E>(input: &mut I) -> winnow::error::Result<O, E>
+pub(crate) fn lz_dec_uint<I, O, E>(input: &mut I) -> Result<O, E>
 where
-    I: winnow::stream::StreamIsPartial + winnow::stream::Stream,
-    <I as winnow::stream::Stream>::Slice: winnow::stream::AsBStr,
-    <I as winnow::stream::Stream>::Token: winnow::stream::AsChar + Clone,
+    I: StreamIsPartial + Stream,
+    <I as Stream>::Slice: AsBStr,
+    <I as Stream>::Token: AsChar + Clone,
     O: winnow::ascii::Uint,
-    E: winnow::error::ParserError<I>,
+    E: ParserError<I>,
 {
     trace("lz_dec_uint", move |input: &mut I| {
         digit1
             .void()
             .take()
-            .verify_map(|s: <I as winnow::stream::Stream>::Slice| {
-                let s = winnow::stream::AsBStr::as_bstr(&s);
+            .verify_map(|s: <I as Stream>::Slice| {
+                let s = AsBStr::as_bstr(&s);
                 let s = unsafe { std::str::from_utf8_unchecked(s) };
                 O::try_from_dec_uint(s)
             })
@@ -642,7 +859,7 @@ mod tests {
     fn binary_parser() {
         const DATA: &str = r#"AAABAAEAEBAQAAEABAAoAQAAFgAAACgAAAAQAAAAIAAAAAEABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAgIAAAICAgADAwMAA////AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMwAAAAAAABNEMQAAAAAAAkQgAAAAAAJEREQgAAACECQ0QgEgAAQxQzM0E0AABERCRCREQAADRDJEJEQwAAAhA0QwEQAAAAAEREAAAAAAAAREQAAAAAAAAkQgAAAAAAAAMgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"#;
 
-        assert!(binary.parse(DATA).is_ok());
+        assert!(binary::<_, ()>.parse(DATA).is_ok());
     }
 
     #[test]
@@ -774,26 +991,34 @@ mod tests {
 
     #[test]
     fn iana_token_parser() {
-        assert!(iana_token.parse_peek("foo-bar-baz").is_ok());
-        assert!(iana_token.parse_peek("x-name-1-2-3").is_ok());
+        assert!(iana_token::<_, ()>.parse_peek("foo-bar-baz").is_ok());
+        assert!(iana_token::<_, ()>.parse_peek("x-name-1-2-3").is_ok());
     }
 
     #[test]
     fn x_name_parser() {
-        assert_eq!(x_name.parse_peek("X-foo-bar"), Ok(("", "X-foo-bar")));
-        assert_eq!(x_name.parse_peek("X-baz-123"), Ok(("", "X-baz-123")));
-        assert!(x_name.parse_peek("x-must-be-capital").is_err());
+        assert_eq!(
+            x_name::<_, ()>.parse_peek("X-foo-bar"),
+            Ok(("", "X-foo-bar"))
+        );
+        assert_eq!(
+            x_name::<_, ()>.parse_peek("X-baz-123"),
+            Ok(("", "X-baz-123"))
+        );
+        assert!(x_name::<_, ()>.parse_peek("x-must-be-capital").is_err());
     }
 
     #[test]
     fn text_parser() {
         assert!(
-            text.parse_peek(r#"hello world!"#)
+            text::<()>
+                .parse_peek(r#"hello world!"#)
                 .is_ok_and(|(_, s)| matches!(s, Cow::Borrowed(_)))
         );
 
         assert!(
-            text.parse_peek(r#"hello\, world!"#)
+            text::<()>
+                .parse_peek(r#"hello\, world!"#)
                 .is_ok_and(|(_, s)| matches!(s, Cow::Owned(_)))
         );
     }
@@ -801,12 +1026,12 @@ mod tests {
     #[test]
     fn period_parser() {
         assert!(matches!(
-            period.parse_peek("19970101T180000Z/19970102T070000Z"),
+            period::<_, ()>.parse_peek("19970101T180000Z/19970102T070000Z"),
             Ok(("", Period::Explicit { .. })),
         ));
 
         assert!(matches!(
-            period.parse_peek("19970101T180000Z/PT5H30M"),
+            period::<_, ()>.parse_peek("19970101T180000Z/PT5H30M"),
             Ok(("", Period::Start { .. })),
         ));
     }
@@ -814,7 +1039,7 @@ mod tests {
     #[test]
     fn duration_parser() {
         assert_eq!(
-            duration.parse_peek("P7W"),
+            duration::<_, ()>.parse_peek("P7W"),
             Ok((
                 "",
                 Duration {
@@ -825,7 +1050,7 @@ mod tests {
         );
 
         assert_eq!(
-            duration.parse_peek("+P15DT5H0M20S"),
+            duration::<_, ()>.parse_peek("+P15DT5H0M20S"),
             Ok((
                 "",
                 Duration {
@@ -845,26 +1070,31 @@ mod tests {
 
     #[test]
     fn datetime_parser() {
-        assert!(datetime.parse_peek("19970714T045015Z").is_ok());
-        assert!(datetime.parse_peek("19970714T045015").is_ok());
+        assert!(datetime::<_, ()>.parse_peek("19970714T045015Z").is_ok());
+        assert!(datetime::<_, ()>.parse_peek("19970714T045015").is_ok());
     }
 
     #[test]
     fn datetime_utc_parser() {
-        assert!(datetime_utc.parse_peek("19970714T045015Z").is_ok());
-        assert!(datetime_utc.parse_peek("19970714T045015").is_err());
+        assert!(datetime_utc::<_, ()>.parse_peek("19970714T045015Z").is_ok());
+        assert!(datetime_utc::<_, ()>.parse_peek("19970714T045015").is_err());
     }
 
     #[test]
     fn date_parser() {
-        assert!(date.parse_peek("19970714").is_ok());
-        assert!(date.parse_peek("20150229").is_err());
+        assert!(date::<_, ()>.parse_peek("19970714").is_ok());
+        assert!(date::<_, ()>.parse_peek("20150229").is_err());
+
+        assert_eq!(
+            date::<_, ()>.parse_peek("20040620"),
+            Ok(("", Date(NaiveDate::from_ymd_opt(2004, 6, 20).unwrap())))
+        );
     }
 
     #[test]
     fn time_parser() {
         assert_eq!(
-            time.parse_peek("111111Z").unwrap().1,
+            time::<_, ()>.parse_peek("111111Z").unwrap().1,
             Time {
                 raw: RawTime {
                     hours: 11,
@@ -875,19 +1105,19 @@ mod tests {
             },
         );
 
-        assert!(time.parse_peek("123456").is_ok());
+        assert!(time::<_, ()>.parse_peek("123456").is_ok());
     }
 
     #[test]
     fn time_utc_parser() {
-        assert!(time_utc.parse_peek("202020Z").is_ok());
-        assert!(time_utc.parse_peek("202020").is_err());
+        assert!(time_utc::<_, ()>.parse_peek("202020Z").is_ok());
+        assert!(time_utc::<_, ()>.parse_peek("202020").is_err());
     }
 
     #[test]
     fn raw_time_parser() {
         assert_eq!(
-            raw_time.parse_peek("123456").unwrap().1,
+            raw_time::<_, ()>.parse_peek("123456".as_bytes()).unwrap().1,
             RawTime {
                 hours: 12,
                 minutes: 34,
@@ -895,52 +1125,67 @@ mod tests {
             },
         );
 
-        assert!(raw_time.parse_peek("123456").is_ok());
-        assert!(raw_time.parse_peek("000000").is_ok());
-        assert!(raw_time.parse_peek("235959").is_ok());
-        assert!(raw_time.parse_peek("235960").is_ok());
-        assert!(raw_time.parse_peek("240000").is_err());
+        assert!(raw_time::<_, ()>.parse_peek("123456").is_ok());
+        assert!(raw_time::<_, ()>.parse_peek("000000").is_ok());
+        assert!(raw_time::<_, ()>.parse_peek("235959").is_ok());
+        assert!(raw_time::<_, ()>.parse_peek("235960").is_ok());
+        assert!(raw_time::<_, ()>.parse_peek("240000").is_err());
     }
 
     #[test]
     fn time_format_parser() {
-        assert_eq!(time_format.parse_peek("Z"), Ok(("", TimeFormat::Utc)));
-        assert_eq!(time_format.parse_peek("ZZ"), Ok(("Z", TimeFormat::Utc)));
-        assert_eq!(time_format.parse_peek("Y"), Ok(("Y", TimeFormat::Local)));
+        assert_eq!(
+            time_format::<_, ()>.parse_peek("Z"),
+            Ok(("", TimeFormat::Utc))
+        );
+        assert_eq!(
+            time_format::<_, ()>.parse_peek("ZZ"),
+            Ok(("Z", TimeFormat::Utc))
+        );
+        assert_eq!(
+            time_format::<_, ()>.parse_peek("Y"),
+            Ok(("Y", TimeFormat::Local))
+        );
     }
 
     #[test]
     fn utc_marker_parser() {
-        assert_eq!(utc_marker.parse_peek("Z"), Ok(("", ())));
-        assert!(utc_marker.parse_peek("Y").is_err());
+        assert_eq!(utc_marker::<_, ()>.parse_peek("Z"), Ok(("", ())));
+        assert!(utc_marker::<_, ()>.parse_peek("Y").is_err());
     }
 
     #[test]
     fn bool_parser() {
-        assert_eq!(bool_caseless.parse_peek("TRUE"), Ok(("", true)));
-        assert_eq!(bool_caseless.parse_peek("FALSE"), Ok(("", false)));
-        assert_eq!(bool_caseless.parse_peek("True"), Ok(("", true)));
-        assert_eq!(bool_caseless.parse_peek("False"), Ok(("", false)));
-        assert_eq!(bool_caseless.parse_peek("true"), Ok(("", true)));
-        assert_eq!(bool_caseless.parse_peek("false"), Ok(("", false)));
+        assert_eq!(bool_caseless::<_, ()>.parse_peek("TRUE"), Ok(("", true)));
+        assert_eq!(bool_caseless::<_, ()>.parse_peek("FALSE"), Ok(("", false)));
+        assert_eq!(bool_caseless::<_, ()>.parse_peek("True"), Ok(("", true)));
+        assert_eq!(bool_caseless::<_, ()>.parse_peek("False"), Ok(("", false)));
+        assert_eq!(bool_caseless::<_, ()>.parse_peek("true"), Ok(("", true)));
+        assert_eq!(bool_caseless::<_, ()>.parse_peek("false"), Ok(("", false)));
     }
 
     #[test]
     fn float_parser() {
         assert_eq!(
-            float.parse_peek("1000000.0000001"),
+            float::<_, ()>.parse_peek("1000000.0000001"),
             Ok(("", Float("1000000.0000001")))
         );
-        assert_eq!(float.parse_peek("1.333"), Ok(("", Float("1.333"))));
-        assert_eq!(float.parse_peek("-3.14"), Ok(("", Float("-3.14"))));
-        assert_eq!(float.parse_peek("12."), Ok((".", Float("12"))));
-        assert!(float.parse_peek("+.002").is_err());
+        assert_eq!(
+            float::<_, ()>.parse_peek("1.333"),
+            Ok(("", Float("1.333")))
+        );
+        assert_eq!(
+            float::<_, ()>.parse_peek("-3.14"),
+            Ok(("", Float("-3.14")))
+        );
+        assert_eq!(float::<_, ()>.parse_peek("12."), Ok((".", Float("12"))));
+        assert!(float::<_, ()>.parse_peek("+.002").is_err());
     }
 
     #[test]
     fn sign_parser() {
-        assert_eq!(sign.parse_peek("+"), Ok(("", Sign::Positive)));
-        assert_eq!(sign.parse_peek("-"), Ok(("", Sign::Negative)));
-        assert!(sign.parse_peek("0").is_err());
+        assert_eq!(sign::<_, ()>.parse_peek("+"), Ok(("", Sign::Positive)));
+        assert_eq!(sign::<_, ()>.parse_peek("-"), Ok(("", Sign::Negative)));
+        assert!(sign::<_, ()>.parse_peek("0").is_err());
     }
 }

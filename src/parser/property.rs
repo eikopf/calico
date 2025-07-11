@@ -168,9 +168,18 @@ fn parse_value<'i, S: AsRef<str> + ?Sized>(
             bool_caseless.map(Value::Boolean).parse_next(input)
         }
         ValueType::CalAddress => uri.map(Value::CalAddress).parse_next(input),
-        ValueType::Date => date.map(Value::Date).parse_next(input),
-        ValueType::DateTime => datetime.map(Value::DateTime).parse_next(input),
-        ValueType::Duration => duration.map(Value::Duration).parse_next(input),
+        ValueType::Date => {
+            //date.map(Value::Date).parse_next(input)
+            todo!()
+        }
+        ValueType::DateTime => {
+            //datetime.map(Value::DateTime).parse_next(input)
+            todo!()
+        }
+        ValueType::Duration => {
+            //duration.map(Value::Duration).parse_next(input)
+            todo!()
+        }
         ValueType::Float => float.map(Value::Float).parse_next(input),
         ValueType::Integer => (opt(sign), lz_dec_uint::<_, u64, _>)
             .try_map(|(s, d)| i64::try_from(d).map(|d| (s, d)))
@@ -178,10 +187,16 @@ fn parse_value<'i, S: AsRef<str> + ?Sized>(
             .try_map(i32::try_from)
             .map(Value::Integer)
             .parse_next(input),
-        ValueType::Period => period.map(Value::Period).parse_next(input),
+        ValueType::Period => {
+            //period.map(Value::Period).parse_next(input)
+            todo!()
+        }
         ValueType::Recur => todo!(),
         ValueType::Text => text.map(Value::Text).parse_next(input),
-        ValueType::Time => time.map(Value::Time).parse_next(input),
+        ValueType::Time => {
+            //time.map(Value::Time).parse_next(input)
+            todo!()
+        }
         ValueType::Uri => uri.map(Value::Uri).parse_next(input),
         ValueType::UtcOffset => todo!(),
         ValueType::Iana(name) => text

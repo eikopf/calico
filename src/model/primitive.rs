@@ -66,7 +66,7 @@ pub struct DateTime<F = TimeFormat> {
 }
 
 /// A DATE value (RFC 5545, §3.3.4).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Date(pub(crate) NaiveDate);
 
 /// A TIME value (RFC 5545, §3.3.12).
@@ -76,7 +76,7 @@ pub struct Time<F = TimeFormat> {
     pub format: F,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct RawTime {
     pub hours: u8,
     pub minutes: u8,
@@ -435,4 +435,24 @@ pub struct UtcOffset {
     pub hours: i8,
     pub minutes: u8,
     pub seconds: Option<u8>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn raw_time_ord_impl() {
+        assert!(
+            RawTime {
+                hours: 12,
+                minutes: 0,
+                seconds: 0
+            } < RawTime {
+                hours: 12,
+                minutes: 30,
+                seconds: 0
+            }
+        );
+    }
 }
