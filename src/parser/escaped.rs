@@ -9,8 +9,28 @@ use winnow::{
     },
 };
 
+pub trait AsEscaped {
+    fn as_escaped<'a>(&'a self) -> Escaped<'a>;
+}
+
+impl AsEscaped for str {
+    fn as_escaped<'a>(&'a self) -> Escaped<'a> {
+        Escaped(self.as_bytes())
+    }
+}
+
+impl AsEscaped for [u8] {
+    fn as_escaped<'a>(&'a self) -> Escaped<'a> {
+        Escaped(self)
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub struct Escaped<'a>(&'a [u8]);
+pub struct Escaped<'a>(pub &'a [u8]);
+
+impl Escaped<'static> {
+    pub const EMPTY: Self = Escaped("".as_bytes());
+}
 
 impl<'a> std::fmt::Debug for Escaped<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
