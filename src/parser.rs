@@ -4,6 +4,7 @@ use std::io::{BufRead, Cursor};
 
 use line::{LineError, Lines};
 
+pub mod escaped;
 pub mod line;
 pub mod parameter;
 pub mod primitive;
