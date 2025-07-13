@@ -23,9 +23,13 @@ use crate::model::primitive::{
 };
 
 /// Parses a [`FeatureType`].
-pub fn feature_type<'i>(
-    input: &mut &'i str,
-) -> ModalResult<FeatureType<&'i str>> {
+pub fn feature_type<I, E>(input: &mut I) -> Result<FeatureType<I::Slice>, E>
+where
+    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
+    <I as Stream>::Token: AsChar + Clone,
+    FeatureType<I::Slice>: Clone,
+    E: ParserError<I>,
+{
     alt((
         Caseless("MODERATOR").value(FeatureType::Moderator),
         Caseless("SCREEN").value(FeatureType::Screen),
@@ -40,9 +44,13 @@ pub fn feature_type<'i>(
 }
 
 /// Parses a [`DisplayType`].
-pub fn display_type<'i>(
-    input: &mut &'i str,
-) -> ModalResult<DisplayType<&'i str>> {
+pub fn display_type<I, E>(input: &mut I) -> Result<DisplayType<I::Slice>, E>
+where
+    I: Stream + StreamIsPartial + Compare<Caseless<&'static str>>,
+    I::Token: AsChar + Clone,
+    DisplayType<I::Slice>: Clone,
+    E: ParserError<I>,
+{
     alt((
         Caseless("THUMBNAIL").value(DisplayType::Thumbnail),
         Caseless("FULLSIZE").value(DisplayType::Fullsize),
@@ -56,19 +64,33 @@ pub fn display_type<'i>(
 /// Parses the exact string `GREGORIAN`, which occurs in the calendar scale
 /// property. This parser returns `()` because the Gregorian calendar is the
 /// _only_ calendar scale recognised by RFC 5545 and its successors.
-pub fn gregorian(input: &mut &str) -> ModalResult<()> {
+pub fn gregorian<I, E>(input: &mut I) -> Result<(), E>
+where
+    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
+    E: ParserError<I>,
+{
     Caseless("GREGORIAN").void().parse_next(input)
 }
 
 /// Parses the exact string `2.0`, which occurs in the version property. This
 /// parser returns `()` because no other version of iCalendar has ever been
 /// registered or recognised.
-pub fn v2_0(input: &mut &str) -> ModalResult<()> {
+pub fn v2_0<I, E>(input: &mut I) -> Result<(), E>
+where
+    I: StreamIsPartial + Stream + Compare<&'static str>,
+    E: ParserError<I>,
+{
     "2.0".void().parse_next(input)
 }
 
 /// Parses a [`Method`].
-pub fn method<'i>(input: &mut &'i str) -> ModalResult<Method<&'i str>> {
+pub fn method<I, E>(input: &mut I) -> Result<Method<I::Slice>, E>
+where
+    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
+    I::Token: AsChar + Clone,
+    Method<I::Slice>: Clone,
+    E: ParserError<I>,
+{
     alt((
         Caseless("DECLINECOUNTER").value(Method::DeclineCounter),
         Caseless("COUNTER").value(Method::Counter),
@@ -147,9 +169,15 @@ where
 }
 
 /// Parses a calendar user type value (RFC 5545 §3.2.3).
-pub fn calendar_user_type<'i>(
-    input: &mut &'i str,
-) -> ModalResult<CalendarUserType<&'i str>> {
+pub fn calendar_user_type<I, E>(
+    input: &mut I,
+) -> Result<CalendarUserType<I::Slice>, E>
+where
+    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
+    I::Token: AsChar + Clone,
+    CalendarUserType<I::Slice>: Clone,
+    E: ParserError<I>,
+{
     alt((
         Caseless("INDIVIDUAL").value(CalendarUserType::Individual),
         Caseless("GROUP").value(CalendarUserType::Group),
@@ -162,7 +190,11 @@ pub fn calendar_user_type<'i>(
 }
 
 /// Parses an [`Encoding`].
-pub fn inline_encoding(input: &mut &str) -> ModalResult<Encoding> {
+pub fn inline_encoding<I, E>(input: &mut I) -> ModalResult<Encoding, E>
+where
+    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
+    E: ParserError<I>,
+{
     alt((
         Caseless("8BIT").value(Encoding::Bit8),
         Caseless("BASE64").value(Encoding::Base64),
@@ -202,9 +234,13 @@ pub fn format_type(input: &mut &str) -> ModalResult<FormatType> {
 }
 
 /// Parses a [`FreeBusyType`].
-pub fn free_busy_type<'i>(
-    input: &mut &'i str,
-) -> ModalResult<FreeBusyType<&'i str>> {
+pub fn free_busy_type<I, E>(input: &mut I) -> Result<FreeBusyType<I::Slice>, E>
+where
+    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
+    I::Token: AsChar + Clone,
+    FreeBusyType<I::Slice>: Clone,
+    E: ParserError<I>,
+{
     alt((
         Caseless("BUSY-UNAVAILABLE").value(FreeBusyType::BusyUnavailable),
         Caseless("BUSY-TENTATIVE").value(FreeBusyType::BusyTentative),
@@ -216,9 +252,15 @@ pub fn free_busy_type<'i>(
 }
 
 /// Parses a [`ParticipationStatus`].
-pub fn participation_status<'i>(
-    input: &mut &'i str,
-) -> ModalResult<ParticipationStatus<&'i str>> {
+pub fn participation_status<I, E>(
+    input: &mut I,
+) -> Result<ParticipationStatus<I::Slice>, E>
+where
+    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
+    I::Token: AsChar + Clone,
+    ParticipationStatus<I::Slice>: Clone,
+    E: ParserError<I>,
+{
     alt((
         Caseless("NEEDS-ACTION").value(ParticipationStatus::NeedsAction),
         Caseless("IN-PROCESS").value(ParticipationStatus::InProcess),
@@ -233,9 +275,13 @@ pub fn participation_status<'i>(
 }
 
 /// Parses a [`TriggerRelation`].
-pub fn alarm_trigger_relationship(
-    input: &mut &str,
-) -> ModalResult<TriggerRelation> {
+pub fn alarm_trigger_relationship<I, E>(
+    input: &mut I,
+) -> Result<TriggerRelation, E>
+where
+    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
+    E: ParserError<I>,
+{
     alt((
         Caseless("START").value(TriggerRelation::Start),
         Caseless("END").value(TriggerRelation::End),
@@ -244,9 +290,15 @@ pub fn alarm_trigger_relationship(
 }
 
 /// Parses a [`RelationshipType`].
-pub fn relationship_type<'i>(
-    input: &mut &'i str,
-) -> ModalResult<RelationshipType<&'i str>> {
+pub fn relationship_type<I, E>(
+    input: &mut I,
+) -> Result<RelationshipType<I::Slice>, E>
+where
+    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
+    I::Token: AsChar + Clone,
+    RelationshipType<I::Slice>: Clone,
+    E: ParserError<I>,
+{
     alt((
         Caseless("SIBLING").value(RelationshipType::Sibling),
         Caseless("PARENT").value(RelationshipType::Parent),
@@ -257,9 +309,15 @@ pub fn relationship_type<'i>(
 }
 
 /// Parses a [`ParticipationRole`].
-pub fn participation_role<'i>(
-    input: &mut &'i str,
-) -> ModalResult<ParticipationRole<&'i str>> {
+pub fn participation_role<I, E>(
+    input: &mut I,
+) -> Result<ParticipationRole<I::Slice>, E>
+where
+    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
+    I::Token: AsChar + Clone,
+    ParticipationRole<I::Slice>: Clone,
+    E: ParserError<I>,
+{
     alt((
         Caseless("REQ-PARTICIPANT").value(ParticipationRole::ReqParticipant),
         Caseless("OPT-PARTICIPANT").value(ParticipationRole::OptParticipant),
@@ -271,7 +329,16 @@ pub fn participation_role<'i>(
 }
 
 /// Parses a [`ValueType`].
-pub fn value_type<'i>(input: &mut &'i str) -> ModalResult<ValueType<&'i str>> {
+pub fn value_type<I, E>(input: &mut I) -> Result<ValueType<I::Slice>, E>
+where
+    I: StreamIsPartial
+        + Stream
+        + Compare<Caseless<&'static str>>
+        + Compare<char>,
+    I::Token: AsChar + Clone,
+    ValueType<I::Slice>: Clone,
+    E: ParserError<I>,
+{
     alt((
         Caseless("CAL-ADDRESS").value(ValueType::CalAddress),
         Caseless("UTC-OFFSET").value(ValueType::UtcOffset),
@@ -775,54 +842,73 @@ where
 
 #[cfg(test)]
 mod tests {
+    use crate::parser::escaped::{AsEscaped, Escaped};
+
     use super::*;
 
     #[test]
     fn feature_type_parser() {
         assert_eq!(
-            feature_type.parse_peek("chat").unwrap().1,
+            feature_type::<_, ()>.parse_peek("chat").unwrap().1,
             FeatureType::Chat
         );
+
         assert_eq!(
-            feature_type.parse_peek("SCREEN").unwrap().1,
+            feature_type::<_, ()>.parse_peek("SCREEN").unwrap().1,
             FeatureType::Screen
+        );
+
+        assert_eq!(
+            feature_type::<_, ()>
+                .parse_peek(Escaped("vi\r\n\tdeo".as_bytes()))
+                .unwrap()
+                .1,
+            FeatureType::Video
+        );
+
+        assert_eq!(
+            feature_type::<_, ()>
+                .parse_peek(Escaped("\r\n\tX-TH\r\n\tING".as_bytes()))
+                .unwrap()
+                .1,
+            FeatureType::Other("X-TH\r\n\tING".as_bytes()),
         );
     }
 
     #[test]
     fn display_type_parser() {
         assert_eq!(
-            display_type.parse_peek("badge").unwrap().1,
+            display_type::<_, ()>.parse_peek("badge").unwrap().1,
             DisplayType::Badge
         );
         assert_eq!(
-            display_type.parse_peek("GRAPHIC").unwrap().1,
+            display_type::<_, ()>.parse_peek("GRAPHIC").unwrap().1,
             DisplayType::Graphic
         );
         assert_eq!(
-            display_type.parse_peek("X-OTHER").unwrap().1,
+            display_type::<_, ()>.parse_peek("X-OTHER").unwrap().1,
             DisplayType::Other("X-OTHER"),
         );
     }
 
     #[test]
     fn gregorian_parser() {
-        assert!(gregorian.parse_peek("GREGORIAN").is_ok());
-        assert!(gregorian.parse_peek("GRUGORIAN").is_err());
+        assert!(gregorian::<_, ()>.parse_peek("GREGORIAN").is_ok());
+        assert!(gregorian::<_, ()>.parse_peek("GRUGORIAN").is_err());
     }
 
     #[test]
     fn v2_0_parser() {
-        assert!(v2_0.parse_peek("2.0").is_ok());
-        assert!(v2_0.parse_peek("3.0").is_err());
+        assert!(v2_0::<_, ()>.parse_peek("2.0").is_ok());
+        assert!(v2_0::<_, ()>.parse_peek("3.0").is_err());
     }
 
     #[test]
     fn method_parser() {
-        assert!(method.parse_peek("REFRESH").is_ok());
-        assert!(method.parse_peek("CANCEL").is_ok());
-        assert!(method.parse_peek("ADD").is_ok());
-        assert!(method.parse_peek("any-iana-token").is_ok());
+        assert!(method::<_, ()>.parse_peek("REFRESH").is_ok());
+        assert!(method::<_, ()>.parse_peek("CANCEL").is_ok());
+        assert!(method::<_, ()>.parse_peek("ADD").is_ok());
+        assert!(method::<_, ()>.parse_peek("any-iana-token").is_ok());
     }
 
     #[test]
@@ -865,17 +951,23 @@ mod tests {
     #[test]
     fn calendar_user_type_parser() {
         assert_eq!(
-            calendar_user_type.parse_peek("INDIVIDUAL").unwrap().1,
+            calendar_user_type::<_, ()>
+                .parse_peek("INDIVIDUAL")
+                .unwrap()
+                .1,
             CalendarUserType::Individual,
         );
 
         assert_eq!(
-            calendar_user_type.parse_peek("room").unwrap().1,
+            calendar_user_type::<_, ()>.parse_peek("room").unwrap().1,
             CalendarUserType::Room,
         );
 
         assert_eq!(
-            calendar_user_type.parse_peek("iana-token").unwrap().1,
+            calendar_user_type::<_, ()>
+                .parse_peek("iana-token")
+                .unwrap()
+                .1,
             CalendarUserType::Other("iana-token"),
         );
     }
@@ -883,16 +975,20 @@ mod tests {
     #[test]
     fn inline_encoding_parser() {
         assert_eq!(
-            inline_encoding.parse_peek("8bit"),
-            inline_encoding.parse_peek("8BIT"),
+            inline_encoding::<_, ()>.parse_peek("8bit"),
+            inline_encoding::<_, ()>.parse_peek("8BIT"),
         );
 
         assert_eq!(
-            inline_encoding.parse_peek("Base64"),
-            inline_encoding.parse_peek("BASE64"),
+            inline_encoding::<_, ()>.parse_peek("Base64"),
+            inline_encoding::<_, ()>.parse_peek("BASE64"),
         );
 
-        assert!(inline_encoding.parse_peek("anything_else").is_err());
+        assert!(
+            inline_encoding::<_, ()>
+                .parse_peek("anything_else")
+                .is_err()
+        );
     }
 
     #[test]
@@ -905,37 +1001,53 @@ mod tests {
     #[test]
     fn free_busy_type_parser() {
         assert_eq!(
-            free_busy_type.parse_peek("busy"),
+            free_busy_type::<_, ()>.parse_peek("busy"),
             Ok(("", FreeBusyType::Busy))
         );
         assert_eq!(
-            free_busy_type.parse_peek("Free"),
+            free_busy_type::<_, ()>.parse_peek("Free"),
             Ok(("", FreeBusyType::Free))
         );
     }
 
     #[test]
     fn participation_status_parser() {
-        assert!(participation_status.parse_peek("NEEDS-ACTION").is_ok());
-        assert!(participation_status.parse_peek("in-process").is_ok());
-        assert!(participation_status.parse_peek("some-iana-token").is_ok());
-        assert!(participation_status.parse_peek(",garbage").is_err());
+        assert!(
+            participation_status::<_, ()>
+                .parse_peek("NEEDS-ACTION")
+                .is_ok()
+        );
+        assert!(
+            participation_status::<_, ()>
+                .parse_peek("in-process")
+                .is_ok()
+        );
+        assert!(
+            participation_status::<_, ()>
+                .parse_peek("some-iana-token")
+                .is_ok()
+        );
+        assert!(
+            participation_status::<_, ()>
+                .parse_peek(",garbage")
+                .is_err()
+        );
     }
 
     #[test]
     fn alarm_trigger_relationship_parser() {
         assert_eq!(
-            alarm_trigger_relationship.parse_peek("START"),
+            alarm_trigger_relationship::<_, ()>.parse_peek("START"),
             Ok(("", TriggerRelation::Start)),
         );
 
         assert_eq!(
-            alarm_trigger_relationship.parse_peek("END"),
+            alarm_trigger_relationship::<_, ()>.parse_peek("END"),
             Ok(("", TriggerRelation::End)),
         );
 
         assert!(
-            alarm_trigger_relationship
+            alarm_trigger_relationship::<_, ()>
                 .parse_peek("anything_else")
                 .is_err()
         );
@@ -944,22 +1056,22 @@ mod tests {
     #[test]
     fn relationship_type_parser() {
         assert_eq!(
-            relationship_type.parse_peek("SIBLING"),
+            relationship_type::<_, ()>.parse_peek("SIBLING"),
             Ok(("", RelationshipType::Sibling)),
         );
 
         assert_eq!(
-            relationship_type.parse_peek("parent"),
+            relationship_type::<_, ()>.parse_peek("parent"),
             Ok(("", RelationshipType::Parent)),
         );
 
         assert_eq!(
-            relationship_type.parse_peek("Child"),
+            relationship_type::<_, ()>.parse_peek("Child"),
             Ok(("", RelationshipType::Child)),
         );
 
         assert_eq!(
-            relationship_type.parse_peek("X-SOMETHING-ELSE"),
+            relationship_type::<_, ()>.parse_peek("X-SOMETHING-ELSE"),
             Ok(("", RelationshipType::Other("X-SOMETHING-ELSE"))),
         );
     }
@@ -967,26 +1079,47 @@ mod tests {
     #[test]
     fn participation_role_parser() {
         assert_eq!(
-            participation_role.parse_peek("req-participant"),
+            participation_role::<_, ()>.parse_peek("req-participant"),
             Ok(("", ParticipationRole::ReqParticipant)),
         );
 
         assert_eq!(
-            participation_role.parse_peek("Chair"),
+            participation_role::<_, ()>.parse_peek("Chair"),
             Ok(("", ParticipationRole::Chair)),
         );
 
         assert_eq!(
-            participation_role.parse_peek("X-ANYTHING"),
+            participation_role::<_, ()>.parse_peek("X-ANYTHING"),
             Ok(("", ParticipationRole::Other("X-ANYTHING"))),
         );
     }
 
     #[test]
     fn value_type_parser() {
-        assert_eq!(value_type.parse_peek("float"), Ok(("", ValueType::Float)));
-        assert_eq!(value_type.parse_peek("TIME"), Ok(("", ValueType::Time)));
-        assert_eq!(value_type.parse_peek("Recur"), Ok(("", ValueType::Recur)));
+        assert_eq!(
+            value_type::<_, ()>.parse_peek("float"),
+            Ok(("", ValueType::Float))
+        );
+        assert_eq!(
+            value_type::<_, ()>.parse_peek("TIME"),
+            Ok(("", ValueType::Time))
+        );
+        assert_eq!(
+            value_type::<_, ()>.parse_peek("Recur"),
+            Ok(("", ValueType::Recur))
+        );
+        assert_eq!(
+            value_type::<_, ()>
+                .parse_peek("BOO\r\n\tLEAN".as_escaped())
+                .map(|(_, v)| v),
+            Ok(ValueType::Boolean)
+        );
+        assert_eq!(
+            value_type::<_, ()>
+                .parse_peek("\r\n X-TY\r\n\tPE".as_escaped())
+                .map(|(_, v)| v),
+            Ok(ValueType::X("X-TY\r\n\tPE".as_bytes()))
+        );
     }
 
     #[test]
@@ -1072,6 +1205,26 @@ mod tests {
     fn datetime_parser() {
         assert!(datetime::<_, ()>.parse_peek("19970714T045015Z").is_ok());
         assert!(datetime::<_, ()>.parse_peek("19970714T045015").is_ok());
+
+        assert!(
+            datetime::<_, ()>
+                .parse_peek("19970\r\n\t714T\r\n 045015".as_escaped())
+                .is_ok_and(|(_tail, dt)| {
+                    dt == DateTime {
+                        date: Date(
+                            NaiveDate::from_ymd_opt(1997, 7, 14).unwrap(),
+                        ),
+                        time: Time {
+                            raw: RawTime {
+                                hours: 4,
+                                minutes: 50,
+                                seconds: 15,
+                            },
+                            format: TimeFormat::Local,
+                        },
+                    }
+                })
+        );
     }
 
     #[test]
@@ -1162,14 +1315,35 @@ mod tests {
         assert_eq!(bool_caseless::<_, ()>.parse_peek("False"), Ok(("", false)));
         assert_eq!(bool_caseless::<_, ()>.parse_peek("true"), Ok(("", true)));
         assert_eq!(bool_caseless::<_, ()>.parse_peek("false"), Ok(("", false)));
+
+        assert_eq!(
+            bool_caseless::<_, ()>.parse_peek(Escaped("tr\r\n\tue".as_bytes())),
+            Ok((Escaped::EMPTY, true))
+        );
+
+        assert_eq!(
+            bool_caseless::<_, ()>
+                .parse_peek(Escaped("fals\r\n\te".as_bytes())),
+            Ok((Escaped::EMPTY, false))
+        );
     }
 
     #[test]
     fn float_parser() {
         assert_eq!(
             float::<_, ()>.parse_peek("1000000.0000001"),
-            Ok(("", Float("1000000.0000001")))
+            Ok(("", Float("1000000.0000001"))),
         );
+
+        assert_eq!(
+            float::<_, ()>
+                .parse_peek(Escaped("1000\r\n\t000.00\r\n 00001".as_bytes())),
+            Ok((
+                Escaped::EMPTY,
+                Float("1000\r\n\t000.00\r\n 00001".as_bytes())
+            )),
+        );
+
         assert_eq!(
             float::<_, ()>.parse_peek("1.333"),
             Ok(("", Float("1.333")))
@@ -1187,5 +1361,15 @@ mod tests {
         assert_eq!(sign::<_, ()>.parse_peek("+"), Ok(("", Sign::Positive)));
         assert_eq!(sign::<_, ()>.parse_peek("-"), Ok(("", Sign::Negative)));
         assert!(sign::<_, ()>.parse_peek("0").is_err());
+
+        assert_eq!(
+            sign::<_, ()>.parse_peek(Escaped("\r\n\t+".as_bytes())),
+            Ok((Escaped("".as_bytes()), Sign::Positive))
+        );
+
+        assert_eq!(
+            sign::<_, ()>.parse_peek(Escaped("\r\n -".as_bytes())),
+            Ok((Escaped("".as_bytes()), Sign::Negative))
+        );
     }
 }
