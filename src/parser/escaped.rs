@@ -1,8 +1,12 @@
 //! A custom [`Stream`](winnow::stream::Stream) for skipping line folds.
 
 use winnow::{
+    ascii::Caseless,
     error::Needed,
-    stream::{Checkpoint, Offset, Stream, StreamIsPartial},
+    stream::{
+        Checkpoint, Compare, CompareResult, Offset, SliceLen, Stream,
+        StreamIsPartial,
+    },
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -131,6 +135,86 @@ impl<'a> StreamIsPartial for Escaped<'a> {
     }
 }
 
+impl<'a, 'b> Compare<&'b [u8]> for Escaped<'a> {
+    fn compare(&self, t: &'b [u8]) -> CompareResult {
+        // TODO: hacky impl, should really use a custom iterator type
+        let bytes = self.iter_offsets().map(|(_, c)| c);
+
+        if t.iter().zip(bytes).any(|(&l, r)| l != r) {
+            CompareResult::Error
+        // WARN: this is probably incorrect (but only for streaming)!
+        } else if self.0.len() < t.slice_len() {
+            CompareResult::Incomplete
+        } else {
+            match self.offset_at(t.len()) {
+                Ok(size) => CompareResult::Ok(size),
+                Err(Needed::Unknown) => CompareResult::Incomplete,
+                Err(Needed::Size(_)) => unreachable!(),
+            }
+        }
+    }
+}
+
+impl<'a, 'b> Compare<Caseless<&'b [u8]>> for Escaped<'a> {
+    fn compare(&self, t: Caseless<&'b [u8]>) -> CompareResult {
+        // TODO: hacky impl, should really use a custom iterator type
+        let bytes = self.iter_offsets().map(|(_, c)| c);
+
+        if t.0
+            .iter()
+            .zip(bytes)
+            .any(|(l, r)| !r.eq_ignore_ascii_case(l))
+        {
+            CompareResult::Error
+        // WARN: this is probably incorrect (but only for streaming)!
+        } else if self.0.len() < t.slice_len() {
+            CompareResult::Incomplete
+        } else {
+            match self.offset_at(t.0.len()) {
+                Ok(size) => CompareResult::Ok(size),
+                Err(Needed::Unknown) => CompareResult::Incomplete,
+                Err(Needed::Size(_)) => unreachable!(),
+            }
+        }
+    }
+}
+
+impl<'a, 'b> Compare<&'b str> for Escaped<'a> {
+    fn compare(&self, t: &'b str) -> CompareResult {
+        self.compare(t.as_bytes())
+    }
+}
+
+impl<'a, 'b> Compare<Caseless<&'b str>> for Escaped<'a> {
+    fn compare(&self, t: Caseless<&'b str>) -> CompareResult {
+        self.compare(t.as_bytes())
+    }
+}
+
+impl<'a> Compare<char> for Escaped<'a> {
+    fn compare(&self, c: char) -> winnow::stream::CompareResult {
+        self.compare(c.encode_utf8(&mut [0; 4]).as_bytes())
+    }
+}
+
+impl<'a> Compare<Caseless<u8>> for Escaped<'a> {
+    fn compare(&self, t: Caseless<u8>) -> CompareResult {
+        match self.iter_offsets().next() {
+            Some((size, c)) if t.0.eq_ignore_ascii_case(&c) => {
+                CompareResult::Ok(size)
+            }
+            Some(_) => CompareResult::Error,
+            None => CompareResult::Incomplete,
+        }
+    }
+}
+
+impl<'a> Compare<Caseless<char>> for Escaped<'a> {
+    fn compare(&self, t: Caseless<char>) -> CompareResult {
+        self.compare(Caseless(t.0.encode_utf8(&mut [0; 4]).as_bytes()))
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct IterOffsets<'a> {
     offset: usize,
@@ -189,6 +273,37 @@ mod tests {
     use winnow::{Parser, token::take};
 
     use super::*;
+
+    #[test]
+    fn compare_str_caseless() {
+        let input = Escaped("\r\n\ta\r\n b\r\n\tcd\r\n\te".as_bytes());
+        let res: Result<_, ()> =
+            (Caseless("A"), Caseless("B"), Caseless("C"), Caseless("D"))
+                .parse_peek(input);
+
+        assert!(res.is_ok());
+
+        let res: Result<_, ()> = ("A", "B", "C", "D").parse_peek(input);
+
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn compare_char() {
+        let input = Escaped("\r\n\ta\r\n b\r\n\tcd\r\n\te".as_bytes());
+
+        let res: Result<_, ()> = ('a', 'b', 'c', 'd').parse_peek(input);
+        assert_eq!(
+            res,
+            Ok((Escaped("\r\n\te".as_bytes()), ('a', 'b', 'c', 'd')))
+        );
+
+        let res: Result<_, ()> = ('a', 'b', 'c', 'd', 'e').parse_peek(input);
+        assert_eq!(
+            res,
+            Ok((Escaped("".as_bytes()), ('a', 'b', 'c', 'd', 'e')))
+        );
+    }
 
     #[test]
     fn take_parser() {
