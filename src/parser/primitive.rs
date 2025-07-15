@@ -1,6 +1,6 @@
 //! Parsers for primitive (i.e. terminal) grammar elements.
 
-use std::{borrow::Cow, str::FromStr};
+use std::borrow::Cow;
 
 use chrono::NaiveDate;
 use winnow::{
@@ -114,11 +114,20 @@ pub fn uid<'i>(input: &mut &'i str) -> ModalResult<Uid<Cow<'i, str>>> {
 }
 
 /// Parses an RFC 5646 language tag from a [`text`] value.
-pub fn language<'i>(input: &mut &'i str) -> ModalResult<Language<&'i str>> {
-    iana_token
-        .try_map(oxilangtag::LanguageTag::parse)
-        .map(Language)
-        .parse_next(input)
+pub fn language<I, E>(input: &mut I) -> Result<Language<I::Slice>, E>
+where
+    I: StreamIsPartial + Stream,
+    E: ParserError<I>,
+{
+    fn grandfathered<I, E>(input: &mut I) -> Result<Language<I::Slice>, E>
+    where
+        I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
+        E: ParserError<I>,
+    {
+        todo!()
+    }
+
+    todo!()
 }
 
 /// Parses an RFC 3986 URI. The description of the grammar in RFC 5545 is
@@ -226,11 +235,13 @@ pub fn format_type(input: &mut &str) -> ModalResult<FormatType> {
         .parse_next(input)
     }
 
-    (reg_name, '/', reg_name)
-        .take()
-        .try_map(mime::Mime::from_str)
-        .map(FormatType)
-        .parse_next(input)
+    //(reg_name, '/', reg_name)
+    //.take()
+    //.try_map(mime::Mime::from_str)
+    //.map(FormatType)
+    //.parse_next(input)
+
+    todo!()
 }
 
 /// Parses a [`FreeBusyType`].
@@ -924,9 +935,9 @@ mod tests {
 
     #[test]
     fn language_parser() {
-        assert!(language.parse_peek("en-US").is_ok());
-        assert!(language.parse_peek("de-CH").is_ok());
-        assert!(language.parse_peek("!!!garbage").is_err());
+        assert!(language::<_, ()>.parse_peek("en-US").is_ok());
+        assert!(language::<_, ()>.parse_peek("de-CH").is_ok());
+        assert!(language::<_, ()>.parse_peek("!!!garbage").is_err());
     }
 
     #[test]

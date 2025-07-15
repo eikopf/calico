@@ -2,8 +2,6 @@
 
 use chrono::NaiveDate;
 pub use iri_string::types::{UriStr, UriString};
-use mime::Mime;
-use oxilangtag::LanguageTag;
 use uuid::Uuid;
 
 /// A method as defined in RFC 5546 §1.4
@@ -43,7 +41,15 @@ impl<S> Uid<S> {
 
 /// An RFC 5646 language tag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Language<S = Box<str>>(pub(crate) LanguageTag<S>);
+pub struct Language<S = Box<str>> {
+    pub(crate) source: S,
+    pub(crate) language_len: usize,
+    pub(crate) extlang_len: usize,
+    pub(crate) script_len: usize,
+    pub(crate) region_len: usize,
+    pub(crate) variant_len: usize,
+    pub(crate) extension_len: usize,
+}
 
 /// The data of a BINARY property.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -128,7 +134,7 @@ pub enum ImageData<U = UriString> {
 
 /// RFC 5545 §3.2.8
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FormatType(pub(crate) Mime);
+pub struct FormatType<S = Box<str>>(pub S);
 
 /// DISPLAY parameter values (RFC 7986)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
