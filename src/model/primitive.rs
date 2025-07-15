@@ -41,15 +41,7 @@ impl<S> Uid<S> {
 
 /// An RFC 5646 language tag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Language<S = Box<str>> {
-    pub(crate) source: S,
-    pub(crate) language_len: usize,
-    pub(crate) extlang_len: usize,
-    pub(crate) script_len: usize,
-    pub(crate) region_len: usize,
-    pub(crate) variant_len: usize,
-    pub(crate) extension_len: usize,
-}
+pub struct Language<S = Box<str>>(pub(crate) S);
 
 /// The data of a BINARY property.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

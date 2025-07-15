@@ -119,17 +119,12 @@ pub fn uid<'i>(input: &mut &'i str) -> ModalResult<Uid<Cow<'i, str>>> {
 pub fn language<I, E>(input: &mut I) -> Result<Language<I::Slice>, E>
 where
     I: StreamIsPartial + Stream,
+    I::Token: AsChar + Clone,
     E: ParserError<I>,
 {
-    fn grandfathered<I, E>(input: &mut I) -> Result<Language<I::Slice>, E>
-    where
-        I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
-        E: ParserError<I>,
-    {
-        todo!()
-    }
-
-    todo!()
+    // WARN: this parser is massively more permissive than it should be, but
+    // parsing a language tag exactly is a problem for the future
+    iana_token.map(Language).parse_next(input)
 }
 
 /// Parses an RFC 3986 URI. The description of the grammar in RFC 5545 is
