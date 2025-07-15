@@ -134,7 +134,10 @@ pub enum ImageData<U = UriString> {
 
 /// RFC 5545 §3.2.8
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FormatType<S = Box<str>>(pub S);
+pub struct FormatType<S = Box<str>> {
+    pub(crate) source: S,
+    pub(crate) separator_index: usize,
+}
 
 /// DISPLAY parameter values (RFC 7986)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -10,7 +10,9 @@ use winnow::{
         alt, empty, opt, preceded, repeat, separated_pair, terminated, trace,
     },
     error::{FromExternalError, ParserError},
-    stream::{Accumulate, AsBStr, AsChar, Compare, Stream, StreamIsPartial},
+    stream::{
+        Accumulate, AsBStr, AsChar, Compare, SliceLen, Stream, StreamIsPartial,
+    },
     token::{any, none_of, one_of, take_while},
 };
 
@@ -212,9 +214,20 @@ where
 }
 
 /// Parses a [`FormatType`] (effectively a MIME type).
-pub fn format_type(input: &mut &str) -> ModalResult<FormatType> {
+pub fn format_type<I, E>(input: &mut I) -> Result<FormatType<I::Slice>, E>
+where
+    I: StreamIsPartial + Stream + Compare<char>,
+    I::Slice: SliceLen,
+    I::Token: AsChar + Clone,
+    E: ParserError<I>,
+{
     /// The `reg-name` grammar rule as in RFC 4288 §4.2
-    fn reg_name<'i>(input: &mut &'i str) -> ModalResult<&'i str> {
+    fn reg_name<I, E>(input: &mut I) -> Result<I::Slice, E>
+    where
+        I: StreamIsPartial + Stream + Compare<char>,
+        I::Token: AsChar + Clone,
+        E: ParserError<I>,
+    {
         repeat::<_, _, (), _, _>(
             1..,
             one_of((
@@ -235,13 +248,14 @@ pub fn format_type(input: &mut &str) -> ModalResult<FormatType> {
         .parse_next(input)
     }
 
-    //(reg_name, '/', reg_name)
-    //.take()
-    //.try_map(mime::Mime::from_str)
-    //.map(FormatType)
-    //.parse_next(input)
+    let ((type_name, _sep, _subtype_name), source) =
+        (reg_name, '/', reg_name).with_taken().parse_next(input)?;
+    let separator_index = type_name.slice_len() + 1;
 
-    todo!()
+    Ok(FormatType {
+        source,
+        separator_index,
+    })
 }
 
 /// Parses a [`FreeBusyType`].
@@ -1004,9 +1018,13 @@ mod tests {
 
     #[test]
     fn format_type_parser() {
-        assert!(format_type.parse_peek("application/msword").is_ok());
-        assert!(format_type.parse_peek("image/bmp").is_ok());
-        assert!(format_type.parse_peek("garbage").is_err());
+        assert!(
+            format_type::<_, ()>
+                .parse_peek("application/msword")
+                .is_ok()
+        );
+        assert!(format_type::<_, ()>.parse_peek("image/bmp").is_ok());
+        assert!(format_type::<_, ()>.parse_peek("garbage").is_err());
     }
 
     #[test]

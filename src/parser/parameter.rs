@@ -71,7 +71,7 @@ pub enum KnownParam<S = Box<str>, U = UriString> {
     DelTo(Box<[U]>),
     Dir(U),
     Encoding(Encoding),
-    FormatType(FormatType),
+    FormatType(FormatType<S>),
     FBType(FreeBusyType<S>),
     Language(Language<S>),
     Member(Box<[U]>),
