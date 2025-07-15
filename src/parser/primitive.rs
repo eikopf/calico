@@ -1329,13 +1329,13 @@ mod tests {
 
         assert_eq!(
             bool_caseless::<_, ()>.parse_peek(Escaped("tr\r\n\tue".as_bytes())),
-            Ok((Escaped::EMPTY, true))
+            Ok(("".as_escaped(), true))
         );
 
         assert_eq!(
             bool_caseless::<_, ()>
                 .parse_peek(Escaped("fals\r\n\te".as_bytes())),
-            Ok((Escaped::EMPTY, false))
+            Ok(("".as_escaped(), false))
         );
     }
 
@@ -1350,7 +1350,7 @@ mod tests {
             float::<_, ()>
                 .parse_peek("1000\r\n\t000.00\r\n 00001".as_escaped()),
             Ok((
-                Escaped::EMPTY,
+                "".as_escaped(),
                 Float("1000\r\n\t000.00\r\n 00001".as_escaped())
             )),
         );

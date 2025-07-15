@@ -28,10 +28,6 @@ impl AsEscaped for [u8] {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Escaped<'a>(pub &'a [u8]);
 
-impl Escaped<'static> {
-    pub const EMPTY: Self = Escaped("".as_bytes());
-}
-
 impl<'a> std::fmt::Debug for Escaped<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         <winnow::BStr as std::fmt::Debug>::fmt(winnow::BStr::new(self.0), f)
