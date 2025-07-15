@@ -896,7 +896,7 @@ mod tests {
                 .parse_peek(Escaped("\r\n\tX-TH\r\n\tING".as_bytes()))
                 .unwrap()
                 .1,
-            FeatureType::Other("X-TH\r\n\tING".as_escaped()),
+            FeatureType::Other("\r\n\tX-TH\r\n\tING".as_escaped()),
         );
     }
 
@@ -1147,7 +1147,7 @@ mod tests {
             value_type::<_, ()>
                 .parse_peek("\r\n X-TY\r\n\tPE".as_escaped())
                 .map(|(_, v)| v),
-            Ok(ValueType::X("X-TY\r\n\tPE".as_escaped()))
+            Ok(ValueType::X("\r\n X-TY\r\n\tPE".as_escaped()))
         );
     }
 

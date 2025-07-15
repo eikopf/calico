@@ -111,18 +111,13 @@ impl<'a> Stream for Escaped<'a> {
     fn next_slice(&mut self, offset: usize) -> Self::Slice {
         let (head, tail) = self.0.split_at(offset);
         self.0 = tail;
-
-        // NOTE: this isn't quite the expected behaviour, but we're trying to
-        // reduce overall string size by stripping escape sequences aggressively
-        let (_escapes, slice) = split_fold_prefix(head);
-        Escaped(slice)
+        Escaped(head)
     }
 
     #[inline(always)]
     fn peek_slice(&self, offset: usize) -> Self::Slice {
         let (head, _tail) = self.0.split_at(offset);
-        let (_escapes, slice) = split_fold_prefix(head);
-        Escaped(slice)
+        Escaped(head)
     }
 
     #[inline(always)]
@@ -338,27 +333,27 @@ mod tests {
 
         assert_eq!(
             take::<usize, _, ()>(1).parse_peek(input),
-            Ok(("\r\n b\r\n\tcd\r\n\te".as_escaped(), "a".as_escaped())),
+            Ok(("\r\n b\r\n\tcd\r\n\te".as_escaped(), "\r\n\ta".as_escaped())),
         );
 
         assert_eq!(
             take::<usize, _, ()>(2).parse_peek(input),
-            Ok(("\r\n\tcd\r\n\te".as_escaped(), "a\r\n b".as_escaped())),
+            Ok(("\r\n\tcd\r\n\te".as_escaped(), "\r\n\ta\r\n b".as_escaped())),
         );
 
         assert_eq!(
             take::<usize, _, ()>(3).parse_peek(input),
-            Ok(("d\r\n\te".as_escaped(), "a\r\n b\r\n\tc".as_escaped())),
+            Ok(("d\r\n\te".as_escaped(), "\r\n\ta\r\n b\r\n\tc".as_escaped())),
         );
 
         assert_eq!(
             take::<usize, _, ()>(4).parse_peek(input),
-            Ok(("\r\n\te".as_escaped(), "a\r\n b\r\n\tcd".as_escaped())),
+            Ok(("\r\n\te".as_escaped(), "\r\n\ta\r\n b\r\n\tcd".as_escaped())),
         );
 
         assert_eq!(
             take::<usize, _, ()>(5).parse_peek(input),
-            Ok(("".as_escaped(), "a\r\n b\r\n\tcd\r\n\te".as_escaped())),
+            Ok(("".as_escaped(), "\r\n\ta\r\n b\r\n\tcd\r\n\te".as_escaped())),
         );
     }
 
@@ -379,17 +374,17 @@ mod tests {
     fn next_slice() {
         let mut input = Escaped("\r\n\ta\r\n b\r\n\tcd\r\n\te".as_bytes());
         assert_eq!(input.next_slice(0), "".as_escaped());
-        assert_eq!(input.next_slice(4), "a".as_escaped());
-        assert_eq!(input.next_slice(9), "b\r\n\tcd".as_escaped());
+        assert_eq!(input.next_slice(4), "\r\n\ta".as_escaped());
+        assert_eq!(input.next_slice(9), "\r\n b\r\n\tcd".as_escaped());
     }
 
     #[test]
     fn peek_slice() {
         let input = Escaped("\r\n\ta\r\n b\r\n\tcd\r\n\te".as_bytes());
         assert_eq!(input.peek_slice(0), "".as_escaped());
-        assert_eq!(input.peek_slice(4), "a".as_escaped());
-        assert_eq!(input.peek_slice(8), "a\r\n b".as_escaped());
-        assert_eq!(input.peek_slice(13), "a\r\n b\r\n\tcd".as_escaped());
+        assert_eq!(input.peek_slice(4), "\r\n\ta".as_escaped());
+        assert_eq!(input.peek_slice(8), "\r\n\ta\r\n b".as_escaped());
+        assert_eq!(input.peek_slice(13), "\r\n\ta\r\n b\r\n\tcd".as_escaped());
     }
 
     #[test]
