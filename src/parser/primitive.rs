@@ -882,7 +882,7 @@ mod tests {
                 .parse_peek(Escaped("\r\n\tX-TH\r\n\tING".as_bytes()))
                 .unwrap()
                 .1,
-            FeatureType::Other("X-TH\r\n\tING".as_bytes()),
+            FeatureType::Other("X-TH\r\n\tING".as_escaped()),
         );
     }
 
@@ -1129,7 +1129,7 @@ mod tests {
             value_type::<_, ()>
                 .parse_peek("\r\n X-TY\r\n\tPE".as_escaped())
                 .map(|(_, v)| v),
-            Ok(ValueType::X("X-TY\r\n\tPE".as_bytes()))
+            Ok(ValueType::X("X-TY\r\n\tPE".as_escaped()))
         );
     }
 
@@ -1348,10 +1348,10 @@ mod tests {
 
         assert_eq!(
             float::<_, ()>
-                .parse_peek(Escaped("1000\r\n\t000.00\r\n 00001".as_bytes())),
+                .parse_peek("1000\r\n\t000.00\r\n 00001".as_escaped()),
             Ok((
                 Escaped::EMPTY,
-                Float("1000\r\n\t000.00\r\n 00001".as_bytes())
+                Float("1000\r\n\t000.00\r\n 00001".as_escaped())
             )),
         );
 

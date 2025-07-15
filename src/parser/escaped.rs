@@ -4,7 +4,7 @@ use winnow::{
     ascii::Caseless,
     error::Needed,
     stream::{
-        Checkpoint, Compare, CompareResult, Offset, SliceLen, Stream,
+        AsBytes, Checkpoint, Compare, CompareResult, Offset, SliceLen, Stream,
         StreamIsPartial,
     },
 };
@@ -38,6 +38,12 @@ impl<'a> std::fmt::Debug for Escaped<'a> {
     }
 }
 
+impl<'a> AsBytes for Escaped<'a> {
+    fn as_bytes(&self) -> &[u8] {
+        self.0
+    }
+}
+
 impl<'a> Offset<Checkpoint<&'a [u8], &'a [u8]>> for Escaped<'a> {
     fn offset_from(&self, other: &Checkpoint<&'a [u8], &'a [u8]>) -> usize {
         self.checkpoint().offset_from(other)
@@ -47,7 +53,7 @@ impl<'a> Offset<Checkpoint<&'a [u8], &'a [u8]>> for Escaped<'a> {
 impl<'a> Stream for Escaped<'a> {
     type Token = u8;
 
-    type Slice = &'a [u8];
+    type Slice = Self;
 
     type IterOffsets = IterOffsets<'a>;
 
@@ -113,14 +119,14 @@ impl<'a> Stream for Escaped<'a> {
         // NOTE: this isn't quite the expected behaviour, but we're trying to
         // reduce overall string size by stripping escape sequences aggressively
         let (_escapes, slice) = split_fold_prefix(head);
-        slice
+        Escaped(slice)
     }
 
     #[inline(always)]
     fn peek_slice(&self, offset: usize) -> Self::Slice {
         let (head, _tail) = self.0.split_at(offset);
         let (_escapes, slice) = split_fold_prefix(head);
-        slice
+        Escaped(slice)
     }
 
     #[inline(always)]
@@ -331,32 +337,32 @@ mod tests {
 
         assert_eq!(
             take::<usize, _, ()>(0).parse_peek(input),
-            Ok((input, "".as_bytes())),
+            Ok((input, "".as_escaped())),
         );
 
         assert_eq!(
             take::<usize, _, ()>(1).parse_peek(input),
-            Ok((Escaped("\r\n b\r\n\tcd\r\n\te".as_bytes()), "a".as_bytes())),
+            Ok(("\r\n b\r\n\tcd\r\n\te".as_escaped(), "a".as_escaped())),
         );
 
         assert_eq!(
             take::<usize, _, ()>(2).parse_peek(input),
-            Ok((Escaped("\r\n\tcd\r\n\te".as_bytes()), "a\r\n b".as_bytes())),
+            Ok(("\r\n\tcd\r\n\te".as_escaped(), "a\r\n b".as_escaped())),
         );
 
         assert_eq!(
             take::<usize, _, ()>(3).parse_peek(input),
-            Ok((Escaped("d\r\n\te".as_bytes()), "a\r\n b\r\n\tc".as_bytes())),
+            Ok(("d\r\n\te".as_escaped(), "a\r\n b\r\n\tc".as_escaped())),
         );
 
         assert_eq!(
             take::<usize, _, ()>(4).parse_peek(input),
-            Ok((Escaped("\r\n\te".as_bytes()), "a\r\n b\r\n\tcd".as_bytes())),
+            Ok(("\r\n\te".as_escaped(), "a\r\n b\r\n\tcd".as_escaped())),
         );
 
         assert_eq!(
             take::<usize, _, ()>(5).parse_peek(input),
-            Ok((Escaped("".as_bytes()), "a\r\n b\r\n\tcd\r\n\te".as_bytes())),
+            Ok(("".as_escaped(), "a\r\n b\r\n\tcd\r\n\te".as_escaped())),
         );
     }
 
@@ -376,18 +382,18 @@ mod tests {
     #[test]
     fn next_slice() {
         let mut input = Escaped("\r\n\ta\r\n b\r\n\tcd\r\n\te".as_bytes());
-        assert_eq!(input.next_slice(0), "".as_bytes());
-        assert_eq!(input.next_slice(4), "a".as_bytes());
-        assert_eq!(input.next_slice(9), "b\r\n\tcd".as_bytes());
+        assert_eq!(input.next_slice(0), "".as_escaped());
+        assert_eq!(input.next_slice(4), "a".as_escaped());
+        assert_eq!(input.next_slice(9), "b\r\n\tcd".as_escaped());
     }
 
     #[test]
     fn peek_slice() {
         let input = Escaped("\r\n\ta\r\n b\r\n\tcd\r\n\te".as_bytes());
-        assert_eq!(input.peek_slice(0), "".as_bytes());
-        assert_eq!(input.peek_slice(4), "a".as_bytes());
-        assert_eq!(input.peek_slice(8), "a\r\n b".as_bytes());
-        assert_eq!(input.peek_slice(13), "a\r\n b\r\n\tcd".as_bytes());
+        assert_eq!(input.peek_slice(0), "".as_escaped());
+        assert_eq!(input.peek_slice(4), "a".as_escaped());
+        assert_eq!(input.peek_slice(8), "a\r\n b".as_escaped());
+        assert_eq!(input.peek_slice(13), "a\r\n b\r\n\tcd".as_escaped());
     }
 
     #[test]
