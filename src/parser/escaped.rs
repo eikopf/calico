@@ -40,6 +40,12 @@ impl<'a> AsBytes for Escaped<'a> {
     }
 }
 
+impl<'a> SliceLen for Escaped<'a> {
+    fn slice_len(&self) -> usize {
+        self.0.len()
+    }
+}
+
 impl<'a> Offset<Checkpoint<&'a [u8], &'a [u8]>> for Escaped<'a> {
     fn offset_from(&self, other: &Checkpoint<&'a [u8], &'a [u8]>) -> usize {
         self.checkpoint().offset_from(other)
