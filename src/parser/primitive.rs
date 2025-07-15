@@ -20,8 +20,8 @@ use crate::model::primitive::{
     Binary, CalendarUserType, Date, DateTime, DisplayType, Duration,
     DurationKind, DurationTime, Encoding, FeatureType, Float, FormatType,
     FreeBusyType, Language, Method, ParticipationRole, ParticipationStatus,
-    Period, RawTime, RelationshipType, Sign, Time, TimeFormat, TriggerRelation,
-    Uid, UriStr, Utc, ValueType,
+    Period, RawText, RawTime, RelationshipType, Sign, Time, TimeFormat,
+    TriggerRelation, Uid, UriStr, Utc, ValueType,
 };
 
 /// Parses a [`FeatureType`].
@@ -404,10 +404,56 @@ where
     ('X', '-', iana_token).take().parse_next(input)
 }
 
+/// Parses a [`RawText`].
+pub fn raw_text<I, E>(input: &mut I) -> Result<RawText<I::Slice>, E>
+where
+    I: StreamIsPartial + Stream + Compare<char>,
+    I::Token: AsChar + Clone,
+    E: ParserError<I>,
+{
+    fn safe_text<I, E>(input: &mut I) -> Result<I::Slice, E>
+    where
+        I: StreamIsPartial + Stream,
+        I::Token: AsChar + Clone,
+        E: ParserError<I>,
+    {
+        repeat::<_, _, (), _, _>(1.., none_of(('\\', ';', ',', ..' ')))
+            .take()
+            .parse_next(input)
+    }
+
+    fn text_escape<I, E>(input: &mut I) -> Result<I::Slice, E>
+    where
+        I: StreamIsPartial + Stream + Compare<char>,
+        E: ParserError<I>,
+    {
+        preceded(
+            '\\',
+            alt((
+                '\\'.value("\\"),
+                'n'.value("\n"),
+                'N'.value("\n"),
+                ';'.value(";"),
+                ','.value(","),
+            )),
+        )
+        .take()
+        .parse_next(input)
+    }
+
+    trace(
+        "raw_text",
+        repeat::<_, _, (), _, _>(1.., alt((safe_text, text_escape))),
+    )
+    .take()
+    .map(RawText)
+    .parse_next(input)
+}
+
 /// Parses an arbitrary sequence of text terminated by CRLF. The return type is
 /// `Cow<'_, str>` because a text value may contain escape sequences, in which
 /// case it must be modified.
-pub fn text<'i, E>(input: &mut &'i str) -> winnow::Result<Cow<'i, str>, E>
+pub fn text<'i, E>(input: &mut &'i str) -> Result<Cow<'i, str>, E>
 where
     E: ParserError<&'i str>,
 {

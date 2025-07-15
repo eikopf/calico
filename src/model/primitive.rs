@@ -18,6 +18,12 @@ pub enum Method<S = Box<str>> {
     Iana(S),
 }
 
+/// An unescaped text value (RFC 5545 §3.3.11).
+pub struct RawText<S = Box<str>>(pub(crate) S);
+
+/// An escaped text value (RFC 5545 §3.3.11).
+pub struct Text<S = Box<str>>(pub(crate) S);
+
 /// A unique identifier (RFC 5545 §3.8.4.7).
 ///
 /// Following the advice given in RFC 7986 §5.3, UUIDs (RFC 9562) should be
