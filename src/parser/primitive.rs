@@ -2,7 +2,7 @@
 
 use chrono::NaiveDate;
 use winnow::{
-    ModalResult, Parser,
+    Parser,
     ascii::{Caseless, digit1},
     combinator::{
         alt, empty, opt, preceded, repeat, separated_pair, terminated, trace,
@@ -114,7 +114,7 @@ where
         .parse_next(input)
 }
 
-/// Parses an RFC 5646 language tag from a [`text`] value.
+/// Parses an RFC 5646 language tag.
 pub fn language<I, E>(input: &mut I) -> Result<Language<I::Slice>, E>
 where
     I: StreamIsPartial + Stream,
@@ -161,16 +161,6 @@ where
     <I as Stream>::Token: AsChar + Clone,
     E: ParserError<I>,
 {
-    //take_while(1.., ('0'..='9', 'a'..='z', 'A'..='Z', '+', '/', '='))
-    //.try_map(|xs| {
-    //<base64::engine::GeneralPurpose as base64::Engine>::decode(
-    //&base64::prelude::BASE64_STANDARD,
-    //xs,
-    //)
-    //})
-    //.map(|bytes| Binary { bytes })
-    //.parse_next(input)
-
     fn b_char<I, E>(input: &mut I) -> Result<I::Token, E>
     where
         I: StreamIsPartial + Stream,
@@ -215,7 +205,7 @@ where
 }
 
 /// Parses an [`Encoding`].
-pub fn inline_encoding<I, E>(input: &mut I) -> ModalResult<Encoding, E>
+pub fn inline_encoding<I, E>(input: &mut I) -> Result<Encoding, E>
 where
     I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
     E: ParserError<I>,
@@ -813,6 +803,31 @@ where
         .parse_next(input)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InvalidIntegerError {
+    sign: Option<Sign>,
+    digits: u64,
+}
+
+pub fn integer<I, E>(input: &mut I) -> Result<i32, E>
+where
+    I: StreamIsPartial + Stream + Compare<char>,
+    I::Token: AsChar + Clone,
+    I::Slice: AsBStr,
+    E: ParserError<I> + FromExternalError<I, InvalidIntegerError>,
+{
+    let sign = opt(sign).parse_next(input)?;
+    let digits: u64 = lz_dec_uint.parse_next(input)?;
+
+    let error = InvalidIntegerError { sign, digits };
+
+    i64::try_from(digits)
+        .ok()
+        .and_then(|d| d.checked_mul(sign.unwrap_or_default() as i64))
+        .and_then(|i| i32::try_from(i).ok())
+        .ok_or_else(|| E::from_external_error(input, error))
+}
+
 /// Parses a [`Float`].
 pub fn float<I, E>(input: &mut I) -> Result<Float<<I as Stream>::Slice>, E>
 where
@@ -1340,6 +1355,21 @@ mod tests {
                 .parse_peek(Escaped("fals\r\n\te".as_bytes())),
             Ok(("".as_escaped(), false))
         );
+    }
+
+    #[test]
+    fn integer_parser() {
+        assert_eq!(integer::<_, ()>.parse_peek("370"), Ok(("", 370)));
+        assert_eq!(integer::<_, ()>.parse_peek("-17"), Ok(("", -17)));
+        assert_eq!(
+            integer::<_, ()>.parse_peek("2147483647"),
+            Ok(("", i32::MAX))
+        );
+        assert_eq!(
+            integer::<_, ()>.parse_peek("-2147483648"),
+            Ok(("", i32::MIN))
+        );
+        assert!(integer::<_, ()>.parse_peek("2147483648").is_err());
     }
 
     #[test]

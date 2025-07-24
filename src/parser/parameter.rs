@@ -15,11 +15,12 @@
 //! more specific grammar for the corresponding value on the right-hand side of
 //! the `=` character.
 
-use iri_string::types::{UriStr, UriString};
 use winnow::{
     ModalResult, Parser,
     ascii::Caseless,
     combinator::{alt, delimited, opt, repeat, separated, terminated},
+    error::ParserError,
+    stream::{AsChar, Compare, SliceLen, Stream, StreamIsPartial},
     token::none_of,
 };
 
@@ -27,7 +28,7 @@ use crate::{
     model::primitive::{
         CalendarUserType, DisplayType, Encoding, FeatureType, FormatType,
         FreeBusyType, Language, ParticipationRole, ParticipationStatus,
-        RelationshipType, TriggerRelation, ValueType,
+        RelationshipType, TriggerRelation, Uri, ValueType,
     },
     parser::primitive::{
         alarm_trigger_relationship, bool_caseless, feature_type, format_type,
@@ -39,12 +40,12 @@ use crate::{
 use super::primitive::{calendar_user_type, display_type, iana_token, x_name};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Param<S = Box<str>, U = UriString> {
-    Known(KnownParam<S, U>),
+pub enum Param<S = Box<str>> {
+    Known(KnownParam<S>),
     Unknown(UnknownParam<S>),
 }
 
-impl<S, U> Param<S, U> {
+impl<S> Param<S> {
     pub fn try_into_unknown(self) -> Result<UnknownParam<S>, Self> {
         if let Self::Unknown(v) = self {
             Ok(v)
@@ -53,7 +54,7 @@ impl<S, U> Param<S, U> {
         }
     }
 
-    pub fn try_into_known(self) -> Result<KnownParam<S, U>, Self> {
+    pub fn try_into_known(self) -> Result<KnownParam<S>, Self> {
         if let Self::Known(v) = self {
             Ok(v)
         } else {
@@ -63,25 +64,25 @@ impl<S, U> Param<S, U> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum KnownParam<S = Box<str>, U = UriString> {
-    AltRep(U),
+pub enum KnownParam<S = Box<str>> {
+    AltRep(Uri<S>),
     CommonName(ParamValue<S>),
     CUType(CalendarUserType<S>),
-    DelFrom(Box<[U]>),
-    DelTo(Box<[U]>),
-    Dir(U),
+    DelFrom(Box<[Uri<S>]>),
+    DelTo(Box<[Uri<S>]>),
+    Dir(Uri<S>),
     Encoding(Encoding),
     FormatType(FormatType<S>),
     FBType(FreeBusyType<S>),
     Language(Language<S>),
-    Member(Box<[U]>),
+    Member(Box<[Uri<S>]>),
     PartStatus(ParticipationStatus<S>),
     RecurrenceIdentifierRange,
     AlarmTrigger(TriggerRelation),
     RelType(RelationshipType<S>),
     Role(ParticipationRole<S>),
     Rsvp(bool),
-    SentBy(U),
+    SentBy(Uri<S>),
     TzId(S),
     Value(ValueType<S>),
     Display(DisplayType<S>),
@@ -110,19 +111,38 @@ pub struct XParam<S = Box<str>> {
 }
 
 /// Parses a [`Param`].
-pub fn parameter<'i>(
-    input: &mut &'i str,
-) -> ModalResult<Param<&'i str, &'i UriStr>> {
+pub fn parameter<I, E>(input: &mut I) -> Result<Param<I::Slice>, E>
+where
+    I: StreamIsPartial
+        + Stream
+        + Compare<Caseless<&'static str>>
+        + Compare<char>,
+    I::Token: AsChar + Clone,
+    I::Slice: Clone + SliceLen,
+    E: ParserError<I>,
+    CalendarUserType<I::Slice>: Clone,
+    FreeBusyType<I::Slice>: Clone,
+    ParticipationStatus<I::Slice>: Clone,
+{
     /// Parses a single URI delimited by double quotes.
-    fn quoted_uri<'i>(input: &mut &'i str) -> ModalResult<&'i UriStr> {
-        //delimited('"', uri, '"').parse_next(input)
-        todo!()
+    fn quoted_uri<I, E>(input: &mut I) -> Result<Uri<I::Slice>, E>
+    where
+        I: StreamIsPartial + Stream + Compare<char>,
+        I::Token: AsChar + Clone,
+        E: ParserError<I>,
+    {
+        delimited('"', uri, '"').parse_next(input)
     }
 
     /// Parses a sequence of at least one URI delimited by double quotes and
     /// separated by commas.
-    fn quoted_uris<'i>(input: &mut &'i str) -> ModalResult<Box<[&'i UriStr]>> {
-        let uris: Vec<_> = separated(1.., quoted_uri, ",").parse_next(input)?;
+    fn quoted_uris<I, E>(input: &mut I) -> Result<Box<[Uri<I::Slice>]>, E>
+    where
+        I: StreamIsPartial + Stream + Compare<char>,
+        I::Token: AsChar + Clone,
+        E: ParserError<I>,
+    {
+        let uris: Vec<_> = separated(1.., quoted_uri, ',').parse_next(input)?;
         Ok(uris.into_boxed_slice())
     }
 
@@ -131,7 +151,7 @@ pub fn parameter<'i>(
     match name {
         ParamName::Iana(name) => {
             let value: Vec<_> =
-                separated(1.., param_value, ",").parse_next(input)?;
+                separated(1.., param_value, ',').parse_next(input)?;
             Ok(Param::Unknown(UnknownParam::Iana {
                 name,
                 value: value.into_boxed_slice(),
@@ -139,7 +159,7 @@ pub fn parameter<'i>(
         }
         ParamName::X(name) => {
             let value: Vec<_> =
-                separated(1.., param_value, ",").parse_next(input)?;
+                separated(1.., param_value, ',').parse_next(input)?;
             Ok(Param::Unknown(UnknownParam::X {
                 name,
                 value: value.into_boxed_slice(),
@@ -291,14 +311,14 @@ pub fn static_param_name(input: &mut &str) -> ModalResult<StaticParamName> {
 
 /// A property parameter name from RFC 5545, RFC 7986, or an arbitrary token.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ParamName<'a> {
+pub enum ParamName<S = Box<str>> {
     Rfc5545(Rfc5545ParamName),
     Rfc7986(Rfc7986ParamName),
-    Iana(&'a str),
-    X(&'a str),
+    Iana(S),
+    X(S),
 }
 
-impl<'a> ParamName<'a> {
+impl<S> ParamName<S> {
     /// Returns `true` if the param name is [`Rfc5545`].
     ///
     /// [`Rfc5545`]: ParamName::Rfc5545
@@ -333,7 +353,15 @@ impl<'a> ParamName<'a> {
 }
 
 /// Parses a [`ParamName`].
-pub fn param_name<'i>(input: &mut &'i str) -> ModalResult<ParamName<'i>> {
+pub fn param_name<I, E>(input: &mut I) -> Result<ParamName<I::Slice>, E>
+where
+    I: StreamIsPartial
+        + Stream
+        + Compare<Caseless<&'static str>>
+        + Compare<char>,
+    I::Token: AsChar + Clone,
+    E: ParserError<I>,
+{
     // NOTE: there's an obvious optimisation here where we go character by
     // character until either it must be a known static name, or else it must
     // be an unknown name (or an error). i think regex-automata could help with
@@ -407,7 +435,11 @@ pub enum Rfc7986ParamName {
 }
 
 /// Parses an [`Rfc5545ParamName`].
-pub fn rfc5545_param_name(input: &mut &str) -> ModalResult<Rfc5545ParamName> {
+pub fn rfc5545_param_name<I, E>(input: &mut I) -> Result<Rfc5545ParamName, E>
+where
+    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
+    E: ParserError<I>,
+{
     alt((
         // RFC 5545
         Caseless("ALTREP").value(Rfc5545ParamName::AlternateTextRepresentation),
@@ -435,7 +467,11 @@ pub fn rfc5545_param_name(input: &mut &str) -> ModalResult<Rfc5545ParamName> {
 }
 
 /// Parses an [`Rfc7986ParamName`].
-pub fn rfc7986_param_name(input: &mut &str) -> ModalResult<Rfc7986ParamName> {
+pub fn rfc7986_param_name<I, E>(input: &mut I) -> Result<Rfc7986ParamName, E>
+where
+    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
+    E: ParserError<I>,
+{
     alt((
         Caseless("DISPLAY").value(Rfc7986ParamName::Display),
         Caseless("EMAIL").value(Rfc7986ParamName::Email),
@@ -500,17 +536,30 @@ impl<S> ParamValue<S> {
 }
 
 /// Parses a [`ParamValue`], stripping quotes if they occur.
-pub fn param_value<'i>(
-    input: &mut &'i str,
-) -> ModalResult<ParamValue<&'i str>> {
-    fn param_text<'i>(input: &mut &'i str) -> ModalResult<&'i str> {
+pub fn param_value<I, E>(input: &mut I) -> Result<ParamValue<I::Slice>, E>
+where
+    I: StreamIsPartial + Stream + Compare<char>,
+    I::Token: AsChar + Clone,
+    E: ParserError<I>,
+{
+    fn param_text<I, E>(input: &mut I) -> Result<I::Slice, E>
+    where
+        I: StreamIsPartial + Stream,
+        I::Token: AsChar + Clone,
+        E: ParserError<I>,
+    {
         repeat(1.., none_of((..' ', '"', ',', ':', ';', '\u{007F}')))
             .map(|()| ())
             .take()
             .parse_next(input)
     }
 
-    fn quoted_string<'i>(input: &mut &'i str) -> ModalResult<&'i str> {
+    fn quoted_string<I, E>(input: &mut I) -> Result<I::Slice, E>
+    where
+        I: StreamIsPartial + Stream + Compare<char>,
+        I::Token: AsChar + Clone,
+        E: ParserError<I>,
+    {
         delimited(
             '"',
             repeat(1.., none_of((..' ', '"', '\u{007F}')))
@@ -535,7 +584,7 @@ mod tests {
     #[test]
     fn simple_parameter_parsing() {
         assert_eq!(
-            parameter
+            parameter::<_, ()>
                 .parse_peek("VALUE=CAL-ADDRESS")
                 .ok()
                 .and_then(|(_, p)| p.try_into_known().ok()),
@@ -543,7 +592,7 @@ mod tests {
         );
 
         assert_eq!(
-            parameter
+            parameter::<_, ()>
                 .parse_peek("tzid=America/New_York")
                 .ok()
                 .and_then(|(_, p)| p.try_into_known().ok()),
@@ -551,7 +600,7 @@ mod tests {
         );
 
         assert_eq!(
-            parameter
+            parameter::<_, ()>
                 .parse_peek("Rsvp=FALSE")
                 .ok()
                 .and_then(|(_, p)| p.try_into_known().ok()),
@@ -559,7 +608,7 @@ mod tests {
         );
 
         assert_eq!(
-            parameter
+            parameter::<_, ()>
                 .parse_peek("RANGE=thisandfuture")
                 .ok()
                 .and_then(|(_, p)| p.try_into_known().ok()),
@@ -571,7 +620,7 @@ mod tests {
     fn inline_encoding() {
         for input in ["ENCODING=8BIT", "ENCODING=8Bit", "ENCODING=8bit"] {
             assert_eq!(
-                parameter
+                parameter::<_, ()>
                     .parse_peek(input)
                     .ok()
                     .and_then(|(_, p)| p.try_into_known().ok()),
@@ -581,7 +630,7 @@ mod tests {
 
         for input in ["ENCODING=BASE64", "ENCODING=Base64", "ENCODING=base64"] {
             assert_eq!(
-                parameter
+                parameter::<_, ()>
                     .parse_peek(input)
                     .ok()
                     .and_then(|(_, p)| p.try_into_known().ok()),
@@ -592,7 +641,7 @@ mod tests {
         for input in
             ["ENCODING=base", "ENCODING=bit", "ENCODING=64", "ENCODING=8"]
         {
-            assert!(parameter.parse_peek(input).is_err());
+            assert!(parameter::<_, ()>.parse_peek(input).is_err());
         }
     }
 
@@ -605,7 +654,7 @@ mod tests {
             "FMTTYPE=application/x-bzip",
         ] {
             assert!(matches!(
-                parameter
+                parameter::<_, ()>
                     .parse_peek(input)
                     .ok()
                     .and_then(|(_, p)| p.try_into_known().ok()),
@@ -616,7 +665,7 @@ mod tests {
         for input in
             ["FMTTYPE=", "FMTTYPE=missing slash", "FMTTYPE=back\\slash"]
         {
-            assert!(parameter.parse_peek(input).is_err());
+            assert!(parameter::<_, ()>.parse_peek(input).is_err());
         }
     }
 
@@ -628,7 +677,7 @@ mod tests {
             "RANGE=thisandfuture",
         ] {
             assert!(matches!(
-                parameter
+                parameter::<_, ()>
                     .parse_peek(input)
                     .ok()
                     .and_then(|(_, p)| p.try_into_known().ok()),
@@ -637,7 +686,7 @@ mod tests {
         }
 
         for input in ["RANGE=", "RANGE=garbage", "RANGE=this-and-future"] {
-            assert!(parameter.parse_peek(input).is_err());
+            assert!(parameter::<_, ()>.parse_peek(input).is_err());
         }
     }
 
@@ -645,7 +694,7 @@ mod tests {
     fn alarm_trigger_relationship() {
         for input in ["RELATED=START", "RELATED=Start", "RELATED=start"] {
             assert!(matches!(
-                parameter
+                parameter::<_, ()>
                     .parse_peek(input)
                     .ok()
                     .and_then(|(_, p)| p.try_into_known().ok()),
@@ -655,7 +704,7 @@ mod tests {
 
         for input in ["RELATED=END", "RELATED=End", "RELATED=end"] {
             assert!(matches!(
-                parameter
+                parameter::<_, ()>
                     .parse_peek(input)
                     .ok()
                     .and_then(|(_, p)| p.try_into_known().ok()),
@@ -664,24 +713,27 @@ mod tests {
         }
 
         for input in ["RELATED=", "RELATED=,garbage", "RELATED=anything-else"] {
-            assert!(parameter.parse_peek(input).is_err());
+            assert!(parameter::<_, ()>.parse_peek(input).is_err());
         }
     }
 
     #[test]
     fn parameter_edge_cases() {
-        assert!(parameter.parse_peek("VALUE=").is_err()); // missing value
-        assert!(parameter.parse_peek("=RECUR").is_err()); // missing name
-        assert!(parameter.parse_peek("=").is_err()); // missing name & value
+        assert!(parameter::<_, ()>.parse_peek("VALUE=").is_err()); // missing value
+        assert!(parameter::<_, ()>.parse_peek("=RECUR").is_err()); // missing name
+        assert!(parameter::<_, ()>.parse_peek("=").is_err()); // missing name & value
 
         // trailing semicolon should not be stripped
-        assert_eq!(parameter.parse_peek("LANGUAGE=en-GB;").unwrap().0, ";");
+        assert_eq!(
+            parameter::<_, ()>.parse_peek("LANGUAGE=en-GB;").unwrap().0,
+            ";"
+        );
     }
 
     #[test]
     fn rfc7986_parameter_parsing() {
         assert_eq!(
-            parameter
+            parameter::<_, ()>
                 .parse_peek("DISPLAY=THUMBNAIL")
                 .ok()
                 .and_then(|(_, p)| p.try_into_known().ok()),
@@ -689,7 +741,7 @@ mod tests {
         );
 
         assert_eq!(
-            parameter
+            parameter::<_, ()>
                 .parse_peek("display=Badge")
                 .ok()
                 .and_then(|(_, p)| p.try_into_known().ok()),
@@ -697,7 +749,7 @@ mod tests {
         );
 
         assert_eq!(
-            parameter
+            parameter::<_, ()>
                 .parse_peek("DISPLAY=X-SOMETHING-ELSE")
                 .ok()
                 .and_then(|(_, p)| p.try_into_known().ok()),
@@ -705,7 +757,7 @@ mod tests {
         );
 
         assert_eq!(
-            parameter
+            parameter::<_, ()>
                 .parse_peek("Email=literally anything")
                 .ok()
                 .and_then(|(_, p)| p.try_into_known().ok()),
@@ -713,7 +765,7 @@ mod tests {
         );
 
         assert_eq!(
-            parameter
+            parameter::<_, ()>
                 .parse_peek("Email=\"a quoted string\"")
                 .ok()
                 .and_then(|(_, p)| p.try_into_known().ok()),
@@ -721,7 +773,7 @@ mod tests {
         );
 
         assert_eq!(
-            parameter
+            parameter::<_, ()>
                 .parse_peek("FEATURE=moderator")
                 .ok()
                 .and_then(|(_, p)| p.try_into_known().ok()),
@@ -729,7 +781,7 @@ mod tests {
         );
 
         assert_eq!(
-            parameter
+            parameter::<_, ()>
                 .parse_peek("feature=Screen")
                 .ok()
                 .and_then(|(_, p)| p.try_into_known().ok()),
@@ -737,7 +789,7 @@ mod tests {
         );
 
         assert_eq!(
-            parameter
+            parameter::<_, ()>
                 .parse_peek("feature=random-iana-token")
                 .ok()
                 .and_then(|(_, p)| p.try_into_known().ok()),
@@ -745,7 +797,7 @@ mod tests {
         );
 
         assert_eq!(
-            parameter
+            parameter::<_, ()>
                 .parse_peek("LABEL=some text")
                 .ok()
                 .and_then(|(_, p)| p.try_into_known().ok()),
@@ -753,7 +805,7 @@ mod tests {
         );
 
         assert_eq!(
-            parameter
+            parameter::<_, ()>
                 .parse_peek("label=\"some quoted text\"")
                 .ok()
                 .and_then(|(_, p)| p.try_into_known().ok()),
@@ -771,7 +823,7 @@ mod tests {
         );
 
         assert_eq!(
-            parameter.parse_peek(param).map(|(_, p)| p),
+            parameter::<_, ()>.parse_peek(param).map(|(_, p)| p),
             Ok(Param::Known(KnownParam::DelFrom(
                 [
                     "mailto:alice@place.com",
@@ -779,7 +831,7 @@ mod tests {
                     "mailto:carla@place.com",
                 ]
                 .into_iter()
-                .map(|s| UriStr::new(s).unwrap())
+                .map(Uri)
                 .collect()
             ))),
         );

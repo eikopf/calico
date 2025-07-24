@@ -1,11 +1,11 @@
 //! Parsers for properties.
 
-use iri_string::types::{UriStr, UriString};
 use winnow::{
-    ModalResult, Parser,
+    Parser,
     ascii::Caseless,
-    combinator::{alt, fail, opt, preceded, repeat, terminated},
-    stream::Stream,
+    combinator::{alt, fail, preceded, repeat, terminated},
+    error::{FromExternalError, ParserError},
+    stream::{AsBStr, AsChar, Compare, SliceLen, Stream, StreamIsPartial},
     token::none_of,
 };
 
@@ -15,7 +15,7 @@ use crate::{
         primitive::{
             AlarmAction, AttachValue, ClassValue, DateTime, DateTimeOrDate,
             Duration, Geo, ImageData, Method, Period, RDate, Status,
-            Transparency, Uid, Utc, UtcOffset, Value, ValueType,
+            Transparency, Uid, Uri, Utc, UtcOffset, Value, ValueType,
         },
         property::{
             AttachParams, AttendeeParams, ConfParams, DtParams, FBTypeParams,
@@ -25,15 +25,16 @@ use crate::{
     },
     parser::{
         parameter::{KnownParam, Param, parameter},
-        primitive::{
-            duration, float, iana_token, lz_dec_uint, period, sign, x_name,
-        },
+        primitive::{duration, float, iana_token, integer, period, x_name},
     },
 };
 
 use super::{
     parameter::UnknownParam,
-    primitive::{binary, bool_caseless, date, datetime, time, uri},
+    primitive::{
+        InvalidDateError, InvalidDurationTimeError, InvalidIntegerError,
+        InvalidRawTimeError, binary, bool_caseless, date, datetime, time, uri,
+    },
 };
 
 /// The type of "unbounded" unsigned integers.
@@ -46,13 +47,13 @@ type UInt = usize;
 // registry: (https://www.iana.org/assignments/icalendar/icalendar.xhtml#properties)
 
 #[derive(Debug, Clone)]
-pub enum Prop<S = Box<str>, U = UriString> {
-    Known(KnownProp<S, U>),
-    Unknown(UnknownProp<S, U>),
+pub enum Prop<S = Box<str>> {
+    Known(KnownProp<S>),
+    Unknown(UnknownProp<S>),
 }
 
-impl<S, U> Prop<S, U> {
-    pub fn try_into_known(self) -> Result<KnownProp<S, U>, Self> {
+impl<S> Prop<S> {
+    pub fn try_into_known(self) -> Result<KnownProp<S>, Self> {
         if let Self::Known(v) = self {
             Ok(v)
         } else {
@@ -60,7 +61,7 @@ impl<S, U> Prop<S, U> {
         }
     }
 
-    pub fn try_into_unknown(self) -> Result<UnknownProp<S, U>, Self> {
+    pub fn try_into_unknown(self) -> Result<UnknownProp<S>, Self> {
         if let Self::Unknown(v) = self {
             Ok(v)
         } else {
@@ -70,25 +71,25 @@ impl<S, U> Prop<S, U> {
 }
 
 #[derive(Debug, Clone)]
-pub enum KnownProp<S, U> {
+pub enum KnownProp<S> {
     // CALENDAR PROPERTIES
     CalScale,
-    Method(Method),
+    Method(Method<S>),
     ProdId(S),
     Version,
     // DESCRIPTIVE COMPONENT PROPERTIES
-    Attach(AttachValue<U>, AttachParams),
+    Attach(AttachValue<S>, AttachParams),
     Categories(Box<[S]>, LangParams<S>),
     Class(ClassValue<S>),
-    Comment(S, TextParams<S, U>),
-    Description(S, TextParams<S, U>),
+    Comment(S, TextParams<S>),
+    Description(S, TextParams<S>),
     Geo(Geo),
-    Location(S, TextParams<S, U>),
+    Location(S, TextParams<S>),
     PercentComplete(u8), // 0..=100
     Priority(u8),        // 0..=9
-    Resources(Box<[S]>, TextParams<S, U>),
+    Resources(Box<[S]>, TextParams<S>),
     Status(Status),
-    Summary(S, TextParams<S, U>),
+    Summary(S, TextParams<S>),
     // DATE AND TIME COMPONENT PROPERTIES
     DtCompleted(DateTime),
     DtEnd(DateTimeOrDate, DtParams<S>),
@@ -102,14 +103,14 @@ pub enum KnownProp<S, U> {
     TzName(S, LangParams<S>),
     TzOffsetFrom(UtcOffset),
     TzOffsetTo(UtcOffset),
-    TzUrl(U),
+    TzUrl(Uri<S>),
     // RELATIONSHIP COMPONENT PROPERTIES
-    Attendee(U, AttendeeParams<S, U>),
-    Contact(S, TextParams<S, U>),
-    Organizer(U, OrganizerParams<S, U>),
+    Attendee(Uri<S>, AttendeeParams<S>),
+    Contact(S, TextParams<S>),
+    Organizer(Uri<S>, OrganizerParams<S>),
     RecurrenceId(DateTimeOrDate, RecurrenceIdParams<S>),
     RelatedTo(S, RelTypeParams<S>),
-    Url(U),
+    Url(Uri<S>),
     Uid(Uid<S>),
     // RECURRENCE COMPONENT PROPERTIES
     ExDate(DateTimeOrDate, DtParams<S>),
@@ -130,93 +131,82 @@ pub enum KnownProp<S, U> {
     // TODO: the value of this property has a more precise grammar (page 143)
     RequestStatus(S, LangParams<S>),
     // RFC 7986 PROPERTIES
-    Name(S, TextParams<S, U>),
+    Name(S, TextParams<S>),
     RefreshInterval(Duration),
-    Source(U),
+    Source(Uri<S>),
     Color(Css3Color),
-    Image(ImageData<U>, ImageParams<S, U>),
-    Conference(U, ConfParams<S>),
+    Image(ImageData<S>, ImageParams<S>),
+    Conference(Uri<S>, ConfParams<S>),
 }
 
 #[derive(Debug, Clone)]
-pub enum UnknownProp<S, U> {
+pub enum UnknownProp<S> {
     Iana {
         name: S,
-        value: Value<S, U>,
+        value: Value<S>,
     },
     X {
         name: S,
-        value: Value<S, U>,
-        params: Box<[KnownParam<S, U>]>,
+        value: Value<S>,
+        params: Box<[KnownParam<S>]>,
     },
 }
 
-fn parse_value<'i, S: AsRef<str> + ?Sized>(
-    value_type: ValueType<&'i S>,
-    input: &mut &'i str,
-) -> ModalResult<Value<&'i str, &'i UriStr>> {
+fn parse_value<I, E>(
+    value_type: ValueType<I::Slice>,
+    input: &mut I,
+) -> Result<Value<I::Slice>, E>
+where
+    I: StreamIsPartial
+        + Stream
+        + Compare<Caseless<&'static str>>
+        + Compare<char>,
+    I::Token: AsChar + Clone,
+    I::Slice: AsBStr + Clone,
+    E: ParserError<I>
+        + FromExternalError<I, InvalidDateError>
+        + FromExternalError<I, InvalidRawTimeError>
+        + FromExternalError<I, InvalidDurationTimeError>
+        + FromExternalError<I, InvalidIntegerError>,
+{
     /// Parses the raw text value of a property.
-    fn text<'i>(input: &mut &'i str) -> ModalResult<&'i str> {
+    fn text<I, E>(input: &mut I) -> Result<I::Slice, E>
+    where
+        I: StreamIsPartial + Stream,
+        I::Token: AsChar + Clone,
+        E: ParserError<I>,
+    {
         repeat::<_, _, (), _, _>(0.., none_of((..' ', '\u{007F}')))
             .take()
             .parse_next(input)
     }
 
     match value_type {
-        ValueType::Binary => {
-            //binary.map(Value::Binary).parse_next(input)
-            todo!()
-        }
+        ValueType::Binary => binary.map(Value::Binary).parse_next(input),
         ValueType::Boolean => {
             bool_caseless.map(Value::Boolean).parse_next(input)
         }
-        ValueType::CalAddress => {
-            //uri.map(Value::CalAddress).parse_next(input)
-            todo!()
-        }
-        ValueType::Date => {
-            //date.map(Value::Date).parse_next(input)
-            todo!()
-        }
-        ValueType::DateTime => {
-            //datetime.map(Value::DateTime).parse_next(input)
-            todo!()
-        }
-        ValueType::Duration => {
-            //duration.map(Value::Duration).parse_next(input)
-            todo!()
-        }
+        ValueType::CalAddress => uri.map(Value::CalAddress).parse_next(input),
+        ValueType::Date => date.map(Value::Date).parse_next(input),
+        ValueType::DateTime => datetime.map(Value::DateTime).parse_next(input),
+        ValueType::Duration => duration.map(Value::Duration).parse_next(input),
         ValueType::Float => float.map(Value::Float).parse_next(input),
-        ValueType::Integer => (opt(sign), lz_dec_uint::<_, u64, _>)
-            .try_map(|(s, d)| i64::try_from(d).map(|d| (s, d)))
-            .verify_map(|(s, d)| d.checked_mul(s.unwrap_or_default() as i64))
-            .try_map(i32::try_from)
-            .map(Value::Integer)
-            .parse_next(input),
-        ValueType::Period => {
-            //period.map(Value::Period).parse_next(input)
-            todo!()
-        }
+        ValueType::Integer => integer.map(Value::Integer).parse_next(input),
+        ValueType::Period => period.map(Value::Period).parse_next(input),
         ValueType::Recur => todo!(),
         ValueType::Text => text.map(Value::Text).parse_next(input),
-        ValueType::Time => {
-            //time.map(Value::Time).parse_next(input)
-            todo!()
-        }
-        ValueType::Uri => {
-            //uri.map(Value::Uri).parse_next(input)
-            todo!()
-        }
+        ValueType::Time => time.map(Value::Time).parse_next(input),
+        ValueType::Uri => uri.map(Value::Uri).parse_next(input),
         ValueType::UtcOffset => todo!(),
         ValueType::Iana(name) => text
             .map(|value| Value::Iana {
-                name: name.as_ref(),
+                name: name.clone(),
                 value,
             })
             .parse_next(input),
         ValueType::X(name) => text
             .map(|value| Value::X {
-                name: name.as_ref(),
+                name: name.clone(),
                 value,
             })
             .parse_next(input),
@@ -246,10 +236,23 @@ macro_rules! find_and_remove {
     };
 }
 
-type ParsedProp<'a> = (Prop<&'a str, &'a UriStr>, Box<[UnknownParam<&'a str>]>);
+type ParsedProp<S> = (Prop<S>, Box<[UnknownParam<S>]>);
 
 /// Parses a [`Prop`].
-pub fn property<'i>(input: &mut &'i str) -> ModalResult<ParsedProp<'i>> {
+pub fn property<I, E>(input: &mut I) -> Result<ParsedProp<I::Slice>, E>
+where
+    I: StreamIsPartial
+        + Stream
+        + Compare<Caseless<&'static str>>
+        + Compare<char>,
+    I::Token: AsChar + Clone,
+    I::Slice: AsBStr + Clone + SliceLen,
+    E: ParserError<I>
+        + FromExternalError<I, InvalidDateError>
+        + FromExternalError<I, InvalidRawTimeError>
+        + FromExternalError<I, InvalidDurationTimeError>
+        + FromExternalError<I, InvalidIntegerError>,
+{
     let name = property_name.parse_next(input)?;
     let mut params: Vec<_> =
         terminated(repeat(0.., preceded(';', parameter)), ':')
@@ -286,6 +289,8 @@ pub fn property<'i>(input: &mut &'i str) -> ModalResult<ParsedProp<'i>> {
                 let value_type = Param::Known(KnownParam::Value(_x)) => _x in params
             };
 
+            let already_found = value_type.is_some();
+
             let value =
                 parse_value(value_type.unwrap_or(ValueType::Text), input)?;
 
@@ -297,9 +302,7 @@ pub fn property<'i>(input: &mut &'i str) -> ModalResult<ParsedProp<'i>> {
                     match param {
                         // if we run into another VALUE parameter having already found one, that's
                         // an error
-                        Param::Known(KnownParam::Value(_))
-                            if value_type.is_some() =>
-                        {
+                        Param::Known(KnownParam::Value(_)) if already_found => {
                             todo!()
                         }
                         Param::Known(param) => known_params.push(param),
@@ -328,25 +331,46 @@ pub fn property<'i>(input: &mut &'i str) -> ModalResult<ParsedProp<'i>> {
 /// A property name, which may be statically known from RFC 5545 or RFC 7986, or
 /// otherwise may be some arbitrary [`iana_token`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum PropName<'a> {
+pub enum PropName<S = Box<str>> {
     Rfc5545(Rfc5545PropName),
     Rfc7986(Rfc7986PropName),
-    Iana(&'a str),
-    X(&'a str),
+    Iana(S),
+    X(S),
 }
 
 /// Parses a [`PropName`].
-pub fn property_name<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
-    // NOTE: this internal implementation is a little gross, and arguably i
-    // could do better with something like aho-corasick. maybe look at how
-    // logos does token parser generation?
-
-    fn other<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
+pub fn property_name<I, E>(input: &mut I) -> Result<PropName<I::Slice>, E>
+where
+    I: StreamIsPartial
+        + Stream
+        + Compare<Caseless<&'static str>>
+        + Compare<char>,
+    I::Token: AsChar + Clone,
+    E: ParserError<I>,
+    PropName<I::Slice>: Clone,
+{
+    fn other<I, E>(input: &mut I) -> Result<PropName<I::Slice>, E>
+    where
+        I: StreamIsPartial + Stream + Compare<char>,
+        I::Token: AsChar + Clone,
+        E: ParserError<I>,
+    {
         alt((x_name.map(PropName::X), iana_token.map(PropName::Iana)))
             .parse_next(input)
     }
 
-    fn a_names<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
+    // TODO: these functions should probably be macro-generated
+
+    fn a_names<I, E>(input: &mut I) -> Result<PropName<I::Slice>, E>
+    where
+        I: StreamIsPartial
+            + Stream
+            + Compare<Caseless<&'static str>>
+            + Compare<char>,
+        I::Token: AsChar + Clone,
+        E: ParserError<I>,
+        PropName<I::Slice>: Clone,
+    {
         alt((
             Caseless("ATTENDEE")
                 .value(PropName::Rfc5545(Rfc5545PropName::Attendee)),
@@ -359,7 +383,16 @@ pub fn property_name<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
         .parse_next(input)
     }
 
-    fn c_names<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
+    fn c_names<I, E>(input: &mut I) -> Result<PropName<I::Slice>, E>
+    where
+        I: StreamIsPartial
+            + Stream
+            + Compare<Caseless<&'static str>>
+            + Compare<char>,
+        I::Token: AsChar + Clone,
+        E: ParserError<I>,
+        PropName<I::Slice>: Clone,
+    {
         alt((
             Caseless("CONFERENCE")
                 .value(PropName::Rfc7986(Rfc7986PropName::Conference)),
@@ -383,7 +416,16 @@ pub fn property_name<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
         .parse_next(input)
     }
 
-    fn d_names<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
+    fn d_names<I, E>(input: &mut I) -> Result<PropName<I::Slice>, E>
+    where
+        I: StreamIsPartial
+            + Stream
+            + Compare<Caseless<&'static str>>
+            + Compare<char>,
+        I::Token: AsChar + Clone,
+        E: ParserError<I>,
+        PropName<I::Slice>: Clone,
+    {
         alt((
             Caseless("DESCRIPTION")
                 .value(PropName::Rfc5545(Rfc5545PropName::Description)),
@@ -402,7 +444,16 @@ pub fn property_name<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
         .parse_next(input)
     }
 
-    fn e_names<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
+    fn e_names<I, E>(input: &mut I) -> Result<PropName<I::Slice>, E>
+    where
+        I: StreamIsPartial
+            + Stream
+            + Compare<Caseless<&'static str>>
+            + Compare<char>,
+        I::Token: AsChar + Clone,
+        E: ParserError<I>,
+        PropName<I::Slice>: Clone,
+    {
         alt((
             Caseless("EXDATE")
                 .value(PropName::Rfc5545(Rfc5545PropName::ExceptionDateTimes)),
@@ -411,7 +462,16 @@ pub fn property_name<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
         .parse_next(input)
     }
 
-    fn f_names<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
+    fn f_names<I, E>(input: &mut I) -> Result<PropName<I::Slice>, E>
+    where
+        I: StreamIsPartial
+            + Stream
+            + Compare<Caseless<&'static str>>
+            + Compare<char>,
+        I::Token: AsChar + Clone,
+        E: ParserError<I>,
+        PropName<I::Slice>: Clone,
+    {
         alt((
             Caseless("FREEBUSY")
                 .value(PropName::Rfc5545(Rfc5545PropName::FreeBusyTime)),
@@ -420,7 +480,16 @@ pub fn property_name<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
         .parse_next(input)
     }
 
-    fn g_names<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
+    fn g_names<I, E>(input: &mut I) -> Result<PropName<I::Slice>, E>
+    where
+        I: StreamIsPartial
+            + Stream
+            + Compare<Caseless<&'static str>>
+            + Compare<char>,
+        I::Token: AsChar + Clone,
+        E: ParserError<I>,
+        PropName<I::Slice>: Clone,
+    {
         alt((
             Caseless("GEO")
                 .value(PropName::Rfc5545(Rfc5545PropName::GeographicPosition)),
@@ -429,7 +498,16 @@ pub fn property_name<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
         .parse_next(input)
     }
 
-    fn i_names<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
+    fn i_names<I, E>(input: &mut I) -> Result<PropName<I::Slice>, E>
+    where
+        I: StreamIsPartial
+            + Stream
+            + Compare<Caseless<&'static str>>
+            + Compare<char>,
+        I::Token: AsChar + Clone,
+        E: ParserError<I>,
+        PropName<I::Slice>: Clone,
+    {
         alt((
             Caseless("IMAGE").value(PropName::Rfc7986(Rfc7986PropName::Image)),
             other,
@@ -437,7 +515,16 @@ pub fn property_name<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
         .parse_next(input)
     }
 
-    fn l_names<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
+    fn l_names<I, E>(input: &mut I) -> Result<PropName<I::Slice>, E>
+    where
+        I: StreamIsPartial
+            + Stream
+            + Compare<Caseless<&'static str>>
+            + Compare<char>,
+        I::Token: AsChar + Clone,
+        E: ParserError<I>,
+        PropName<I::Slice>: Clone,
+    {
         alt((
             Caseless("LAST-MODIFIED")
                 .value(PropName::Rfc5545(Rfc5545PropName::LastModified)),
@@ -448,7 +535,16 @@ pub fn property_name<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
         .parse_next(input)
     }
 
-    fn m_names<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
+    fn m_names<I, E>(input: &mut I) -> Result<PropName<I::Slice>, E>
+    where
+        I: StreamIsPartial
+            + Stream
+            + Compare<Caseless<&'static str>>
+            + Compare<char>,
+        I::Token: AsChar + Clone,
+        E: ParserError<I>,
+        PropName<I::Slice>: Clone,
+    {
         alt((
             Caseless("METHOD")
                 .value(PropName::Rfc5545(Rfc5545PropName::Method)),
@@ -457,7 +553,16 @@ pub fn property_name<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
         .parse_next(input)
     }
 
-    fn n_names<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
+    fn n_names<I, E>(input: &mut I) -> Result<PropName<I::Slice>, E>
+    where
+        I: StreamIsPartial
+            + Stream
+            + Compare<Caseless<&'static str>>
+            + Compare<char>,
+        I::Token: AsChar + Clone,
+        E: ParserError<I>,
+        PropName<I::Slice>: Clone,
+    {
         alt((
             Caseless("NAME").value(PropName::Rfc7986(Rfc7986PropName::Name)),
             other,
@@ -465,7 +570,16 @@ pub fn property_name<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
         .parse_next(input)
     }
 
-    fn o_names<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
+    fn o_names<I, E>(input: &mut I) -> Result<PropName<I::Slice>, E>
+    where
+        I: StreamIsPartial
+            + Stream
+            + Compare<Caseless<&'static str>>
+            + Compare<char>,
+        I::Token: AsChar + Clone,
+        E: ParserError<I>,
+        PropName<I::Slice>: Clone,
+    {
         alt((
             Caseless("ORGANIZER")
                 .value(PropName::Rfc5545(Rfc5545PropName::Organizer)),
@@ -474,7 +588,16 @@ pub fn property_name<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
         .parse_next(input)
     }
 
-    fn p_names<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
+    fn p_names<I, E>(input: &mut I) -> Result<PropName<I::Slice>, E>
+    where
+        I: StreamIsPartial
+            + Stream
+            + Compare<Caseless<&'static str>>
+            + Compare<char>,
+        I::Token: AsChar + Clone,
+        E: ParserError<I>,
+        PropName<I::Slice>: Clone,
+    {
         alt((
             Caseless("PERCENT-COMPLETE")
                 .value(PropName::Rfc5545(Rfc5545PropName::PercentComplete)),
@@ -487,7 +610,16 @@ pub fn property_name<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
         .parse_next(input)
     }
 
-    fn r_names<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
+    fn r_names<I, E>(input: &mut I) -> Result<PropName<I::Slice>, E>
+    where
+        I: StreamIsPartial
+            + Stream
+            + Compare<Caseless<&'static str>>
+            + Compare<char>,
+        I::Token: AsChar + Clone,
+        E: ParserError<I>,
+        PropName<I::Slice>: Clone,
+    {
         alt((
             Caseless("REFRESH-INTERVAL")
                 .value(PropName::Rfc7986(Rfc7986PropName::RefreshInterval)),
@@ -510,7 +642,16 @@ pub fn property_name<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
         .parse_next(input)
     }
 
-    fn s_names<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
+    fn s_names<I, E>(input: &mut I) -> Result<PropName<I::Slice>, E>
+    where
+        I: StreamIsPartial
+            + Stream
+            + Compare<Caseless<&'static str>>
+            + Compare<char>,
+        I::Token: AsChar + Clone,
+        E: ParserError<I>,
+        PropName<I::Slice>: Clone,
+    {
         alt((
             Caseless("SEQUENCE")
                 .value(PropName::Rfc5545(Rfc5545PropName::SequenceNumber)),
@@ -525,7 +666,16 @@ pub fn property_name<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
         .parse_next(input)
     }
 
-    fn t_names<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
+    fn t_names<I, E>(input: &mut I) -> Result<PropName<I::Slice>, E>
+    where
+        I: StreamIsPartial
+            + Stream
+            + Compare<Caseless<&'static str>>
+            + Compare<char>,
+        I::Token: AsChar + Clone,
+        E: ParserError<I>,
+        PropName<I::Slice>: Clone,
+    {
         alt((
             Caseless("TZOFFSETFROM")
                 .value(PropName::Rfc5545(Rfc5545PropName::TimeZoneOffsetFrom)),
@@ -546,7 +696,16 @@ pub fn property_name<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
         .parse_next(input)
     }
 
-    fn u_names<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
+    fn u_names<I, E>(input: &mut I) -> Result<PropName<I::Slice>, E>
+    where
+        I: StreamIsPartial
+            + Stream
+            + Compare<Caseless<&'static str>>
+            + Compare<char>,
+        I::Token: AsChar + Clone,
+        E: ParserError<I>,
+        PropName<I::Slice>: Clone,
+    {
         alt((
             Caseless("URL").value(PropName::Rfc5545(
                 Rfc5545PropName::UniformResourceLocator,
@@ -558,7 +717,16 @@ pub fn property_name<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
         .parse_next(input)
     }
 
-    fn v_names<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
+    fn v_names<I, E>(input: &mut I) -> Result<PropName<I::Slice>, E>
+    where
+        I: StreamIsPartial
+            + Stream
+            + Compare<Caseless<&'static str>>
+            + Compare<char>,
+        I::Token: AsChar + Clone,
+        E: ParserError<I>,
+        PropName<I::Slice>: Clone,
+    {
         alt((
             Caseless("VERSION")
                 .value(PropName::Rfc5545(Rfc5545PropName::Version)),
@@ -567,7 +735,7 @@ pub fn property_name<'i>(input: &mut &'i str) -> ModalResult<PropName<'i>> {
         .parse_next(input)
     }
 
-    match input.peek_token() {
+    match input.peek_token().map(AsChar::as_char) {
         Some('A' | 'a') => a_names.parse_next(input),
         Some('C' | 'c') => c_names.parse_next(input),
         Some('D' | 'd') => d_names.parse_next(input),
@@ -729,7 +897,7 @@ mod tests {
     #[test]
     fn rfc_5545_example_iana_property() {
         let mut input = "NON-SMOKING;VALUE=BOOLEAN:TRUE";
-        let prop = property(&mut input);
+        let prop = property::<_, ()>(&mut input);
         assert!(matches!(
             prop,
             Ok((
@@ -742,7 +910,7 @@ mod tests {
         ));
 
         let mut input = "NON-SMOKING:TRUE";
-        let prop = property(&mut input);
+        let prop = property::<_, ()>(&mut input);
         assert!(matches!(
             prop,
             Ok((
@@ -758,9 +926,8 @@ mod tests {
     #[test]
     fn rfc_5545_example_x_property() {
         let input = "X-ABC-MMSUBJ;VALUE=URI;FMTTYPE=audio/basic:http://www.example.org/mysubj.au";
-        let prop = property.parse_peek(input);
-        let expected_uri =
-            UriStr::new("http://www.example.org/mysubj.au").unwrap();
+        let prop = property::<_, ()>.parse_peek(input);
+        let expected_uri = Uri("http://www.example.org/mysubj.au");
 
         assert!(matches!(
             prop, Ok(("", (Prop::Unknown(UnknownProp::X {
@@ -774,20 +941,26 @@ mod tests {
     #[test]
     fn integer_value_parsing() {
         for mut i in ["0", "-2147483648", "2147483647"] {
-            assert!(parse_value(ValueType::<&str>::Integer, &mut i).is_ok());
+            assert!(
+                parse_value::<_, ()>(ValueType::<&str>::Integer, &mut i)
+                    .is_ok()
+            );
         }
 
         for mut i in ["-2147483649", "2147483648"] {
-            assert!(parse_value(ValueType::<&str>::Integer, &mut i).is_err());
+            assert!(
+                parse_value::<_, ()>(ValueType::<&str>::Integer, &mut i)
+                    .is_err()
+            );
         }
     }
 
     // PROPERTY NAME TESTS
 
     /// Asserts that the inputs are equal under [`property_name`].
-    fn assert_prop_name_eq<'i>(input: &'i str, expected: PropName<'i>) {
+    fn assert_prop_name_eq<'i>(input: &'i str, expected: PropName<&'i str>) {
         let mut input_ref = input;
-        let result = property_name.parse_next(&mut input_ref);
+        let result = property_name::<_, ()>.parse_next(&mut input_ref);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), expected);
         assert!(input_ref.is_empty(),);
@@ -796,7 +969,7 @@ mod tests {
     // Helper function to test parsing failures
     fn assert_prop_name_parse_failure(input: &str) {
         let mut input_ref = input;
-        let result = property_name.parse_next(&mut input_ref);
+        let result = property_name::<_, ()>.parse_next(&mut input_ref);
         assert!(result.is_err());
     }
 

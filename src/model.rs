@@ -20,8 +20,8 @@ use primitive::{
     DateTimeOrDate, DisplayType, Duration, EventStatus, FeatureType,
     FreeBusyType, Geo, ImageData, JournalStatus, Language, Method,
     ParticipationRole, ParticipationStatus, Period, RDate, RelationshipType,
-    Status, Time, TodoStatus, Transparency, TriggerRelation, Uid, UriString,
-    Utc, UtcOffset,
+    Status, Time, TodoStatus, Transparency, TriggerRelation, Uid, Uri, Utc,
+    UtcOffset,
 };
 use property::{ConfProp, ImageProp, Prop, TextProp};
 use rrule::RecurrenceRule;
@@ -57,13 +57,13 @@ pub struct Calendar {
     /// RFC 7986 §5.4
     pub last_modified: Option<Prop<DateTime>>,
     /// RFC 7986 §5.5
-    pub url: Option<Prop<UriString>>,
+    pub url: Option<Prop<Uri<Box<str>>>>,
     /// RFC 7986 §5.6
     pub categories: Vec<TextProp>,
     /// RFC 7986 §5.7
     pub refresh_interval: Option<Prop<Duration>>,
     /// RFC 7986 §5.8
-    pub source: Option<Prop<UriString>>,
+    pub source: Option<Prop<Uri<Box<str>>>>,
     /// RFC 7986 §5.9
     pub color: Option<Prop<Css3Color>>,
     /// RFC 7986 §5.10
@@ -105,7 +105,7 @@ pub struct DescriptiveProperties {
     pub description: Option<Text>,
     pub categories: Vec<String>,
     pub class: Option<ClassValue>,
-    pub url: Option<UriString>,
+    pub url: Option<Uri<Box<str>>>,
     pub attachments: Vec<Attachment>,
     pub contact: Option<Text>,
     pub comments: Vec<Text>,
@@ -219,7 +219,7 @@ pub struct FreeBusy {
     pub dtend: Option<DateTime<Utc>>,
     pub organizer: Option<CalendarUser>,
     pub attendee: Option<CalendarUser>,
-    pub url: Option<UriString>,
+    pub url: Option<Uri<Box<str>>>,
     pub freebusy_periods: Vec<FreeBusyPeriod>,
     pub contact: Option<Text>,
     pub comments: Vec<Text>,
@@ -230,7 +230,7 @@ pub struct FreeBusy {
 pub struct TimeZone {
     pub tzid: String,
     pub last_modified: Option<DateTime<Utc>>,
-    pub tzurl: Option<UriString>,
+    pub tzurl: Option<Uri<Box<str>>>,
     pub standard_time: Vec<TimeZoneRule>,
     pub daylight_time: Vec<TimeZoneRule>,
     pub x_properties: HashMap<String, XProperty>,
@@ -297,7 +297,7 @@ pub enum Property {
     TzName(Text),
     TzOffsetFrom(UtcOffset),
     TzOffsetTo(UtcOffset),
-    TzUrl(UriString),
+    TzUrl(Uri<Box<str>>),
 
     // Relationship properties
     Attendee(Attendee),
@@ -305,7 +305,7 @@ pub enum Property {
     Organizer(CalendarUser),
     RecurrenceId(RecurrenceId),
     RelatedTo(RelatedTo),
-    Url(UriString),
+    Url(Uri<Box<str>>),
     Uid(Uid),
 
     // Recurrence properties
@@ -327,7 +327,7 @@ pub enum Property {
     // RFC 7986 new properties
     Name(Text),
     RefreshInterval(Duration),
-    Source(UriString),
+    Source(Uri<Box<str>>),
     Color(String),
     Image(Image),
     Conference(Conference),
@@ -342,13 +342,13 @@ pub struct Image {
     pub data: ImageData,
     pub fmttype: Option<String>,
     pub display: Vec<DisplayType>,
-    pub alternate_representation: Option<UriString>,
+    pub alternate_representation: Option<Uri<Box<str>>>,
 }
 
 /// RFC 7986 CONFERENCE property.
 #[derive(Debug, Clone)]
 pub struct Conference {
-    pub uri: UriString,
+    pub uri: Uri<Box<str>>,
     pub feature: Vec<FeatureType>,
     pub label: Option<String>,
     pub language: Option<Language>,
@@ -359,7 +359,7 @@ pub struct Conference {
 pub struct Text {
     pub contents: String,
     pub language: Option<Language>,
-    pub alternate_representation: Option<UriString>,
+    pub alternate_representation: Option<Uri<Box<str>>>,
 }
 
 /// X-Property (non-standard property).
@@ -403,7 +403,7 @@ pub enum ParameterValue {
 pub struct CalendarUser {
     pub email: String,
     pub common_name: Option<String>,
-    pub dir: Option<UriString>,
+    pub dir: Option<Uri<Box<str>>>,
     pub sent_by: Option<String>,
     pub language: Option<String>,
     pub email_param: Option<String>, // RFC 7986 extension
@@ -426,7 +426,7 @@ pub struct Attendee {
 #[derive(Debug, Clone)]
 pub enum Attachment {
     Uri {
-        uri: UriString,
+        uri: Uri<Box<str>>,
         fmttype: Option<String>,
     },
     Binary {

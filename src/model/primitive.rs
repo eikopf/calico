@@ -1,7 +1,6 @@
 //! Primitive types for the object model.
 
 use chrono::NaiveDate;
-pub use iri_string::types::{UriStr, UriString};
 
 /// A method as defined in RFC 5546 §1.4
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -115,9 +114,9 @@ pub enum Encoding {
 
 /// The data of an RFC 7986 IMAGE property.
 #[derive(Debug, Clone)]
-pub enum ImageData<U = UriString> {
-    Uri(U),
-    Binary(Binary),
+pub enum ImageData<S = Box<str>> {
+    Uri(Uri<S>),
+    Binary(BinaryText<S>),
 }
 
 /// RFC 5545 §3.2.8
@@ -283,10 +282,10 @@ pub enum ValueType<S = Box<str>> {
 
 ///A runtime-discriminated property value.
 #[derive(Debug, Clone)]
-pub enum Value<S = Box<str>, U = UriString> {
-    Binary(Binary),
+pub enum Value<S = Box<str>> {
+    Binary(BinaryText<S>),
     Boolean(bool),
-    CalAddress(U),
+    CalAddress(Uri<S>),
     Date(Date),
     DateTime(DateTime),
     Duration(Duration),
@@ -296,13 +295,13 @@ pub enum Value<S = Box<str>, U = UriString> {
     Recur(()),
     Text(S),
     Time(Time),
-    Uri(U),
+    Uri(Uri<S>),
     UtcOffset(UtcOffset),
     Iana { name: S, value: S },
     X { name: S, value: S },
 }
 
-impl<S, U> Value<S, U> {
+impl<S> Value<S> {
     pub fn as_value_type(&self) -> ValueType<&S> {
         match self {
             Value::Binary(_) => ValueType::Binary,
@@ -333,9 +332,9 @@ pub struct Float<S = Box<str>>(pub S);
 
 /// The possible values of the `ATTACH` property.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AttachValue<U = UriString> {
-    Uri(U),
-    Binary(Binary),
+pub enum AttachValue<S = Box<str>> {
+    Uri(Uri<S>),
+    Binary(BinaryText<S>),
 }
 
 /// The value type of the `CLASS` property.

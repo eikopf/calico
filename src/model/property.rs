@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use super::primitive::{
     CalendarUserType, DisplayType, FeatureType, FormatType, FreeBusyType,
     ImageData, Language, ParticipationRole, ParticipationStatus,
-    RelationshipType, ThisAndFuture, TriggerRelation, UriString,
+    RelationshipType, ThisAndFuture, TriggerRelation, Uri,
 };
 
 /// An ordinary textual property.
@@ -15,7 +15,7 @@ pub type TextProp = Prop<Box<str>, TextParams>;
 pub type ImageProp = Prop<ImageData, ImageParams>;
 
 /// A conference property.
-pub type ConfProp = Prop<UriString, ConfParams>;
+pub type ConfProp = Prop<Uri<Box<str>>, ConfParams>;
 
 /// A property generic over values and parameters.
 #[derive(Debug, Clone)]
@@ -37,27 +37,27 @@ pub struct AttachParams {
 
 /// The parameters associated with the `ATTENDEE` property.
 #[derive(Debug, Clone)]
-pub struct AttendeeParams<S = Box<str>, U = UriString> {
+pub struct AttendeeParams<S = Box<str>> {
     pub language: Option<Language<S>>,
     pub calendar_user_type: Option<CalendarUserType<S>>,
-    pub group_or_list_membership: Option<Box<[U]>>,
+    pub group_or_list_membership: Option<Box<[Uri<S>]>>,
     pub participation_role: Option<ParticipationRole<S>>,
     pub participation_status: Option<ParticipationStatus<S>>,
     pub rsvp_expectation: Option<bool>,
-    pub delegatees: Option<Box<[U]>>,
-    pub delegators: Option<Box<[U]>>,
-    pub sent_by: Option<U>,
+    pub delegatees: Option<Box<[Uri<S>]>>,
+    pub delegators: Option<Box<[Uri<S>]>>,
+    pub sent_by: Option<Uri<S>>,
     pub common_name: Option<S>,
-    pub directory_entry_reference: Option<U>,
+    pub directory_entry_reference: Option<Uri<S>>,
 }
 
 /// The parameters associated with the `ORGANIZER` property.
 #[derive(Debug, Clone)]
-pub struct OrganizerParams<S = Box<str>, U = UriString> {
+pub struct OrganizerParams<S = Box<str>> {
     pub language: Option<Language<S>>,
-    pub sent_by: Option<U>,
+    pub sent_by: Option<Uri<S>>,
     pub common_name: Option<S>,
-    pub directory_entry_reference: Option<U>,
+    pub directory_entry_reference: Option<Uri<S>>,
 }
 
 /// The parameters associated with the `RECURRENCE-ID` property.
@@ -104,17 +104,17 @@ pub struct FBTypeParams<S = Box<str>> {
 
 /// The parameters usually associated with text values.
 #[derive(Debug, Clone, Copy)]
-pub struct TextParams<S = Box<str>, U = UriString> {
+pub struct TextParams<S = Box<str>> {
     pub language: Option<Language<S>>,
-    pub alternate_representation: Option<U>,
+    pub alternate_representation: Option<Uri<S>>,
 }
 
 /// The parameters usually associated with image data.
 #[derive(Debug, Clone)]
-pub struct ImageParams<S = Box<str>, U = UriString> {
+pub struct ImageParams<S = Box<str>> {
     pub format_type: Option<FormatType>,
     pub display: Option<DisplayType<S>>,
-    pub alternate_representation: Option<U>,
+    pub alternate_representation: Option<Uri<S>>,
 }
 
 /// The parameters associated with the CONFERENCE property.
