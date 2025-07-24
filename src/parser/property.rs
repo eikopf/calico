@@ -26,7 +26,8 @@ use crate::{
     parser::{
         parameter::{KnownParam, Param, parameter},
         primitive::{
-            duration, float, iana_token, integer, period, utc_offset, x_name,
+            duration, float, gregorian, iana_token, integer, period,
+            utc_offset, x_name,
         },
     },
 };
@@ -223,6 +224,12 @@ where
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct DuplicateValueTypeError;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnexpectedKnownParamError<S> {
+    current_property: PropName<S>,
+    unexpected_param: KnownParam<S>,
+}
+
 type ParsedProp<S> = (Prop<S>, Box<[UnknownParam<S>]>);
 
 /// Parses a [`Prop`].
@@ -240,119 +247,146 @@ where
         + FromExternalError<I, InvalidDurationTimeError>
         + FromExternalError<I, InvalidIntegerError>
         + FromExternalError<I, InvalidUtcOffsetError>
-        + FromExternalError<I, DuplicateValueTypeError>,
+        + FromExternalError<I, DuplicateValueTypeError>
+        + FromExternalError<I, UnexpectedKnownParamError<I::Slice>>,
 {
+    struct StateMachine<Src, S, F> {
+        state: S,
+        step: F,
+        unknown_params: Vec<UnknownParam<Src>>,
+    }
+
+    impl<Src, S, F> StateMachine<Src, S, F> {
+        pub fn new(state: S, step: F) -> Self {
+            StateMachine {
+                state,
+                step,
+                unknown_params: Vec::new(),
+            }
+        }
+
+        pub fn advance<E>(&mut self, param: KnownParam<Src>) -> Result<(), E>
+        where
+            F: FnMut(KnownParam<Src>, &mut S) -> Result<(), E>,
+        {
+            (self.step)(param, &mut self.state)
+        }
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn sm_parse_next<I, S, F, E1, E2>(
+        mut sm: StateMachine<I::Slice, S, F>,
+        input: &mut I,
+    ) -> Result<(S, Box<[UnknownParam<I::Slice>]>), E1>
+    where
+        I: StreamIsPartial
+            + Stream
+            + Compare<Caseless<&'static str>>
+            + Compare<char>,
+        I::Token: AsChar + Clone,
+        I::Slice: Clone + SliceLen,
+        E1: ParserError<I> + FromExternalError<I, E2>,
+        F: FnMut(KnownParam<I::Slice>, &mut S) -> Result<(), E2>,
+    {
+        while input.peek_token().is_some_and(|t| t.as_char() != ':') {
+            let param = preceded(';', parameter).parse_next(input)?;
+
+            match param {
+                Param::Known(known_param) => {
+                    let () = sm
+                        .advance(known_param)
+                        .map_err(|err| E1::from_external_error(input, err))?;
+                }
+                Param::Unknown(unknown_param) => {
+                    sm.unknown_params.push(unknown_param);
+                }
+            }
+        }
+
+        Ok((sm.state, sm.unknown_params.into_boxed_slice()))
+    }
+
+    fn unknown_step<Src>(
+        param: KnownParam<Src>,
+        state: &mut (Option<ValueType<Src>>, Vec<KnownParam<Src>>),
+    ) -> Result<(), DuplicateValueTypeError> {
+        match param {
+            KnownParam::Value(value_type) => match state.0 {
+                Some(_) => Err(DuplicateValueTypeError),
+                None => {
+                    state.0 = Some(value_type);
+                    Ok(())
+                }
+            },
+            known_param => {
+                state.1.push(known_param);
+                Ok(())
+            }
+        }
+    }
+
     let name = property_name.parse_next(input)?;
 
     Ok(match name {
+        PropName::Rfc5545(Rfc5545PropName::CalendarScale) => {
+            fn step<Src, S>(
+                param: KnownParam<Src>,
+                _state: &mut S,
+            ) -> Result<(), UnexpectedKnownParamError<Src>> {
+                Err(UnexpectedKnownParamError {
+                    current_property: PropName::Rfc5545(
+                        Rfc5545PropName::CalendarScale,
+                    ),
+                    unexpected_param: param,
+                })
+            }
+
+            let ((), unknown_params) =
+                sm_parse_next(StateMachine::new((), step), input)?;
+
+            let _ = ':'.parse_next(input)?;
+            let () = gregorian.parse_next(input)?;
+
+            (Prop::Known(KnownProp::CalScale), unknown_params)
+        }
         PropName::Rfc5545(name) => todo!(),
         PropName::Rfc7986(name) => todo!(),
         PropName::Iana(name) => {
-            struct State<S> {
-                value_type: Option<ValueType<S>>,
-                known_params: Vec<KnownParam<S>>,
-                unknown_params: Vec<UnknownParam<S>>,
-            }
-
-            let mut state: State<I::Slice> = State {
-                value_type: None,
-                known_params: Vec::new(),
-                unknown_params: Vec::new(),
-            };
-
-            while input.peek_token().is_some_and(|t| t.as_char() != ':') {
-                let param = preceded(';', parameter).parse_next(input)?;
-
-                match param {
-                    Param::Known(KnownParam::Value(value_type)) => {
-                        match state.value_type {
-                            Some(_) => {
-                                return Err(E::from_external_error(
-                                    input,
-                                    DuplicateValueTypeError,
-                                ));
-                            }
-                            None => {
-                                state.value_type = Some(value_type);
-                            }
-                        }
-                    }
-                    Param::Known(known_param) => {
-                        state.known_params.push(known_param);
-                    }
-                    Param::Unknown(unknown_param) => {
-                        state.unknown_params.push(unknown_param);
-                    }
-                }
-            }
-
-            let _ = ':'.parse_next(input)?;
-            let value = parse_value(
-                state.value_type.unwrap_or(ValueType::Text),
+            let ((value_type, params), unknown_params) = sm_parse_next(
+                StateMachine::new((None, vec![]), unknown_step),
                 input,
             )?;
+
+            let _ = ':'.parse_next(input)?;
+            let value =
+                parse_value(value_type.unwrap_or(ValueType::Text), input)?;
 
             (
                 Prop::Unknown(UnknownProp::Iana {
                     name: name.clone(),
                     value,
-                    params: state.known_params.into_boxed_slice(),
+                    params: params.into_boxed_slice(),
                 }),
-                state.unknown_params.into_boxed_slice(),
+                unknown_params,
             )
         }
         PropName::X(name) => {
-            struct State<S> {
-                value_type: Option<ValueType<S>>,
-                known_params: Vec<KnownParam<S>>,
-                unknown_params: Vec<UnknownParam<S>>,
-            }
-
-            let mut state: State<I::Slice> = State {
-                value_type: None,
-                known_params: Vec::new(),
-                unknown_params: Vec::new(),
-            };
-
-            while input.peek_token().is_some_and(|t| t.as_char() != ':') {
-                let param = preceded(';', parameter).parse_next(input)?;
-
-                match param {
-                    Param::Known(KnownParam::Value(value_type)) => {
-                        match state.value_type {
-                            Some(_) => {
-                                return Err(E::from_external_error(
-                                    input,
-                                    DuplicateValueTypeError,
-                                ));
-                            }
-                            None => {
-                                state.value_type = Some(value_type);
-                            }
-                        }
-                    }
-                    Param::Known(known_param) => {
-                        state.known_params.push(known_param);
-                    }
-                    Param::Unknown(unknown_param) => {
-                        state.unknown_params.push(unknown_param);
-                    }
-                }
-            }
-
-            let _ = ':'.parse_next(input)?;
-            let value = parse_value(
-                state.value_type.unwrap_or(ValueType::Text),
+            let ((value_type, params), unknown_params) = sm_parse_next(
+                StateMachine::new((None, vec![]), unknown_step),
                 input,
             )?;
+
+            let _ = ':'.parse_next(input)?;
+            let value =
+                parse_value(value_type.unwrap_or(ValueType::Text), input)?;
 
             (
                 Prop::Unknown(UnknownProp::X {
                     name: name.clone(),
                     value,
-                    params: state.known_params.into_boxed_slice(),
+                    params: params.into_boxed_slice(),
                 }),
-                state.unknown_params.into_boxed_slice(),
+                unknown_params,
             )
         }
     })
