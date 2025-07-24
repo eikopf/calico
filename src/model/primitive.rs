@@ -425,10 +425,11 @@ pub struct Geo {
     pub longitude: f64,
 }
 
-/// UTC offset.
-#[derive(Debug, Clone)]
+/// A UTC offset (RFC 5545 §3.3.14).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UtcOffset {
-    pub hours: i8,
+    pub sign: Sign,
+    pub hours: u8,
     pub minutes: u8,
     pub seconds: Option<u8>,
 }

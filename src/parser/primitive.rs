@@ -17,7 +17,7 @@ use crate::model::primitive::{
     DurationKind, DurationTime, Encoding, FeatureType, Float, FormatType,
     FreeBusyType, Language, Method, ParticipationRole, ParticipationStatus,
     Period, RawText, RawTime, RelationshipType, Sign, Time, TimeFormat,
-    TriggerRelation, Uid, Uri, Utc, ValueType,
+    TriggerRelation, Uid, Uri, Utc, UtcOffset, ValueType,
 };
 
 /// Parses a [`FeatureType`].
@@ -671,6 +671,87 @@ where
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InvalidUtcOffsetError {
+    NegativeZero,
+    BadHours(u8),
+    BadMinutes(u8),
+    BadSeconds(u8),
+}
+
+/// Parses a [`UtcOffset`].
+pub fn utc_offset<I, E>(input: &mut I) -> Result<UtcOffset, E>
+where
+    I: StreamIsPartial + Stream + Compare<char>,
+    I::Token: AsChar + Clone,
+    E: ParserError<I> + FromExternalError<I, InvalidUtcOffsetError>,
+{
+    fn digit2<I, E>(input: &mut I) -> Result<u8, E>
+    where
+        I: StreamIsPartial + Stream,
+        I::Token: AsChar + Clone,
+        E: ParserError<I>,
+    {
+        (one_of('0'..='9'), one_of('0'..='9'))
+            .map(|(a, b): (I::Token, I::Token)| {
+                // SAFETY: the parser guarantees the result will be an ascii digit
+                let a = unsafe { a.as_char().to_digit(10).unwrap_unchecked() };
+                let b = unsafe { b.as_char().to_digit(10).unwrap_unchecked() };
+                (10 * a + b) as u8
+            })
+            .parse_next(input)
+    }
+
+    let sign = sign.parse_next(input)?;
+    let hours = digit2.parse_next(input)?;
+
+    if hours >= 24 {
+        return Err(E::from_external_error(
+            input,
+            InvalidUtcOffsetError::BadHours(hours),
+        ));
+    }
+
+    let minutes = digit2.parse_next(input)?;
+
+    if minutes >= 60 {
+        return Err(E::from_external_error(
+            input,
+            InvalidUtcOffsetError::BadMinutes(minutes),
+        ));
+    }
+
+    let seconds = opt(digit2).parse_next(input)?;
+
+    if let Some(seconds @ 60..) = seconds {
+        return Err(E::from_external_error(
+            input,
+            InvalidUtcOffsetError::BadSeconds(seconds),
+        ));
+    }
+
+    match seconds {
+        Some(0) | None
+            if hours == 0 && minutes == 0 && sign == Sign::Negative =>
+        {
+            Err(E::from_external_error(
+                input,
+                InvalidUtcOffsetError::NegativeZero,
+            ))
+        }
+        Some(seconds @ 60..) => Err(E::from_external_error(
+            input,
+            InvalidUtcOffsetError::BadSeconds(seconds),
+        )),
+        _ => Ok(UtcOffset {
+            sign,
+            hours,
+            minutes,
+            seconds,
+        }),
+    }
+}
+
 /// Parses a [`Time<TimeFormat>`].
 pub fn time<I, E>(input: &mut I) -> Result<Time<TimeFormat>, E>
 where
@@ -1312,6 +1393,43 @@ mod tests {
         assert!(raw_time::<_, ()>.parse_peek("235959").is_ok());
         assert!(raw_time::<_, ()>.parse_peek("235960").is_ok());
         assert!(raw_time::<_, ()>.parse_peek("240000").is_err());
+    }
+
+    #[test]
+    fn utc_offset_parser() {
+        assert_eq!(
+            utc_offset::<_, ()>.parse_peek("+235959"),
+            Ok((
+                "",
+                UtcOffset {
+                    sign: Sign::Positive,
+                    hours: 23,
+                    minutes: 59,
+                    seconds: Some(59),
+                }
+            ))
+        );
+
+        assert_eq!(
+            utc_offset::<_, ()>.parse_peek("-2340"),
+            Ok((
+                "",
+                UtcOffset {
+                    sign: Sign::Negative,
+                    hours: 23,
+                    minutes: 40,
+                    seconds: None,
+                }
+            ))
+        );
+
+        assert!(utc_offset::<_, ()>.parse_peek("-0000").is_err());
+        assert!(utc_offset::<_, ()>.parse_peek("-000000").is_err());
+        assert!(utc_offset::<_, ()>.parse_peek("-000015").is_ok());
+        assert!(utc_offset::<_, ()>.parse_peek("+000060").is_err());
+        assert!(utc_offset::<_, ()>.parse_peek("+0000").is_ok());
+        assert!(utc_offset::<_, ()>.parse_peek("+000000").is_ok());
+        assert!(utc_offset::<_, ()>.parse_peek("000000").is_err());
     }
 
     #[test]

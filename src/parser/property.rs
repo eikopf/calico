@@ -25,7 +25,9 @@ use crate::{
     },
     parser::{
         parameter::{KnownParam, Param, parameter},
-        primitive::{duration, float, iana_token, integer, period, x_name},
+        primitive::{
+            duration, float, iana_token, integer, period, utc_offset, x_name,
+        },
     },
 };
 
@@ -33,7 +35,8 @@ use super::{
     parameter::UnknownParam,
     primitive::{
         InvalidDateError, InvalidDurationTimeError, InvalidIntegerError,
-        InvalidRawTimeError, binary, bool_caseless, date, datetime, time, uri,
+        InvalidRawTimeError, InvalidUtcOffsetError, binary, bool_caseless,
+        date, datetime, time, uri,
     },
 };
 
@@ -167,7 +170,8 @@ where
         + FromExternalError<I, InvalidDateError>
         + FromExternalError<I, InvalidRawTimeError>
         + FromExternalError<I, InvalidDurationTimeError>
-        + FromExternalError<I, InvalidIntegerError>,
+        + FromExternalError<I, InvalidIntegerError>
+        + FromExternalError<I, InvalidUtcOffsetError>,
 {
     /// Parses the raw text value of a property.
     fn text<I, E>(input: &mut I) -> Result<I::Slice, E>
@@ -197,7 +201,9 @@ where
         ValueType::Text => text.map(Value::Text).parse_next(input),
         ValueType::Time => time.map(Value::Time).parse_next(input),
         ValueType::Uri => uri.map(Value::Uri).parse_next(input),
-        ValueType::UtcOffset => todo!(),
+        ValueType::UtcOffset => {
+            utc_offset.map(Value::UtcOffset).parse_next(input)
+        }
         ValueType::Iana(name) => text
             .map(|value| Value::Iana {
                 name: name.clone(),
@@ -251,7 +257,8 @@ where
         + FromExternalError<I, InvalidDateError>
         + FromExternalError<I, InvalidRawTimeError>
         + FromExternalError<I, InvalidDurationTimeError>
-        + FromExternalError<I, InvalidIntegerError>,
+        + FromExternalError<I, InvalidIntegerError>
+        + FromExternalError<I, InvalidUtcOffsetError>,
 {
     let name = property_name.parse_next(input)?;
     let mut params: Vec<_> =
