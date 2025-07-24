@@ -359,380 +359,124 @@ where
             .parse_next(input)
     }
 
-    // TODO: these functions should probably be macro-generated
-
-    fn a_names<I, E>(input: &mut I) -> Result<PropName<I::Slice>, E>
-    where
-        I: StreamIsPartial
-            + Stream
-            + Compare<Caseless<&'static str>>
-            + Compare<char>,
-        I::Token: AsChar + Clone,
-        E: ParserError<I>,
-        PropName<I::Slice>: Clone,
-    {
-        alt((
-            Caseless("ATTENDEE")
-                .value(PropName::Rfc5545(Rfc5545PropName::Attendee)),
-            Caseless("ATTACH")
-                .value(PropName::Rfc5545(Rfc5545PropName::Attachment)),
-            Caseless("ACTION")
-                .value(PropName::Rfc5545(Rfc5545PropName::Action)),
-            other,
-        ))
-        .parse_next(input)
+    macro_rules! keywords {
+        ($name:ident; $($kw:literal => $val:expr),*) => {
+            fn $name<I, E>(input: &mut I) -> Result<PropName<I::Slice>, E>
+            where
+                I: StreamIsPartial
+                    + Stream
+                    + Compare<Caseless<&'static str>>
+                    + Compare<char>,
+                I::Token: AsChar + Clone,
+                E: ParserError<I>,
+                PropName<I::Slice>: Clone,
+            {
+                alt(($(Caseless($kw).value($val),)* other)).parse_next(input)
+            }
+        };
     }
 
-    fn c_names<I, E>(input: &mut I) -> Result<PropName<I::Slice>, E>
-    where
-        I: StreamIsPartial
-            + Stream
-            + Compare<Caseless<&'static str>>
-            + Compare<char>,
-        I::Token: AsChar + Clone,
-        E: ParserError<I>,
-        PropName<I::Slice>: Clone,
-    {
-        alt((
-            Caseless("CONFERENCE")
-                .value(PropName::Rfc7986(Rfc7986PropName::Conference)),
-            Caseless("CATEGORIES")
-                .value(PropName::Rfc5545(Rfc5545PropName::Categories)),
-            Caseless("COMPLETED")
-                .value(PropName::Rfc5545(Rfc5545PropName::DateTimeCompleted)),
-            Caseless("CALSCALE")
-                .value(PropName::Rfc5545(Rfc5545PropName::CalendarScale)),
-            Caseless("CONTACT")
-                .value(PropName::Rfc5545(Rfc5545PropName::Contact)),
-            Caseless("CREATED")
-                .value(PropName::Rfc5545(Rfc5545PropName::DateTimeCreated)),
-            Caseless("COMMENT")
-                .value(PropName::Rfc5545(Rfc5545PropName::Comment)),
-            Caseless("COLOR").value(PropName::Rfc7986(Rfc7986PropName::Color)),
-            Caseless("CLASS")
-                .value(PropName::Rfc5545(Rfc5545PropName::Classification)),
-            other,
-        ))
-        .parse_next(input)
+    keywords! {a_names;
+        "ATTENDEE" => PropName::Rfc5545(Rfc5545PropName::Attendee),
+        "ATTACH"   => PropName::Rfc5545(Rfc5545PropName::Attachment),
+        "ACTION"   => PropName::Rfc5545(Rfc5545PropName::Action)
     }
 
-    fn d_names<I, E>(input: &mut I) -> Result<PropName<I::Slice>, E>
-    where
-        I: StreamIsPartial
-            + Stream
-            + Compare<Caseless<&'static str>>
-            + Compare<char>,
-        I::Token: AsChar + Clone,
-        E: ParserError<I>,
-        PropName<I::Slice>: Clone,
-    {
-        alt((
-            Caseless("DESCRIPTION")
-                .value(PropName::Rfc5545(Rfc5545PropName::Description)),
-            Caseless("DTSTART")
-                .value(PropName::Rfc5545(Rfc5545PropName::DateTimeStart)),
-            Caseless("DTSTAMP")
-                .value(PropName::Rfc5545(Rfc5545PropName::DateTimeStamp)),
-            Caseless("DTEND")
-                .value(PropName::Rfc5545(Rfc5545PropName::DateTimeEnd)),
-            Caseless("DURATION")
-                .value(PropName::Rfc5545(Rfc5545PropName::Duration)),
-            Caseless("DUE")
-                .value(PropName::Rfc5545(Rfc5545PropName::DateTimeDue)),
-            other,
-        ))
-        .parse_next(input)
+    keywords! {c_names;
+        "CONFERENCE" => PropName::Rfc7986(Rfc7986PropName::Conference),
+        "CATEGORIES" => PropName::Rfc5545(Rfc5545PropName::Categories),
+        "COMPLETED"  => PropName::Rfc5545(Rfc5545PropName::DateTimeCompleted),
+        "CALSCALE"   => PropName::Rfc5545(Rfc5545PropName::CalendarScale),
+        "CONTACT"    => PropName::Rfc5545(Rfc5545PropName::Contact),
+        "CREATED"    => PropName::Rfc5545(Rfc5545PropName::DateTimeCreated),
+        "COMMENT"    => PropName::Rfc5545(Rfc5545PropName::Comment),
+        "COLOR"      => PropName::Rfc7986(Rfc7986PropName::Color),
+        "CLASS"      => PropName::Rfc5545(Rfc5545PropName::Classification)
     }
 
-    fn e_names<I, E>(input: &mut I) -> Result<PropName<I::Slice>, E>
-    where
-        I: StreamIsPartial
-            + Stream
-            + Compare<Caseless<&'static str>>
-            + Compare<char>,
-        I::Token: AsChar + Clone,
-        E: ParserError<I>,
-        PropName<I::Slice>: Clone,
-    {
-        alt((
-            Caseless("EXDATE")
-                .value(PropName::Rfc5545(Rfc5545PropName::ExceptionDateTimes)),
-            other,
-        ))
-        .parse_next(input)
+    keywords! {d_names;
+        "DESCRIPTION" => PropName::Rfc5545(Rfc5545PropName::Description),
+        "DURATION"    => PropName::Rfc5545(Rfc5545PropName::Duration),
+        "DTSTART"     => PropName::Rfc5545(Rfc5545PropName::DateTimeStart),
+        "DTSTAMP"     => PropName::Rfc5545(Rfc5545PropName::DateTimeStamp),
+        "DTEND"       => PropName::Rfc5545(Rfc5545PropName::DateTimeEnd),
+        "DUE"         => PropName::Rfc5545(Rfc5545PropName::DateTimeDue)
     }
 
-    fn f_names<I, E>(input: &mut I) -> Result<PropName<I::Slice>, E>
-    where
-        I: StreamIsPartial
-            + Stream
-            + Compare<Caseless<&'static str>>
-            + Compare<char>,
-        I::Token: AsChar + Clone,
-        E: ParserError<I>,
-        PropName<I::Slice>: Clone,
-    {
-        alt((
-            Caseless("FREEBUSY")
-                .value(PropName::Rfc5545(Rfc5545PropName::FreeBusyTime)),
-            other,
-        ))
-        .parse_next(input)
+    keywords! {e_names;
+        "EXDATE" => PropName::Rfc5545(Rfc5545PropName::ExceptionDateTimes)
     }
 
-    fn g_names<I, E>(input: &mut I) -> Result<PropName<I::Slice>, E>
-    where
-        I: StreamIsPartial
-            + Stream
-            + Compare<Caseless<&'static str>>
-            + Compare<char>,
-        I::Token: AsChar + Clone,
-        E: ParserError<I>,
-        PropName<I::Slice>: Clone,
-    {
-        alt((
-            Caseless("GEO")
-                .value(PropName::Rfc5545(Rfc5545PropName::GeographicPosition)),
-            other,
-        ))
-        .parse_next(input)
+    keywords! {f_names;
+        "FREEBUSY" => PropName::Rfc5545(Rfc5545PropName::FreeBusyTime)
     }
 
-    fn i_names<I, E>(input: &mut I) -> Result<PropName<I::Slice>, E>
-    where
-        I: StreamIsPartial
-            + Stream
-            + Compare<Caseless<&'static str>>
-            + Compare<char>,
-        I::Token: AsChar + Clone,
-        E: ParserError<I>,
-        PropName<I::Slice>: Clone,
-    {
-        alt((
-            Caseless("IMAGE").value(PropName::Rfc7986(Rfc7986PropName::Image)),
-            other,
-        ))
-        .parse_next(input)
+    keywords! {g_names;
+        "GEO" => PropName::Rfc5545(Rfc5545PropName::GeographicPosition)
     }
 
-    fn l_names<I, E>(input: &mut I) -> Result<PropName<I::Slice>, E>
-    where
-        I: StreamIsPartial
-            + Stream
-            + Compare<Caseless<&'static str>>
-            + Compare<char>,
-        I::Token: AsChar + Clone,
-        E: ParserError<I>,
-        PropName<I::Slice>: Clone,
-    {
-        alt((
-            Caseless("LAST-MODIFIED")
-                .value(PropName::Rfc5545(Rfc5545PropName::LastModified)),
-            Caseless("LOCATION")
-                .value(PropName::Rfc5545(Rfc5545PropName::Location)),
-            other,
-        ))
-        .parse_next(input)
+    keywords! {i_names;
+        "IMAGE" => PropName::Rfc7986(Rfc7986PropName::Image)
     }
 
-    fn m_names<I, E>(input: &mut I) -> Result<PropName<I::Slice>, E>
-    where
-        I: StreamIsPartial
-            + Stream
-            + Compare<Caseless<&'static str>>
-            + Compare<char>,
-        I::Token: AsChar + Clone,
-        E: ParserError<I>,
-        PropName<I::Slice>: Clone,
-    {
-        alt((
-            Caseless("METHOD")
-                .value(PropName::Rfc5545(Rfc5545PropName::Method)),
-            other,
-        ))
-        .parse_next(input)
+    keywords! {l_names;
+        "LAST-MODIFIED" => PropName::Rfc5545(Rfc5545PropName::LastModified),
+        "LOCATION"      => PropName::Rfc5545(Rfc5545PropName::Location)
     }
 
-    fn n_names<I, E>(input: &mut I) -> Result<PropName<I::Slice>, E>
-    where
-        I: StreamIsPartial
-            + Stream
-            + Compare<Caseless<&'static str>>
-            + Compare<char>,
-        I::Token: AsChar + Clone,
-        E: ParserError<I>,
-        PropName<I::Slice>: Clone,
-    {
-        alt((
-            Caseless("NAME").value(PropName::Rfc7986(Rfc7986PropName::Name)),
-            other,
-        ))
-        .parse_next(input)
+    keywords! {m_names;
+        "METHOD" => PropName::Rfc5545(Rfc5545PropName::Method)
     }
 
-    fn o_names<I, E>(input: &mut I) -> Result<PropName<I::Slice>, E>
-    where
-        I: StreamIsPartial
-            + Stream
-            + Compare<Caseless<&'static str>>
-            + Compare<char>,
-        I::Token: AsChar + Clone,
-        E: ParserError<I>,
-        PropName<I::Slice>: Clone,
-    {
-        alt((
-            Caseless("ORGANIZER")
-                .value(PropName::Rfc5545(Rfc5545PropName::Organizer)),
-            other,
-        ))
-        .parse_next(input)
+    keywords! {n_names;
+        "NAME" => PropName::Rfc7986(Rfc7986PropName::Name)
     }
 
-    fn p_names<I, E>(input: &mut I) -> Result<PropName<I::Slice>, E>
-    where
-        I: StreamIsPartial
-            + Stream
-            + Compare<Caseless<&'static str>>
-            + Compare<char>,
-        I::Token: AsChar + Clone,
-        E: ParserError<I>,
-        PropName<I::Slice>: Clone,
-    {
-        alt((
-            Caseless("PERCENT-COMPLETE")
-                .value(PropName::Rfc5545(Rfc5545PropName::PercentComplete)),
-            Caseless("PRIORITY")
-                .value(PropName::Rfc5545(Rfc5545PropName::Priority)),
-            Caseless("PRODID")
-                .value(PropName::Rfc5545(Rfc5545PropName::ProductIdentifier)),
-            other,
-        ))
-        .parse_next(input)
+    keywords! {o_names;
+        "ORGANIZER" => PropName::Rfc5545(Rfc5545PropName::Organizer)
     }
 
-    fn r_names<I, E>(input: &mut I) -> Result<PropName<I::Slice>, E>
-    where
-        I: StreamIsPartial
-            + Stream
-            + Compare<Caseless<&'static str>>
-            + Compare<char>,
-        I::Token: AsChar + Clone,
-        E: ParserError<I>,
-        PropName<I::Slice>: Clone,
-    {
-        alt((
-            Caseless("REFRESH-INTERVAL")
-                .value(PropName::Rfc7986(Rfc7986PropName::RefreshInterval)),
-            Caseless("REQUEST-STATUS")
-                .value(PropName::Rfc5545(Rfc5545PropName::RequestStatus)),
-            Caseless("RECURRENCE-ID")
-                .value(PropName::Rfc5545(Rfc5545PropName::RecurrenceId)),
-            Caseless("RELATED-TO")
-                .value(PropName::Rfc5545(Rfc5545PropName::RelatedTo)),
-            Caseless("RESOURCES")
-                .value(PropName::Rfc5545(Rfc5545PropName::Resources)),
-            Caseless("RDATE")
-                .value(PropName::Rfc5545(Rfc5545PropName::RecurrenceDateTimes)),
-            Caseless("RRULE")
-                .value(PropName::Rfc5545(Rfc5545PropName::RecurrenceRule)),
-            Caseless("REPEAT")
-                .value(PropName::Rfc5545(Rfc5545PropName::RepeatCount)),
-            other,
-        ))
-        .parse_next(input)
+    keywords! {p_names;
+        "PERCENT-COMPLETE" => PropName::Rfc5545(Rfc5545PropName::PercentComplete),
+        "PRIORITY"         => PropName::Rfc5545(Rfc5545PropName::Priority),
+        "PRODID"           => PropName::Rfc5545(Rfc5545PropName::ProductIdentifier)
     }
 
-    fn s_names<I, E>(input: &mut I) -> Result<PropName<I::Slice>, E>
-    where
-        I: StreamIsPartial
-            + Stream
-            + Compare<Caseless<&'static str>>
-            + Compare<char>,
-        I::Token: AsChar + Clone,
-        E: ParserError<I>,
-        PropName<I::Slice>: Clone,
-    {
-        alt((
-            Caseless("SEQUENCE")
-                .value(PropName::Rfc5545(Rfc5545PropName::SequenceNumber)),
-            Caseless("SUMMARY")
-                .value(PropName::Rfc5545(Rfc5545PropName::Summary)),
-            Caseless("STATUS")
-                .value(PropName::Rfc5545(Rfc5545PropName::Status)),
-            Caseless("SOURCE")
-                .value(PropName::Rfc7986(Rfc7986PropName::Source)),
-            other,
-        ))
-        .parse_next(input)
+    keywords! {r_names;
+        "REFRESH-INTERVAL" => PropName::Rfc7986(Rfc7986PropName::RefreshInterval),
+        "REQUEST-STATUS"   => PropName::Rfc5545(Rfc5545PropName::RequestStatus),
+        "RECURRENCE-ID"    => PropName::Rfc5545(Rfc5545PropName::RecurrenceId),
+        "RELATED-TO"       => PropName::Rfc5545(Rfc5545PropName::RelatedTo),
+        "RESOURCES"        => PropName::Rfc5545(Rfc5545PropName::Resources),
+        "REPEAT"           => PropName::Rfc5545(Rfc5545PropName::RepeatCount),
+        "RDATE"            => PropName::Rfc5545(Rfc5545PropName::RecurrenceDateTimes),
+        "RRULE"            => PropName::Rfc5545(Rfc5545PropName::RecurrenceRule)
     }
 
-    fn t_names<I, E>(input: &mut I) -> Result<PropName<I::Slice>, E>
-    where
-        I: StreamIsPartial
-            + Stream
-            + Compare<Caseless<&'static str>>
-            + Compare<char>,
-        I::Token: AsChar + Clone,
-        E: ParserError<I>,
-        PropName<I::Slice>: Clone,
-    {
-        alt((
-            Caseless("TZOFFSETFROM")
-                .value(PropName::Rfc5545(Rfc5545PropName::TimeZoneOffsetFrom)),
-            Caseless("TZOFFSETTO")
-                .value(PropName::Rfc5545(Rfc5545PropName::TimeZoneOffsetTo)),
-            Caseless("TZNAME")
-                .value(PropName::Rfc5545(Rfc5545PropName::TimeZoneName)),
-            Caseless("TZURL")
-                .value(PropName::Rfc5545(Rfc5545PropName::TimeZoneUrl)),
-            Caseless("TZID")
-                .value(PropName::Rfc5545(Rfc5545PropName::TimeZoneIdentifier)),
-            Caseless("TRIGGER")
-                .value(PropName::Rfc5545(Rfc5545PropName::Trigger)),
-            Caseless("TRANSP")
-                .value(PropName::Rfc5545(Rfc5545PropName::TimeTransparency)),
-            other,
-        ))
-        .parse_next(input)
+    keywords! {s_names;
+        "SEQUENCE" => PropName::Rfc5545(Rfc5545PropName::SequenceNumber),
+        "SUMMARY"  => PropName::Rfc5545(Rfc5545PropName::Summary),
+        "STATUS"   => PropName::Rfc5545(Rfc5545PropName::Status),
+        "SOURCE"   => PropName::Rfc7986(Rfc7986PropName::Source)
     }
 
-    fn u_names<I, E>(input: &mut I) -> Result<PropName<I::Slice>, E>
-    where
-        I: StreamIsPartial
-            + Stream
-            + Compare<Caseless<&'static str>>
-            + Compare<char>,
-        I::Token: AsChar + Clone,
-        E: ParserError<I>,
-        PropName<I::Slice>: Clone,
-    {
-        alt((
-            Caseless("URL").value(PropName::Rfc5545(
-                Rfc5545PropName::UniformResourceLocator,
-            )),
-            Caseless("UID")
-                .value(PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier)),
-            other,
-        ))
-        .parse_next(input)
+    keywords! {t_names;
+        "TZOFFSETFROM" => PropName::Rfc5545(Rfc5545PropName::TimeZoneOffsetFrom),
+        "TZOFFSETTO"   => PropName::Rfc5545(Rfc5545PropName::TimeZoneOffsetTo),
+        "TRIGGER"      => PropName::Rfc5545(Rfc5545PropName::Trigger),
+        "TZNAME"       => PropName::Rfc5545(Rfc5545PropName::TimeZoneName),
+        "TRANSP"       => PropName::Rfc5545(Rfc5545PropName::TimeTransparency),
+        "TZURL"        => PropName::Rfc5545(Rfc5545PropName::TimeZoneUrl),
+        "TZID"         => PropName::Rfc5545(Rfc5545PropName::TimeZoneIdentifier)
     }
 
-    fn v_names<I, E>(input: &mut I) -> Result<PropName<I::Slice>, E>
-    where
-        I: StreamIsPartial
-            + Stream
-            + Compare<Caseless<&'static str>>
-            + Compare<char>,
-        I::Token: AsChar + Clone,
-        E: ParserError<I>,
-        PropName<I::Slice>: Clone,
-    {
-        alt((
-            Caseless("VERSION")
-                .value(PropName::Rfc5545(Rfc5545PropName::Version)),
-            other,
-        ))
-        .parse_next(input)
+    keywords! {u_names;
+        "URL" => PropName::Rfc5545(Rfc5545PropName::UniformResourceLocator),
+        "UID" => PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier)
+    }
+
+    keywords! {v_names;
+        "VERSION" => PropName::Rfc5545(Rfc5545PropName::Version)
     }
 
     match input.peek_token().map(AsChar::as_char) {
