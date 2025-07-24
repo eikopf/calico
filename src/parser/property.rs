@@ -3,7 +3,7 @@
 use winnow::{
     Parser,
     ascii::Caseless,
-    combinator::{alt, fail, preceded, repeat, terminated},
+    combinator::{alt, fail, preceded, repeat},
     error::{FromExternalError, ParserError},
     stream::{AsBStr, AsChar, Compare, SliceLen, Stream, StreamIsPartial},
     token::none_of,
@@ -147,6 +147,7 @@ pub enum UnknownProp<S> {
     Iana {
         name: S,
         value: Value<S>,
+        params: Box<[KnownParam<S>]>,
     },
     X {
         name: S,
@@ -219,28 +220,8 @@ where
     }
 }
 
-/// Finds and removes a value from a vector by matching it against a pattern.
-///
-/// See rust-lang/rust#118682 for variable attribute bug.
-macro_rules! find_and_remove {
-    (let $name:ident = $p:pat => $binding:tt in $v:expr) => {
-        let $name = {
-            let index = ($v).iter().position(|x| matches!(x, $p));
-
-            match index {
-                Some(index) => {
-                    let item = ($v).swap_remove(index);
-                    #[allow(unused_variables)]
-                    match item {
-                        $p => Some($binding),
-                        _ => unreachable!(),
-                    }
-                }
-                None => None,
-            }
-        };
-    };
-}
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct DuplicateValueTypeError;
 
 type ParsedProp<S> = (Prop<S>, Box<[UnknownParam<S>]>);
 
@@ -258,78 +239,120 @@ where
         + FromExternalError<I, InvalidRawTimeError>
         + FromExternalError<I, InvalidDurationTimeError>
         + FromExternalError<I, InvalidIntegerError>
-        + FromExternalError<I, InvalidUtcOffsetError>,
+        + FromExternalError<I, InvalidUtcOffsetError>
+        + FromExternalError<I, DuplicateValueTypeError>,
 {
     let name = property_name.parse_next(input)?;
-    let mut params: Vec<_> =
-        terminated(repeat(0.., preceded(';', parameter)), ':')
-            .parse_next(input)?;
 
     Ok(match name {
         PropName::Rfc5545(name) => todo!(),
         PropName::Rfc7986(name) => todo!(),
         PropName::Iana(name) => {
-            find_and_remove! {
-                let value_type = Param::Known(KnownParam::Value(_x)) => _x in params
+            struct State<S> {
+                value_type: Option<ValueType<S>>,
+                known_params: Vec<KnownParam<S>>,
+                unknown_params: Vec<UnknownParam<S>>,
+            }
+
+            let mut state: State<I::Slice> = State {
+                value_type: None,
+                known_params: Vec::new(),
+                unknown_params: Vec::new(),
             };
 
-            let value =
-                parse_value(value_type.unwrap_or(ValueType::Text), input)?;
+            while input.peek_token().is_some_and(|t| t.as_char() != ':') {
+                let param = preceded(';', parameter).parse_next(input)?;
 
-            // TODO: check that the VALUE parameter does not occur more than
-            // once in iana_params
+                match param {
+                    Param::Known(KnownParam::Value(value_type)) => {
+                        match state.value_type {
+                            Some(_) => {
+                                return Err(E::from_external_error(
+                                    input,
+                                    DuplicateValueTypeError,
+                                ));
+                            }
+                            None => {
+                                state.value_type = Some(value_type);
+                            }
+                        }
+                    }
+                    Param::Known(known_param) => {
+                        state.known_params.push(known_param);
+                    }
+                    Param::Unknown(unknown_param) => {
+                        state.unknown_params.push(unknown_param);
+                    }
+                }
+            }
 
-            // assume all remaining parameters must be unknown IANA or X-names
-            let unknown_params = params
-                .into_iter()
-                .map(Param::try_into_unknown)
-                .collect::<Result<Box<_>, _>>()
-                .map_err(|_| todo!())?;
+            let _ = ':'.parse_next(input)?;
+            let value = parse_value(
+                state.value_type.unwrap_or(ValueType::Text),
+                input,
+            )?;
 
             (
-                Prop::Unknown(UnknownProp::Iana { name, value }),
-                unknown_params,
+                Prop::Unknown(UnknownProp::Iana {
+                    name: name.clone(),
+                    value,
+                    params: state.known_params.into_boxed_slice(),
+                }),
+                state.unknown_params.into_boxed_slice(),
             )
         }
         PropName::X(name) => {
-            find_and_remove! {
-                let value_type = Param::Known(KnownParam::Value(_x)) => _x in params
+            struct State<S> {
+                value_type: Option<ValueType<S>>,
+                known_params: Vec<KnownParam<S>>,
+                unknown_params: Vec<UnknownParam<S>>,
+            }
+
+            let mut state: State<I::Slice> = State {
+                value_type: None,
+                known_params: Vec::new(),
+                unknown_params: Vec::new(),
             };
 
-            let already_found = value_type.is_some();
+            while input.peek_token().is_some_and(|t| t.as_char() != ':') {
+                let param = preceded(';', parameter).parse_next(input)?;
 
-            let value =
-                parse_value(value_type.unwrap_or(ValueType::Text), input)?;
-
-            let (known_params, unknown_params) = {
-                let mut known_params = Vec::with_capacity(params.len() / 2);
-                let mut unknown_params = Vec::with_capacity(params.len() / 2);
-
-                for param in params.drain(..) {
-                    match param {
-                        // if we run into another VALUE parameter having already found one, that's
-                        // an error
-                        Param::Known(KnownParam::Value(_)) if already_found => {
-                            todo!()
+                match param {
+                    Param::Known(KnownParam::Value(value_type)) => {
+                        match state.value_type {
+                            Some(_) => {
+                                return Err(E::from_external_error(
+                                    input,
+                                    DuplicateValueTypeError,
+                                ));
+                            }
+                            None => {
+                                state.value_type = Some(value_type);
+                            }
                         }
-                        Param::Known(param) => known_params.push(param),
-                        Param::Unknown(param) => unknown_params.push(param),
+                    }
+                    Param::Known(known_param) => {
+                        state.known_params.push(known_param);
+                    }
+                    Param::Unknown(unknown_param) => {
+                        state.unknown_params.push(unknown_param);
                     }
                 }
+            }
 
-                (
-                    known_params.into_boxed_slice(),
-                    unknown_params.into_boxed_slice(),
-                )
-            };
+            let _ = ':'.parse_next(input)?;
+            let value = parse_value(
+                state.value_type.unwrap_or(ValueType::Text),
+                input,
+            )?;
 
             (
                 Prop::Unknown(UnknownProp::X {
-                    name,
+                    name: name.clone(),
                     value,
-                    params: known_params,
+                    params: state.known_params.into_boxed_slice(),
                 }),
-                unknown_params,
+                state.unknown_params.into_boxed_slice(),
             )
         }
     })
@@ -655,9 +678,10 @@ mod tests {
                 Prop::Unknown(UnknownProp::Iana {
                     name: "NON-SMOKING",
                     value: Value::Boolean(true),
+                    params,
                 }),
                 extras,
-            )) if extras.is_empty(),
+            )) if params.is_empty() && extras.is_empty(),
         ));
 
         let mut input = "NON-SMOKING:TRUE";
@@ -668,9 +692,10 @@ mod tests {
                 Prop::Unknown(UnknownProp::Iana {
                     name: "NON-SMOKING",
                     value: Value::Text("TRUE"),
+                    params
                 }),
                 extras,
-            )) if extras.is_empty(),
+            )) if params.is_empty() && extras.is_empty(),
         ));
     }
 
