@@ -1,4 +1,4 @@
-//! A custom [`Stream`](winnow::stream::Stream) for skipping line folds.
+//! A custom [`Stream`] for skipping line folds.
 
 use winnow::{
     ascii::Caseless,
