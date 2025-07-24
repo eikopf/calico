@@ -170,7 +170,10 @@ fn parse_value<'i, S: AsRef<str> + ?Sized>(
         ValueType::Boolean => {
             bool_caseless.map(Value::Boolean).parse_next(input)
         }
-        ValueType::CalAddress => uri.map(Value::CalAddress).parse_next(input),
+        ValueType::CalAddress => {
+            //uri.map(Value::CalAddress).parse_next(input)
+            todo!()
+        }
         ValueType::Date => {
             //date.map(Value::Date).parse_next(input)
             todo!()
@@ -200,7 +203,10 @@ fn parse_value<'i, S: AsRef<str> + ?Sized>(
             //time.map(Value::Time).parse_next(input)
             todo!()
         }
-        ValueType::Uri => uri.map(Value::Uri).parse_next(input),
+        ValueType::Uri => {
+            //uri.map(Value::Uri).parse_next(input)
+            todo!()
+        }
         ValueType::UtcOffset => todo!(),
         ValueType::Iana(name) => text
             .map(|value| Value::Iana {

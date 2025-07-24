@@ -115,7 +115,8 @@ pub fn parameter<'i>(
 ) -> ModalResult<Param<&'i str, &'i UriStr>> {
     /// Parses a single URI delimited by double quotes.
     fn quoted_uri<'i>(input: &mut &'i str) -> ModalResult<&'i UriStr> {
-        delimited('"', uri, '"').parse_next(input)
+        //delimited('"', uri, '"').parse_next(input)
+        todo!()
     }
 
     /// Parses a sequence of at least one URI delimited by double quotes and

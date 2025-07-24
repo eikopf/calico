@@ -27,6 +27,10 @@ pub struct Text<S = Box<str>>(pub(crate) S);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Uid<S = Box<str>>(pub(crate) S);
 
+/// A URI (RFC 3986 §3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Uri<S = Box<str>>(pub(crate) S);
+
 /// An RFC 5646 language tag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Language<S = Box<str>>(pub(crate) S);

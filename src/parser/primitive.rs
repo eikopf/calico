@@ -1,7 +1,5 @@
 //! Parsers for primitive (i.e. terminal) grammar elements.
 
-use std::borrow::Cow;
-
 use chrono::NaiveDate;
 use winnow::{
     ModalResult, Parser,
@@ -10,10 +8,8 @@ use winnow::{
         alt, empty, opt, preceded, repeat, separated_pair, terminated, trace,
     },
     error::{FromExternalError, ParserError},
-    stream::{
-        Accumulate, AsBStr, AsChar, Compare, SliceLen, Stream, StreamIsPartial,
-    },
-    token::{any, none_of, one_of, take_while},
+    stream::{AsBStr, AsChar, Compare, SliceLen, Stream, StreamIsPartial},
+    token::{none_of, one_of, take_while},
 };
 
 use crate::model::primitive::{
@@ -21,7 +17,7 @@ use crate::model::primitive::{
     DurationKind, DurationTime, Encoding, FeatureType, Float, FormatType,
     FreeBusyType, Language, Method, ParticipationRole, ParticipationStatus,
     Period, RawText, RawTime, RelationshipType, Sign, Time, TimeFormat,
-    TriggerRelation, Uid, UriStr, Utc, ValueType,
+    TriggerRelation, Uid, Uri, Utc, ValueType,
 };
 
 /// Parses a [`FeatureType`].
@@ -134,27 +130,27 @@ where
 /// somewhat ambiguous, so in particular we first parse a sequence of characters
 /// which may occur in a URI and then attempt to verify that it is actually a
 /// valid URI.
-pub fn uri<'i>(input: &mut &'i str) -> ModalResult<&'i UriStr> {
+pub fn uri<I, E>(input: &mut I) -> Result<Uri<I::Slice>, E>
+where
+    I: StreamIsPartial + Stream,
+    I::Token: AsChar + Clone,
+    E: ParserError<I>,
+{
     /// Parses the longest sequence of characters which can occur in a URI. See
     /// RFC 3986 sections 2.1, 2.2, and 2.3 for details.
-    fn uri_character(input: &mut &str) -> ModalResult<char> {
-        #[allow(clippy::match_like_matches_macro)]
-        any.verify(|c| match c {
-            '!' => true,
-            '#'..=';' => true,
-            '=' => true,
-            '?'..='Z' => true,
-            '[' | ']' => true,
-            '_' => true,
-            'a'..='z' => true,
-            _ => false,
-        })
-        .parse_next(input)
+    fn uri_character<I, E>(input: &mut I) -> Result<I::Token, E>
+    where
+        I: StreamIsPartial + Stream,
+        I::Token: AsChar + Clone,
+        E: ParserError<I>,
+    {
+        one_of(('!', '#'..=';', '=', '?'..='Z', '[', ']', '_', 'a'..='z'))
+            .parse_next(input)
     }
 
     repeat::<_, _, (), _, _>(1.., uri_character)
         .take()
-        .try_map(UriStr::new)
+        .map(Uri)
         .parse_next(input)
 }
 
@@ -471,70 +467,6 @@ where
     .take()
     .map(RawText)
     .parse_next(input)
-}
-
-/// Parses an arbitrary sequence of text terminated by CRLF. The return type is
-/// `Cow<'_, str>` because a text value may contain escape sequences, in which
-/// case it must be modified.
-pub fn text<'i, E>(input: &mut &'i str) -> Result<Cow<'i, str>, E>
-where
-    E: ParserError<&'i str>,
-{
-    /// Wrapper struct for [`Accumulate`] impl on `Cow<'_, str>`.
-    #[derive(Debug, Clone)]
-    struct Acc<'a>(Cow<'a, str>);
-
-    impl<'a> Accumulate<Acc<'a>> for Acc<'a> {
-        fn initial(capacity: Option<usize>) -> Self {
-            Acc(Cow::Owned(String::with_capacity(
-                capacity.unwrap_or_default(),
-            )))
-        }
-
-        fn accumulate(&mut self, acc: Acc<'a>) {
-            self.0 += acc.0;
-        }
-    }
-
-    /// A contiguous sequence of characters that don't need to be escaped.
-    fn safe_text<'i, E>(input: &mut &'i str) -> winnow::Result<Acc<'i>, E>
-    where
-        E: ParserError<&'i str>,
-    {
-        repeat::<_, _, (), _, _>(1.., none_of(('\\', ';', ',', ..' ')))
-            .take()
-            .map(Cow::Borrowed)
-            .map(Acc)
-            .parse_next(input)
-    }
-
-    /// A single textual escape, which has to be allocated to be handled properly.
-    fn text_escape<'i, E>(input: &mut &'i str) -> winnow::Result<Acc<'i>, E>
-    where
-        E: ParserError<&'i str>,
-    {
-        preceded(
-            '\\',
-            alt((
-                '\\'.value("\\"),
-                'n'.value("\n"),
-                'N'.value("\n"),
-                ';'.value(";"),
-                ','.value(","),
-            )),
-        )
-        .map(String::from)
-        .map(Cow::Owned)
-        .map(Acc)
-        .parse_next(input)
-    }
-
-    trace(
-        "text",
-        repeat::<_, _, Acc<'_>, _, _>(1.., alt((safe_text, text_escape))),
-    )
-    .parse_next(input)
-    .map(|acc| acc.0)
 }
 
 /// Parses a [`Period`].
@@ -1021,12 +953,17 @@ mod tests {
     fn uri_parser() {
         // these examples are from RFC 3986 §3
         assert!(
-            uri.parse_peek(
-                "foo://example.com:8042/over/there?name=ferret#nose"
-            )
-            .is_ok()
+            uri::<_, ()>
+                .parse_peek(
+                    "foo://example.com:8042/over/there?name=ferret#nose"
+                )
+                .is_ok()
         );
-        assert!(uri.parse_peek("urn:example:animal:ferret:nose").is_ok());
+        assert!(
+            uri::<_, ()>
+                .parse_peek("urn:example:animal:ferret:nose")
+                .is_ok()
+        );
     }
 
     #[test]
@@ -1231,21 +1168,6 @@ mod tests {
             Ok(("", "X-baz-123"))
         );
         assert!(x_name::<_, ()>.parse_peek("x-must-be-capital").is_err());
-    }
-
-    #[test]
-    fn text_parser() {
-        assert!(
-            text::<()>
-                .parse_peek(r#"hello world!"#)
-                .is_ok_and(|(_, s)| matches!(s, Cow::Borrowed(_)))
-        );
-
-        assert!(
-            text::<()>
-                .parse_peek(r#"hello\, world!"#)
-                .is_ok_and(|(_, s)| matches!(s, Cow::Owned(_)))
-        );
     }
 
     #[test]
