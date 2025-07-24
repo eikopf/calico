@@ -163,7 +163,10 @@ fn parse_value<'i, S: AsRef<str> + ?Sized>(
     }
 
     match value_type {
-        ValueType::Binary => binary.map(Value::Binary).parse_next(input),
+        ValueType::Binary => {
+            //binary.map(Value::Binary).parse_next(input)
+            todo!()
+        }
         ValueType::Boolean => {
             bool_caseless.map(Value::Boolean).parse_next(input)
         }

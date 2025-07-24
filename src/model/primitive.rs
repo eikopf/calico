@@ -2,7 +2,6 @@
 
 use chrono::NaiveDate;
 pub use iri_string::types::{UriStr, UriString};
-use uuid::Uuid;
 
 /// A method as defined in RFC 5546 §1.4
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,25 +24,8 @@ pub struct RawText<S = Box<str>>(pub(crate) S);
 pub struct Text<S = Box<str>>(pub(crate) S);
 
 /// A unique identifier (RFC 5545 §3.8.4.7).
-///
-/// Following the advice given in RFC 7986 §5.3, UUIDs (RFC 9562) should be
-/// preferred over arbitrary string UIDs whenever possible, and especially
-/// when generating new UIDs.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Uid<S = Box<str>> {
-    Uuid(Uuid),
-    String(S),
-}
-
-impl<S> Uid<S> {
-    /// Returns `true` if the uid is [`Uuid`].
-    ///
-    /// [`Uuid`]: Uid::Uuid
-    #[must_use]
-    pub fn is_uuid(&self) -> bool {
-        matches!(self, Self::Uuid(..))
-    }
-}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Uid<S = Box<str>>(pub(crate) S);
 
 /// An RFC 5646 language tag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -54,6 +36,10 @@ pub struct Language<S = Box<str>>(pub(crate) S);
 pub struct Binary {
     pub(crate) bytes: Vec<u8>,
 }
+
+/// The text of a BINARY value, which may be converted into a [`Binary`].
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct BinaryText<S = Box<str>>(pub(crate) S);
 
 /// Date-time or date value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

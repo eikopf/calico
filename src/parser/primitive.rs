@@ -17,7 +17,7 @@ use winnow::{
 };
 
 use crate::model::primitive::{
-    Binary, CalendarUserType, Date, DateTime, DisplayType, Duration,
+    BinaryText, CalendarUserType, Date, DateTime, DisplayType, Duration,
     DurationKind, DurationTime, Encoding, FeatureType, Float, FormatType,
     FreeBusyType, Language, Method, ParticipationRole, ParticipationStatus,
     Period, RawText, RawTime, RelationshipType, Sign, Time, TimeFormat,
@@ -106,13 +106,16 @@ where
     .parse_next(input)
 }
 
-/// Parses a UID, with special handling if it is a well-formed UUID.
-pub fn uid<'i>(input: &mut &'i str) -> ModalResult<Uid<Cow<'i, str>>> {
-    text.map(|s| match uuid::Uuid::try_parse(&s) {
-        Ok(uuid) => Uid::Uuid(uuid),
-        Err(_) => Uid::String(s),
-    })
-    .parse_next(input)
+/// Parses a [`Uid`].
+pub fn uid<I, E>(input: &mut I) -> Result<Uid<I::Slice>, E>
+where
+    I: StreamIsPartial + Stream + Compare<char>,
+    I::Token: AsChar + Clone,
+    E: ParserError<I>,
+{
+    raw_text
+        .map(|RawText(source)| Uid(source))
+        .parse_next(input)
 }
 
 /// Parses an RFC 5646 language tag from a [`text`] value.
@@ -156,21 +159,41 @@ pub fn uri<'i>(input: &mut &'i str) -> ModalResult<&'i UriStr> {
 }
 
 /// Parses a base64-encoded character string.
-pub fn binary<I, E>(input: &mut I) -> Result<Binary, E>
+pub fn binary<I, E>(input: &mut I) -> Result<BinaryText<I::Slice>, E>
 where
-    I: StreamIsPartial + Stream,
-    <I as Stream>::Slice: AsRef<[u8]>,
+    I: StreamIsPartial + Stream + Compare<char>,
     <I as Stream>::Token: AsChar + Clone,
-    E: ParserError<I> + FromExternalError<I, base64::DecodeError>,
+    E: ParserError<I>,
 {
-    take_while(1.., ('0'..='9', 'a'..='z', 'A'..='Z', '+', '/', '='))
-        .try_map(|xs| {
-            <base64::engine::GeneralPurpose as base64::Engine>::decode(
-                &base64::prelude::BASE64_STANDARD,
-                xs,
-            )
-        })
-        .map(|bytes| Binary { bytes })
+    //take_while(1.., ('0'..='9', 'a'..='z', 'A'..='Z', '+', '/', '='))
+    //.try_map(|xs| {
+    //<base64::engine::GeneralPurpose as base64::Engine>::decode(
+    //&base64::prelude::BASE64_STANDARD,
+    //xs,
+    //)
+    //})
+    //.map(|bytes| Binary { bytes })
+    //.parse_next(input)
+
+    fn b_char<I, E>(input: &mut I) -> Result<I::Token, E>
+    where
+        I: StreamIsPartial + Stream,
+        I::Token: AsChar + Clone,
+        E: ParserError<I>,
+    {
+        one_of(('0'..='9', 'a'..='z', 'A'..='Z', '+', '/', '='))
+            .parse_next(input)
+    }
+
+    (
+        repeat::<_, _, (), _, _>(0.., (b_char, b_char, b_char, b_char)),
+        opt(alt((
+            (b_char, b_char, b_char, '=').void(),
+            (b_char, b_char, '=', '=').void(),
+        ))),
+    )
+        .take()
+        .map(BinaryText)
         .parse_next(input)
 }
 
@@ -979,12 +1002,11 @@ mod tests {
 
     #[test]
     fn uid_parser() {
-        assert!(!uid.parse_peek("some random text").unwrap().1.is_uuid());
+        assert!(uid::<_, ()>.parse_peek("some random text").is_ok());
         assert!(
-            uid.parse_peek("550e8400e29b41d4a716446655440000")
-                .unwrap()
-                .1
-                .is_uuid()
+            uid::<_, ()>
+                .parse_peek("550e8400e29b41d4a716446655440000")
+                .is_ok()
         );
     }
 
@@ -1009,9 +1031,9 @@ mod tests {
 
     #[test]
     fn binary_parser() {
-        const DATA: &str = r#"AAABAAEAEBAQAAEABAAoAQAAFgAAACgAAAAQAAAAIAAAAAEABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAgIAAAICAgADAwMAA////AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMwAAAAAAABNEMQAAAAAAAkQgAAAAAAJEREQgAAACECQ0QgEgAAQxQzM0E0AABERCRCREQAADRDJEJEQwAAAhA0QwEQAAAAAEREAAAAAAAAREQAAAAAAAAkQgAAAAAAAAMgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"#;
+        assert!(binary::<_, ()>.parse("AAABAAEAEBAQAAEABAAoAQAAFgAAACgAAAAQAAAAIAAAAAEABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAgIAAAICAgADAwMAA////AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMwAAAAAAABNEMQAAAAAAAkQgAAAAAAJEREQgAAACECQ0QgEgAAQxQzM0E0AABERCRCREQAADRDJEJEQwAAAhA0QwEQAAAAAEREAAAAAAAAREQAAAAAAAAkQgAAAAAAAAMgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA").is_ok());
 
-        assert!(binary::<_, ()>.parse(DATA).is_ok());
+        assert!(binary::<_, ()>.parse("AAABAAEAEBAQAAEABAAoAQAAFgAAACgAAAAQAAAAIAAAAAEABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAgIAAAICAgADAwMAA////AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMwAAAAAAABNEMQAAAAAAAkQgAAAAAAJEREQgAAACECQ0QgEgAAQxQzM0E0AABERCRCREQAADRDJEJEQwAAAhA0QwEQAAAAAEREAAAAAAAAREQAAAAAAAAkQgAAAAAAAAMgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\r\n\tAAAAAAAAA\r\n\tAAAAAAAAAAAAAAAAAAAAAA".as_escaped()).is_ok());
     }
 
     #[test]
