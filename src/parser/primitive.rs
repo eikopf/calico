@@ -14,12 +14,12 @@ use winnow::{
 };
 
 use crate::model::primitive::{
-    BinaryText, CalendarUserType, ClassValue, Date, DateTime, DisplayType,
-    Duration, DurationKind, DurationTime, Encoding, FeatureType, Float,
-    FormatType, FreeBusyType, Geo, GeoComponent, Language, Method,
-    ParticipationRole, ParticipationStatus, Period, RawText, RawTime,
-    RelationshipType, Sign, Time, TimeFormat, TriggerRelation, Uid, Uri, Utc,
-    UtcOffset, ValueType,
+    BinaryText, CalendarUserType, ClassValue, CompletionPercentage, Date,
+    DateTime, DisplayType, Duration, DurationKind, DurationTime, Encoding,
+    FeatureType, Float, FormatType, FreeBusyType, Geo, GeoComponent, Language,
+    Method, ParticipationRole, ParticipationStatus, Period, Priority, RawText,
+    RawTime, RelationshipType, Sign, Time, TimeFormat, TriggerRelation, Uid,
+    Uri, Utc, UtcOffset, ValueType,
 };
 
 /// Parses a [`FeatureType`].
@@ -898,6 +898,62 @@ where
     'Z'.void().parse_next(input)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InvalidPriorityError(i32);
+
+/// Parses a [`Priority`].
+pub fn priority<I, E>(input: &mut I) -> Result<Priority, E>
+where
+    I: StreamIsPartial + Stream + Compare<char>,
+    I::Token: AsChar + Clone,
+    I::Slice: AsBStr,
+    E: ParserError<I>
+        + FromExternalError<I, InvalidIntegerError>
+        + FromExternalError<I, InvalidPriorityError>,
+{
+    let value = integer.parse_next(input)?;
+
+    match value {
+        0 => Ok(Priority::Zero),
+        1 => Ok(Priority::A1),
+        2 => Ok(Priority::A2),
+        3 => Ok(Priority::A3),
+        4 => Ok(Priority::B1),
+        5 => Ok(Priority::B2),
+        6 => Ok(Priority::B3),
+        7 => Ok(Priority::C1),
+        8 => Ok(Priority::C2),
+        9 => Ok(Priority::C3),
+        _ => Err(E::from_external_error(input, InvalidPriorityError(value))),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InvalidCompletionPercentageError(i32);
+
+/// Parses a [`CompletionPercentage`].
+pub fn completion_percentage<I, E>(
+    input: &mut I,
+) -> Result<CompletionPercentage, E>
+where
+    I: StreamIsPartial + Stream + Compare<char>,
+    I::Token: AsChar + Clone,
+    I::Slice: AsBStr,
+    E: ParserError<I>
+        + FromExternalError<I, InvalidIntegerError>
+        + FromExternalError<I, InvalidCompletionPercentageError>,
+{
+    let value = integer.parse_next(input)?;
+
+    match value {
+        pct @ 0..=100 => Ok(CompletionPercentage(pct as u8)),
+        other => Err(E::from_external_error(
+            input,
+            InvalidCompletionPercentageError(other),
+        )),
+    }
+}
+
 pub enum InvalidGeoError {
     IntegralTooLarge(u8),
     LatOutOfBounds(GeoComponent),
@@ -1618,6 +1674,21 @@ mod tests {
     fn utc_marker_parser() {
         assert_eq!(utc_marker::<_, ()>.parse_peek("Z"), Ok(("", ())));
         assert!(utc_marker::<_, ()>.parse_peek("Y").is_err());
+    }
+
+    #[test]
+    fn priority_parser() {
+        assert_eq!(priority::<_, ()>.parse_peek("0"), Ok(("", Priority::Zero)));
+        assert_eq!(priority::<_, ()>.parse_peek("1"), Ok(("", Priority::A1)));
+        assert_eq!(priority::<_, ()>.parse_peek("2"), Ok(("", Priority::A2)));
+        assert_eq!(priority::<_, ()>.parse_peek("3"), Ok(("", Priority::A3)));
+        assert_eq!(priority::<_, ()>.parse_peek("4"), Ok(("", Priority::B1)));
+        assert_eq!(priority::<_, ()>.parse_peek("5"), Ok(("", Priority::B2)));
+        assert_eq!(priority::<_, ()>.parse_peek("6"), Ok(("", Priority::B3)));
+        assert_eq!(priority::<_, ()>.parse_peek("7"), Ok(("", Priority::C1)));
+        assert_eq!(priority::<_, ()>.parse_peek("8"), Ok(("", Priority::C2)));
+        assert_eq!(priority::<_, ()>.parse_peek("9"), Ok(("", Priority::C3)));
+        assert!(priority::<_, ()>.parse_peek("10").is_err());
     }
 
     #[test]
