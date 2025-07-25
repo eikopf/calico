@@ -31,8 +31,8 @@ pub struct Prop<V, P = ()> {
 /// additional required parameters with statically known values; hence they are
 /// elided in this type.
 #[derive(Debug, Clone)]
-pub struct AttachParams {
-    pub format_type: Option<FormatType>,
+pub struct AttachParams<S = Box<str>> {
+    pub format_type: Option<FormatType<S>>,
 }
 
 /// The parameters associated with the `ATTENDEE` property.

@@ -13,11 +13,11 @@ use winnow::{
 };
 
 use crate::model::primitive::{
-    BinaryText, CalendarUserType, Date, DateTime, DisplayType, Duration,
-    DurationKind, DurationTime, Encoding, FeatureType, Float, FormatType,
-    FreeBusyType, Language, Method, ParticipationRole, ParticipationStatus,
-    Period, RawText, RawTime, RelationshipType, Sign, Time, TimeFormat,
-    TriggerRelation, Uid, Uri, Utc, UtcOffset, ValueType,
+    BinaryText, CalendarUserType, ClassValue, Date, DateTime, DisplayType,
+    Duration, DurationKind, DurationTime, Encoding, FeatureType, Float,
+    FormatType, FreeBusyType, Language, Method, ParticipationRole,
+    ParticipationStatus, Period, RawText, RawTime, RelationshipType, Sign,
+    Time, TimeFormat, TriggerRelation, Uid, Uri, Utc, UtcOffset, ValueType,
 };
 
 /// Parses a [`FeatureType`].
@@ -75,10 +75,12 @@ where
 /// registered or recognised.
 pub fn v2_0<I, E>(input: &mut I) -> Result<(), E>
 where
-    I: StreamIsPartial + Stream + Compare<&'static str>,
+    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
     E: ParserError<I>,
 {
-    "2.0".void().parse_next(input)
+    // using Caseless here does nothing, but it makes the trait bounds match
+    // the other parsers in this module
+    Caseless("2.0").void().parse_next(input)
 }
 
 /// Parses a [`Method`].
@@ -181,6 +183,26 @@ where
         .take()
         .map(BinaryText)
         .parse_next(input)
+}
+
+pub fn class_value<I, E>(input: &mut I) -> Result<ClassValue<I::Slice>, E>
+where
+    I: StreamIsPartial
+        + Stream
+        + Compare<Caseless<&'static str>>
+        + Compare<char>,
+    I::Token: AsChar + Clone,
+    ClassValue<I::Slice>: Clone,
+    E: ParserError<I>,
+{
+    alt((
+        Caseless("CONFIDENTIAL").value(ClassValue::Confidential),
+        Caseless("PRIVATE").value(ClassValue::Private),
+        Caseless("PUBLIC").value(ClassValue::Public),
+        x_name.map(ClassValue::X),
+        iana_token.map(ClassValue::Iana),
+    ))
+    .parse_next(input)
 }
 
 /// Parses a calendar user type value (RFC 5545 §3.2.3).
@@ -1067,6 +1089,29 @@ mod tests {
         assert!(binary::<_, ()>.parse("AAABAAEAEBAQAAEABAAoAQAAFgAAACgAAAAQAAAAIAAAAAEABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAgIAAAICAgADAwMAA////AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMwAAAAAAABNEMQAAAAAAAkQgAAAAAAJEREQgAAACECQ0QgEgAAQxQzM0E0AABERCRCREQAADRDJEJEQwAAAhA0QwEQAAAAAEREAAAAAAAAREQAAAAAAAAkQgAAAAAAAAMgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA").is_ok());
 
         assert!(binary::<_, ()>.parse("AAABAAEAEBAQAAEABAAoAQAAFgAAACgAAAAQAAAAIAAAAAEABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAgIAAAICAgADAwMAA////AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMwAAAAAAABNEMQAAAAAAAkQgAAAAAAJEREQgAAACECQ0QgEgAAQxQzM0E0AABERCRCREQAADRDJEJEQwAAAhA0QwEQAAAAAEREAAAAAAAAREQAAAAAAAAkQgAAAAAAAAMgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\r\n\tAAAAAAAAA\r\n\tAAAAAAAAAAAAAAAAAAAAAA".as_escaped()).is_ok());
+    }
+
+    #[test]
+    fn class_value_parser() {
+        assert_eq!(
+            class_value::<_, ()>.parse_peek("CONFIDENTIAL"),
+            Ok(("", ClassValue::Confidential))
+        );
+
+        assert_eq!(
+            class_value::<_, ()>.parse_peek("public"),
+            Ok(("", ClassValue::Public))
+        );
+
+        assert_eq!(
+            class_value::<_, ()>.parse_peek("X-SOMETHING"),
+            Ok(("", ClassValue::X("X-SOMETHING")))
+        );
+
+        assert_eq!(
+            class_value::<_, ()>.parse_peek("IANA-TOKEN"),
+            Ok(("", ClassValue::Iana("IANA-TOKEN")))
+        );
     }
 
     #[test]

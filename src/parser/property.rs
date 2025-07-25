@@ -3,7 +3,7 @@
 use winnow::{
     Parser,
     ascii::Caseless,
-    combinator::{alt, fail, preceded, repeat},
+    combinator::{alt, fail, preceded, repeat, separated},
     error::{FromExternalError, ParserError},
     stream::{AsBStr, AsChar, Compare, SliceLen, Stream, StreamIsPartial},
     token::none_of,
@@ -14,8 +14,9 @@ use crate::{
         css::Css3Color,
         primitive::{
             AlarmAction, AttachValue, ClassValue, DateTime, DateTimeOrDate,
-            Duration, Geo, ImageData, Method, Period, RDate, Status,
-            Transparency, Uid, Uri, Utc, UtcOffset, Value, ValueType,
+            Duration, Encoding, FormatType, Geo, ImageData, Language, Method,
+            Period, RDate, RawText, Status, Transparency, Uid, Uri, Utc,
+            UtcOffset, Value, ValueType,
         },
         property::{
             AttachParams, AttendeeParams, ConfParams, DtParams, FBTypeParams,
@@ -24,16 +25,16 @@ use crate::{
         },
     },
     parser::{
-        parameter::{KnownParam, Param, parameter},
+        parameter::{KnownParam, Param, Rfc5545ParamName, parameter},
         primitive::{
-            duration, float, gregorian, iana_token, integer, period,
-            utc_offset, x_name,
+            class_value, duration, float, gregorian, iana_token, integer,
+            method, period, raw_text, utc_offset, v2_0, x_name,
         },
     },
 };
 
 use super::{
-    parameter::UnknownParam,
+    parameter::{StaticParamName, UnknownParam},
     primitive::{
         InvalidDateError, InvalidDurationTimeError, InvalidIntegerError,
         InvalidRawTimeError, InvalidUtcOffsetError, binary, bool_caseless,
@@ -79,11 +80,12 @@ pub enum KnownProp<S> {
     // CALENDAR PROPERTIES
     CalScale,
     Method(Method<S>),
-    ProdId(S),
+    ProdId(RawText<S>),
     Version,
     // DESCRIPTIVE COMPONENT PROPERTIES
-    Attach(AttachValue<S>, AttachParams),
-    Categories(Box<[S]>, LangParams<S>),
+    Attach(AttachValue<S>, AttachParams<S>),
+    // TODO: we can avoid allocating here with something like a CommaSep wrapper iterator
+    Categories(Box<[RawText<S>]>, LangParams<S>),
     Class(ClassValue<S>),
     Comment(S, TextParams<S>),
     Description(S, TextParams<S>),
@@ -221,13 +223,36 @@ where
     }
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub struct DuplicateValueTypeError;
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// Either [`DuplicateParamError`] or [`UnexpectedKnownParamError`].
+pub enum DuplicateOrUnexpectedError<S> {
+    Duplicate(DuplicateParamError),
+    Unexpected(UnexpectedKnownParamError<S>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// A parameter with a multiplicity less than 2 occurred more than once.
+pub struct DuplicateParamError(StaticParamName);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnexpectedKnownParamError<S> {
     current_property: PropName<S>,
     unexpected_param: KnownParam<S>,
+}
+
+pub enum AttachParamError<S> {
+    /// Value type was a URI and the ENCODING parameter was present.
+    EncodingOnUri,
+    /// Value type was BINARY and the ENCODING parameter was not present.
+    BinaryWithoutEncoding,
+    /// ENCODING parameter was 8BIT; the only allowed value is BASE64.
+    Bit8Encoding,
+    /// A parameter with a multiplicity less than 2 occurred more than once.
+    DuplicateParam(StaticParamName),
+    /// The VALUE parameter occurred and was not BINARY.
+    NonBinaryValueType,
+    /// Received an unexpected known parameter.
+    Unexpected(UnexpectedKnownParamError<S>),
 }
 
 type ParsedProp<S> = (Prop<S>, Box<[UnknownParam<S>]>);
@@ -247,8 +272,10 @@ where
         + FromExternalError<I, InvalidDurationTimeError>
         + FromExternalError<I, InvalidIntegerError>
         + FromExternalError<I, InvalidUtcOffsetError>
-        + FromExternalError<I, DuplicateValueTypeError>
-        + FromExternalError<I, UnexpectedKnownParamError<I::Slice>>,
+        + FromExternalError<I, DuplicateParamError>
+        + FromExternalError<I, DuplicateOrUnexpectedError<I::Slice>>
+        + FromExternalError<I, UnexpectedKnownParamError<I::Slice>>
+        + FromExternalError<I, AttachParamError<I::Slice>>,
 {
     struct StateMachine<Src, S, F> {
         state: S,
@@ -306,13 +333,16 @@ where
         Ok((sm.state, sm.unknown_params.into_boxed_slice()))
     }
 
+    /// The step function for unknown (IANA and X) properties.
     fn unknown_step<Src>(
         param: KnownParam<Src>,
         state: &mut (Option<ValueType<Src>>, Vec<KnownParam<Src>>),
-    ) -> Result<(), DuplicateValueTypeError> {
+    ) -> Result<(), DuplicateParamError> {
         match param {
             KnownParam::Value(value_type) => match state.0 {
-                Some(_) => Err(DuplicateValueTypeError),
+                Some(_) => Err(DuplicateParamError(StaticParamName::Rfc5545(
+                    Rfc5545ParamName::ValueDataType,
+                ))),
                 None => {
                     state.0 = Some(value_type);
                     Ok(())
@@ -325,21 +355,27 @@ where
         }
     }
 
+    /// Returns the step function for properties with no known parameters.
+    fn trivial_step<Src: Clone>(
+        current_property: PropName<Src>,
+    ) -> impl FnMut(
+        KnownParam<Src>,
+        &mut (),
+    ) -> Result<(), UnexpectedKnownParamError<Src>> {
+        move |param, &mut ()| {
+            Err(UnexpectedKnownParamError {
+                current_property: current_property.clone(),
+                unexpected_param: param,
+            })
+        }
+    }
+
     let name = property_name.parse_next(input)?;
 
     Ok(match name {
         PropName::Rfc5545(Rfc5545PropName::CalendarScale) => {
-            fn step<Src, S>(
-                param: KnownParam<Src>,
-                _state: &mut S,
-            ) -> Result<(), UnexpectedKnownParamError<Src>> {
-                Err(UnexpectedKnownParamError {
-                    current_property: PropName::Rfc5545(
-                        Rfc5545PropName::CalendarScale,
-                    ),
-                    unexpected_param: param,
-                })
-            }
+            let step =
+                trivial_step(PropName::Rfc5545(Rfc5545PropName::CalendarScale));
 
             let ((), unknown_params) =
                 sm_parse_next(StateMachine::new((), step), input)?;
@@ -348,6 +384,221 @@ where
             let () = gregorian.parse_next(input)?;
 
             (Prop::Known(KnownProp::CalScale), unknown_params)
+        }
+        PropName::Rfc5545(Rfc5545PropName::Method) => {
+            let step = trivial_step(PropName::Rfc5545(Rfc5545PropName::Method));
+
+            let ((), unknown_params) =
+                sm_parse_next(StateMachine::new((), step), input)?;
+
+            let _ = ':'.parse_next(input)?;
+            let method = method.parse_next(input)?;
+
+            (Prop::Known(KnownProp::Method(method)), unknown_params)
+        }
+        PropName::Rfc5545(Rfc5545PropName::ProductIdentifier) => {
+            let step = trivial_step(PropName::Rfc5545(
+                Rfc5545PropName::ProductIdentifier,
+            ));
+
+            let ((), unknown_params) =
+                sm_parse_next(StateMachine::new((), step), input)?;
+
+            let _ = ':'.parse_next(input)?;
+            let prod_id = raw_text.parse_next(input)?;
+
+            (Prop::Known(KnownProp::ProdId(prod_id)), unknown_params)
+        }
+        PropName::Rfc5545(Rfc5545PropName::Version) => {
+            let step =
+                trivial_step(PropName::Rfc5545(Rfc5545PropName::Version));
+
+            let ((), unknown_params) =
+                sm_parse_next(StateMachine::new((), step), input)?;
+
+            let _ = ':'.parse_next(input)?;
+            let () = v2_0.parse_next(input)?;
+
+            (Prop::Known(KnownProp::Version), unknown_params)
+        }
+        PropName::Rfc5545(Rfc5545PropName::Attachment) => {
+            struct Base64;
+
+            struct State<Src> {
+                /// URI by default, otherwise URI or BINARY
+                value_type: Option<ValueType<Src>>,
+                /// Permitted iff value_type is BINARY
+                encoding: Option<Base64>,
+                /// OPTIONAL for URI and RECOMMENDED for BINARY
+                format_type: Option<FormatType<Src>>,
+            }
+
+            fn step<S>(
+                param: KnownParam<S>,
+                state: &mut State<S>,
+            ) -> Result<(), AttachParamError<S>> {
+                match param {
+                    KnownParam::Value(value_type) => match value_type {
+                        ValueType::Binary => match state.value_type {
+                            Some(_) => Err(AttachParamError::DuplicateParam(
+                                StaticParamName::Rfc5545(
+                                    Rfc5545ParamName::ValueDataType,
+                                ),
+                            )),
+                            None => {
+                                state.value_type = Some(ValueType::Binary);
+                                Ok(())
+                            }
+                        },
+                        _ => Err(AttachParamError::NonBinaryValueType),
+                    },
+                    KnownParam::Encoding(Encoding::Base64) => {
+                        match state.encoding {
+                            Some(_) => Err(AttachParamError::DuplicateParam(
+                                StaticParamName::Rfc5545(
+                                    Rfc5545ParamName::InlineEncoding,
+                                ),
+                            )),
+                            None => {
+                                state.encoding = Some(Base64);
+                                Ok(())
+                            }
+                        }
+                    }
+                    KnownParam::Encoding(Encoding::Bit8) => {
+                        Err(AttachParamError::Bit8Encoding)
+                    }
+                    KnownParam::FormatType(format_type) => {
+                        match state.format_type {
+                            Some(_) => Err(AttachParamError::DuplicateParam(
+                                StaticParamName::Rfc5545(
+                                    Rfc5545ParamName::FormatType,
+                                ),
+                            )),
+                            None => {
+                                state.format_type = Some(format_type);
+                                Ok(())
+                            }
+                        }
+                    }
+                    known_param => Err(AttachParamError::Unexpected(
+                        UnexpectedKnownParamError {
+                            current_property: PropName::Rfc5545(
+                                Rfc5545PropName::Attachment,
+                            ),
+                            unexpected_param: known_param,
+                        },
+                    )),
+                }
+            }
+
+            let (
+                State {
+                    value_type,
+                    encoding,
+                    format_type,
+                },
+                unknown_params,
+            ) = sm_parse_next(
+                StateMachine::new(
+                    State {
+                        value_type: None,
+                        encoding: None,
+                        format_type: None,
+                    },
+                    step,
+                ),
+                input,
+            )?;
+
+            if matches!(value_type, Some(ValueType::Binary)) {
+                match encoding {
+                    Some(Base64) => (),
+                    None => {
+                        return Err(E::from_external_error(
+                            input,
+                            AttachParamError::BinaryWithoutEncoding,
+                        ));
+                    }
+                }
+            }
+
+            let _ = ':'.parse_next(input)?;
+
+            let value =
+                match parse_value(value_type.unwrap_or(ValueType::Uri), input)?
+                {
+                    Value::Binary(binary) => AttachValue::Binary(binary),
+                    Value::Uri(uri) => AttachValue::Uri(uri),
+                    _ => unreachable!(),
+                };
+
+            let params = AttachParams { format_type };
+
+            (
+                Prop::Known(KnownProp::Attach(value, params)),
+                unknown_params,
+            )
+        }
+        PropName::Rfc5545(Rfc5545PropName::Categories) => {
+            type State<S> = Option<Language<S>>;
+
+            fn step<S>(
+                param: KnownParam<S>,
+                state: &mut State<S>,
+            ) -> Result<(), DuplicateOrUnexpectedError<S>> {
+                match param {
+                    KnownParam::Language(language) => match state {
+                        Some(_) => Err(DuplicateOrUnexpectedError::Duplicate(
+                            DuplicateParamError(StaticParamName::Rfc5545(
+                                Rfc5545ParamName::Language,
+                            )),
+                        )),
+                        None => {
+                            *state = Some(language);
+                            Ok(())
+                        }
+                    },
+                    unexpected_param => {
+                        Err(DuplicateOrUnexpectedError::Unexpected(
+                            UnexpectedKnownParamError {
+                                current_property: PropName::Rfc5545(
+                                    Rfc5545PropName::Categories,
+                                ),
+                                unexpected_param,
+                            },
+                        ))
+                    }
+                }
+            }
+
+            let (language, unknown_params) =
+                sm_parse_next(StateMachine::new(None, step), input)?;
+
+            let _ = ':'.parse_next(input)?;
+            let categories = separated(1.., raw_text, ',')
+                .map(|v: Vec<_>| v.into_boxed_slice())
+                .parse_next(input)?;
+
+            let params = LangParams { language };
+
+            (
+                Prop::Known(KnownProp::Categories(categories, params)),
+                unknown_params,
+            )
+        }
+        PropName::Rfc5545(Rfc5545PropName::Classification) => {
+            let step = trivial_step(PropName::Rfc5545(
+                Rfc5545PropName::Classification,
+            ));
+
+            let ((), unknown_params) =
+                sm_parse_next(StateMachine::new((), step), input)?;
+
+            let _ = ':'.parse_next(input)?;
+            let value = class_value.parse_next(input)?;
+
+            (Prop::Known(KnownProp::Class(value)), unknown_params)
         }
         PropName::Rfc5545(name) => todo!(),
         PropName::Rfc7986(name) => todo!(),

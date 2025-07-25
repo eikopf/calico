@@ -17,9 +17,11 @@ pub enum Method<S = Box<str>> {
 }
 
 /// An unescaped text value (RFC 5545 §3.3.11).
+#[derive(Debug, Default, Hash, Clone, Copy, PartialEq, Eq)]
 pub struct RawText<S = Box<str>>(pub(crate) S);
 
 /// An escaped text value (RFC 5545 §3.3.11).
+#[derive(Debug, Default, Hash, Clone, Copy, PartialEq, Eq)]
 pub struct Text<S = Box<str>>(pub(crate) S);
 
 /// A unique identifier (RFC 5545 §3.8.4.7).
@@ -343,7 +345,8 @@ pub enum ClassValue<S = Box<str>> {
     Public,
     Private,
     Confidential,
-    Other(S),
+    Iana(S),
+    X(S),
 }
 
 impl<S> Default for ClassValue<S> {
