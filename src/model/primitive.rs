@@ -418,14 +418,39 @@ pub enum DurationTime<T = usize> {
     S { seconds: T },
 }
 
-// TODO: it's unclear whether Geo is correct here, since the FLOAT type in RFC
-// 5545 is not explicitly defined with reference to IEEE 754.
-
-/// Geographic coordinates.
+/// Geographic coordinates (RFC 5545 §3.8.1.6).
+///
+/// # Precision
+/// To quote directly from RFC 5545 §3.8.1.6 (_Description_):
+/// > The longitude and latitude values MAY be specified up to six decimal
+/// > places, which will allow for accuracy to within one meter of geographical
+/// > position. Receiving applications MUST accept values of this precision and
+/// > MAY truncate values of greater position.
+///
+/// And again from the next paragraph:
+/// > Whole degrees of latitude shall be represented by a two-digit decimal
+/// > number ranging from 0 through 90. Whole degrees of longitude shall be
+/// > represented by a decimal number ranging from 0 through 180.
+///
+/// So as an upper bound, we need to preserve decimal precision up to 6 digits
+/// in the range `-180..=180`. As it happens, `f32` is sufficient to satisfy
+/// this property, since the precision of IEEE-754 floats depends on the
+/// magnitude of their integer component.
+///
+/// ```
+/// let val: f32 = 179.123456;
+/// assert_eq!(format!("{:.6}", val), "179.123456");
+///
+/// let val: f32 = 179.999999;
+/// assert_eq!(format!("{:.6}", val), "179.999999");
+///
+/// let val: f32 = -179.999999;
+/// assert_eq!(format!("{:.6}", val), "-179.999999");
+/// ```
 #[derive(Debug, Clone)]
 pub struct Geo {
-    pub latitude: f64,
-    pub longitude: f64,
+    pub lat: f32,
+    pub lon: f32,
 }
 
 /// A UTC offset (RFC 5545 §3.3.14).
