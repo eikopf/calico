@@ -28,7 +28,7 @@ use crate::{
     model::primitive::{
         CalendarUserType, DisplayType, Encoding, FeatureType, FormatType,
         FreeBusyType, Language, ParticipationRole, ParticipationStatus,
-        RelationshipType, TriggerRelation, Uri, ValueType,
+        RelationshipType, TriggerRelation, TzId, Uri, ValueType,
     },
     parser::primitive::{
         alarm_trigger_relationship, bool_caseless, feature_type, format_type,
@@ -83,7 +83,7 @@ pub enum KnownParam<S = Box<str>> {
     Role(ParticipationRole<S>),
     Rsvp(bool),
     SentBy(Uri<S>),
-    TzId(S),
+    TzId(TzId<S>),
     Value(ValueType<S>),
     Display(DisplayType<S>),
     Email(ParamValue<S>),
@@ -245,6 +245,7 @@ where
             Rfc5545ParamName::TimeZoneIdentifier => {
                 (opt('/'), param_value.verify(ParamValue::is_safe))
                     .take()
+                    .map(TzId)
                     .map(KnownParam::TzId)
                     .map(Param::Known)
                     .parse_next(input)
@@ -596,7 +597,7 @@ mod tests {
                 .parse_peek("tzid=America/New_York")
                 .ok()
                 .and_then(|(_, p)| p.try_into_known().ok()),
-            Some(KnownParam::TzId("America/New_York")),
+            Some(KnownParam::TzId(TzId("America/New_York"))),
         );
 
         assert_eq!(

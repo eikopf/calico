@@ -16,6 +16,10 @@ pub enum Method<S = Box<str>> {
     Iana(S),
 }
 
+/// A timezone identifier.
+#[derive(Debug, Default, Hash, Clone, Copy, PartialEq, Eq)]
+pub struct TzId<S>(pub(crate) S);
+
 /// An unescaped text value (RFC 5545 §3.3.11).
 #[derive(Debug, Default, Hash, Clone, Copy, PartialEq, Eq)]
 pub struct RawText<S = Box<str>>(pub(crate) S);

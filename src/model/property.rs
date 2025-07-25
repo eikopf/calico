@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use super::primitive::{
     CalendarUserType, DisplayType, FeatureType, FormatType, FreeBusyType,
     ImageData, Language, ParticipationRole, ParticipationStatus,
-    RelationshipType, ThisAndFuture, TriggerRelation, Uri,
+    RelationshipType, ThisAndFuture, TriggerRelation, TzId, Uri,
 };
 
 /// An ordinary textual property.
@@ -82,7 +82,7 @@ pub struct LangParams<S = Box<str>> {
 /// The parameters associated with several date and time properties.
 #[derive(Debug, Clone, Copy)]
 pub struct DtParams<S = Box<str>> {
-    pub tz_id: Option<S>,
+    pub tz_id: Option<TzId<S>>,
 }
 
 /// The parameters associated with the `RDATE` property.

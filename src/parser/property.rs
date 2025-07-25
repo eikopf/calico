@@ -15,8 +15,9 @@ use crate::{
         primitive::{
             AlarmAction, AttachValue, ClassValue, CompletionPercentage,
             DateTime, DateTimeOrDate, Duration, Encoding, FormatType, Geo,
-            ImageData, Language, Method, Period, Priority, RDate, RawText,
-            Status, Transparency, Uid, Uri, Utc, UtcOffset, Value, ValueType,
+            ImageData, Language, Method, ParticipationStatus, Period, Priority,
+            RDate, RawText, Transparency, TzId, Uid, Uri, Utc, UtcOffset,
+            Value, ValueType,
         },
         property::{
             AttachParams, AttendeeParams, ConfParams, DtParams, FBTypeParams,
@@ -27,9 +28,9 @@ use crate::{
     parser::{
         parameter::{KnownParam, Param, Rfc5545ParamName, parameter},
         primitive::{
-            class_value, completion_percentage, duration, float, geo,
-            gregorian, iana_token, integer, method, period, priority, raw_text,
-            utc_offset, v2_0, x_name,
+            class_value, completion_percentage, datetime_utc, duration, float,
+            geo, gregorian, iana_token, integer, method, participation_status,
+            period, priority, raw_text, utc_offset, v2_0, x_name,
         },
     },
 };
@@ -95,10 +96,10 @@ pub enum KnownProp<S> {
     PercentComplete(CompletionPercentage),
     Priority(Priority),
     Resources(Box<[RawText<S>]>, TextParams<S>),
-    Status(Status),
+    Status(ParticipationStatus<S>),
     Summary(RawText<S>, TextParams<S>),
     // DATE AND TIME COMPONENT PROPERTIES
-    DtCompleted(DateTime),
+    DtCompleted(DateTime<Utc>),
     DtEnd(DateTimeOrDate, DtParams<S>),
     DtDue(DateTimeOrDate, DtParams<S>),
     DtStart(DateTimeOrDate, DtParams<S>),
@@ -106,17 +107,17 @@ pub enum KnownProp<S> {
     FreeBusy(Box<[Period]>, FBTypeParams<S>),
     Transparency(Transparency),
     // TIME ZONE COMPONENT PROPERTIES
-    TzId(S),
-    TzName(S, LangParams<S>),
+    TzId(RawText<S>),
+    TzName(RawText<S>, LangParams<S>),
     TzOffsetFrom(UtcOffset),
     TzOffsetTo(UtcOffset),
     TzUrl(Uri<S>),
     // RELATIONSHIP COMPONENT PROPERTIES
     Attendee(Uri<S>, AttendeeParams<S>),
-    Contact(S, TextParams<S>),
+    Contact(RawText<S>, TextParams<S>),
     Organizer(Uri<S>, OrganizerParams<S>),
     RecurrenceId(DateTimeOrDate, RecurrenceIdParams<S>),
-    RelatedTo(S, RelTypeParams<S>),
+    RelatedTo(RawText<S>, RelTypeParams<S>),
     Url(Uri<S>),
     Uid(Uid<S>),
     // RECURRENCE COMPONENT PROPERTIES
@@ -136,9 +137,9 @@ pub enum KnownProp<S> {
     Sequence(UInt),
     // MISCELLANEOUS COMPONENT PROPERTIES
     // TODO: the value of this property has a more precise grammar (page 143)
-    RequestStatus(S, LangParams<S>),
+    RequestStatus(RawText<S>, LangParams<S>),
     // RFC 7986 PROPERTIES
-    Name(S, TextParams<S>),
+    Name(RawText<S>, TextParams<S>),
     RefreshInterval(Duration),
     Source(Uri<S>),
     Color(Css3Color),
@@ -425,6 +426,59 @@ where
                 )),
                 None => {
                     state.language = Some(language);
+                    Ok(())
+                }
+            },
+            unexpected_param => Err(DuplicateOrUnexpectedError::Unexpected(
+                UnexpectedKnownParamError {
+                    current_property: current_property.clone(),
+                    unexpected_param,
+                },
+            )),
+        }
+    }
+
+    struct DtParamState<S> {
+        value_type: Option<ValueType<S>>,
+        tz_id: Option<TzId<S>>,
+    }
+
+    impl<S> Default for DtParamState<S> {
+        fn default() -> Self {
+            Self {
+                value_type: Default::default(),
+                tz_id: Default::default(),
+            }
+        }
+    }
+
+    fn dt_param_step<S: Clone>(
+        current_property: PropName<S>,
+    ) -> impl FnMut(
+        KnownParam<S>,
+        &mut DtParamState<S>,
+    ) -> Result<(), DuplicateOrUnexpectedError<S>> {
+        move |param, state| match param {
+            KnownParam::Value(value_type) => match state.value_type {
+                Some(_) => Err(DuplicateOrUnexpectedError::Duplicate(
+                    DuplicateParamError(StaticParamName::Rfc5545(
+                        Rfc5545ParamName::ValueDataType,
+                    )),
+                )),
+                None => {
+                    // TODO: make a new error type to handle if this is not
+                    // DATETIME or DATE
+                    todo!()
+                }
+            },
+            KnownParam::TzId(tz_id) => match state.tz_id {
+                Some(_) => Err(DuplicateOrUnexpectedError::Duplicate(
+                    DuplicateParamError(StaticParamName::Rfc5545(
+                        Rfc5545ParamName::TimeZoneIdentifier,
+                    )),
+                )),
+                None => {
+                    state.tz_id = Some(tz_id);
                     Ok(())
                 }
             },
@@ -762,6 +816,94 @@ where
             let value = priority.parse_next(input)?;
 
             (Prop::Known(KnownProp::Priority(value)), unknown_params)
+        }
+        PropName::Rfc5545(Rfc5545PropName::Resources) => {
+            let step =
+                text_param_step(PropName::Rfc5545(Rfc5545PropName::Resources));
+
+            let (state, unknown_params) = sm_parse_next(
+                StateMachine::new(TextParamState::default(), step),
+                input,
+            )?;
+
+            let _ = ':'.parse_next(input)?;
+            let value = separated(1.., raw_text, ',')
+                .map(|v: Vec<_>| v.into_boxed_slice())
+                .parse_next(input)?;
+
+            let params = state.into_params();
+
+            (
+                Prop::Known(KnownProp::Resources(value, params)),
+                unknown_params,
+            )
+        }
+        PropName::Rfc5545(Rfc5545PropName::Status) => {
+            let step = trivial_step(PropName::Rfc5545(Rfc5545PropName::Status));
+
+            let ((), unknown_params) =
+                sm_parse_next(StateMachine::new((), step), input)?;
+
+            let _ = ':'.parse_next(input)?;
+            let status = participation_status.parse_next(input)?;
+
+            (Prop::Known(KnownProp::Status(status)), unknown_params)
+        }
+        PropName::Rfc5545(Rfc5545PropName::Summary) => {
+            let step =
+                text_param_step(PropName::Rfc5545(Rfc5545PropName::Summary));
+
+            let (state, unknown_params) = sm_parse_next(
+                StateMachine::new(TextParamState::default(), step),
+                input,
+            )?;
+
+            let _ = ':'.parse_next(input)?;
+            let value = raw_text.parse_next(input)?;
+            let params = state.into_params();
+
+            (
+                Prop::Known(KnownProp::Summary(value, params)),
+                unknown_params,
+            )
+        }
+        PropName::Rfc5545(Rfc5545PropName::DateTimeCompleted) => {
+            let step = trivial_step(PropName::Rfc5545(
+                Rfc5545PropName::DateTimeCompleted,
+            ));
+
+            let ((), unknown_params) =
+                sm_parse_next(StateMachine::new((), step), input)?;
+
+            let _ = ':'.parse_next(input)?;
+            let dt = datetime_utc.parse_next(input)?;
+
+            (Prop::Known(KnownProp::DtCompleted(dt)), unknown_params)
+        }
+        PropName::Rfc5545(Rfc5545PropName::DateTimeEnd) => {
+            let step =
+                dt_param_step(PropName::Rfc5545(Rfc5545PropName::DateTimeEnd));
+
+            let (DtParamState { value_type, tz_id }, unknown_params) =
+                sm_parse_next(
+                    StateMachine::new(DtParamState::default(), step),
+                    input,
+                )?;
+
+            let _ = ':'.parse_next(input)?;
+
+            let value = match parse_value(
+                value_type.unwrap_or(ValueType::DateTime),
+                input,
+            )? {
+                Value::Date(date) => DateTimeOrDate::Date(date),
+                Value::DateTime(dt) => DateTimeOrDate::DateTime(dt),
+                _ => unreachable!(),
+            };
+
+            let params = DtParams { tz_id };
+
+            (Prop::Known(KnownProp::DtEnd(value, params)), unknown_params)
         }
         PropName::Rfc5545(name) => todo!(),
         PropName::Rfc7986(name) => todo!(),
