@@ -13,10 +13,10 @@ use crate::{
     model::{
         css::Css3Color,
         primitive::{
-            AlarmAction, AttachValue, ClassValue, DateTime, DateTimeOrDate,
-            Duration, Encoding, FormatType, Geo, ImageData, Language, Method,
-            Period, RDate, RawText, Status, Transparency, Uid, Uri, Utc,
-            UtcOffset, Value, ValueType,
+            AlarmAction, AttachValue, ClassValue, CompletionPercentage,
+            DateTime, DateTimeOrDate, Duration, Encoding, FormatType, Geo,
+            ImageData, Language, Method, Period, Priority, RDate, RawText,
+            Status, Transparency, Uid, Uri, Utc, UtcOffset, Value, ValueType,
         },
         property::{
             AttachParams, AttendeeParams, ConfParams, DtParams, FBTypeParams,
@@ -27,8 +27,9 @@ use crate::{
     parser::{
         parameter::{KnownParam, Param, Rfc5545ParamName, parameter},
         primitive::{
-            class_value, duration, float, gregorian, iana_token, integer,
-            method, period, raw_text, utc_offset, v2_0, x_name,
+            class_value, completion_percentage, duration, float, geo,
+            gregorian, iana_token, integer, method, period, priority, raw_text,
+            utc_offset, v2_0, x_name,
         },
     },
 };
@@ -36,9 +37,10 @@ use crate::{
 use super::{
     parameter::{StaticParamName, UnknownParam},
     primitive::{
-        InvalidDateError, InvalidDurationTimeError, InvalidIntegerError,
-        InvalidRawTimeError, InvalidUtcOffsetError, binary, bool_caseless,
-        date, datetime, time, uri,
+        InvalidCompletionPercentageError, InvalidDateError,
+        InvalidDurationTimeError, InvalidGeoError, InvalidIntegerError,
+        InvalidPriorityError, InvalidRawTimeError, InvalidUtcOffsetError,
+        binary, bool_caseless, date, datetime, time, uri,
     },
 };
 
@@ -84,18 +86,17 @@ pub enum KnownProp<S> {
     Version,
     // DESCRIPTIVE COMPONENT PROPERTIES
     Attach(AttachValue<S>, AttachParams<S>),
-    // TODO: we can avoid allocating here with something like a CommaSep wrapper iterator
     Categories(Box<[RawText<S>]>, LangParams<S>),
     Class(ClassValue<S>),
-    Comment(S, TextParams<S>),
-    Description(S, TextParams<S>),
+    Comment(RawText<S>, TextParams<S>),
+    Description(RawText<S>, TextParams<S>),
     Geo(Geo),
-    Location(S, TextParams<S>),
-    PercentComplete(u8), // 0..=100
-    Priority(u8),        // 0..=9
-    Resources(Box<[S]>, TextParams<S>),
+    Location(RawText<S>, TextParams<S>),
+    PercentComplete(CompletionPercentage),
+    Priority(Priority),
+    Resources(Box<[RawText<S>]>, TextParams<S>),
     Status(Status),
-    Summary(S, TextParams<S>),
+    Summary(RawText<S>, TextParams<S>),
     // DATE AND TIME COMPONENT PROPERTIES
     DtCompleted(DateTime),
     DtEnd(DateTimeOrDate, DtParams<S>),
@@ -265,13 +266,17 @@ where
         + Compare<Caseless<&'static str>>
         + Compare<char>,
     I::Token: AsChar + Clone,
-    I::Slice: AsBStr + Clone + SliceLen,
+    I::Slice: AsBStr + Clone + SliceLen + Stream,
+    <<I as Stream>::Slice as Stream>::Token: AsChar,
     E: ParserError<I>
         + FromExternalError<I, InvalidDateError>
         + FromExternalError<I, InvalidRawTimeError>
         + FromExternalError<I, InvalidDurationTimeError>
         + FromExternalError<I, InvalidIntegerError>
         + FromExternalError<I, InvalidUtcOffsetError>
+        + FromExternalError<I, InvalidGeoError>
+        + FromExternalError<I, InvalidCompletionPercentageError>
+        + FromExternalError<I, InvalidPriorityError>
         + FromExternalError<I, DuplicateParamError>
         + FromExternalError<I, DuplicateOrUnexpectedError<I::Slice>>
         + FromExternalError<I, UnexpectedKnownParamError<I::Slice>>
@@ -367,6 +372,68 @@ where
                 current_property: current_property.clone(),
                 unexpected_param: param,
             })
+        }
+    }
+
+    struct TextParamState<S> {
+        alt_rep: Option<Uri<S>>,
+        language: Option<Language<S>>,
+    }
+
+    impl<S> Default for TextParamState<S> {
+        fn default() -> Self {
+            Self {
+                alt_rep: Default::default(),
+                language: Default::default(),
+            }
+        }
+    }
+
+    impl<S> TextParamState<S> {
+        fn into_params(self) -> TextParams<S> {
+            TextParams {
+                alternate_representation: self.alt_rep,
+                language: self.language,
+            }
+        }
+    }
+
+    /// Returns the step function for properties with [`TextParams`].
+    fn text_param_step<S: Clone>(
+        current_property: PropName<S>,
+    ) -> impl FnMut(
+        KnownParam<S>,
+        &mut TextParamState<S>,
+    ) -> Result<(), DuplicateOrUnexpectedError<S>> {
+        move |param, state| match param {
+            KnownParam::AltRep(uri) => match state.alt_rep {
+                Some(_) => Err(DuplicateOrUnexpectedError::Duplicate(
+                    DuplicateParamError(StaticParamName::Rfc5545(
+                        Rfc5545ParamName::AlternateTextRepresentation,
+                    )),
+                )),
+                None => {
+                    state.alt_rep = Some(uri);
+                    Ok(())
+                }
+            },
+            KnownParam::Language(language) => match state.language {
+                Some(_) => Err(DuplicateOrUnexpectedError::Duplicate(
+                    DuplicateParamError(StaticParamName::Rfc5545(
+                        Rfc5545ParamName::Language,
+                    )),
+                )),
+                None => {
+                    state.language = Some(language);
+                    Ok(())
+                }
+            },
+            unexpected_param => Err(DuplicateOrUnexpectedError::Unexpected(
+                UnexpectedKnownParamError {
+                    current_property: current_property.clone(),
+                    unexpected_param,
+                },
+            )),
         }
     }
 
@@ -599,6 +666,102 @@ where
             let value = class_value.parse_next(input)?;
 
             (Prop::Known(KnownProp::Class(value)), unknown_params)
+        }
+        PropName::Rfc5545(Rfc5545PropName::Comment) => {
+            let step =
+                text_param_step(PropName::Rfc5545(Rfc5545PropName::Comment));
+
+            let (state, unknown_params) = sm_parse_next(
+                StateMachine::new(TextParamState::default(), step),
+                input,
+            )?;
+
+            let _ = ':'.parse_next(input)?;
+            let value = raw_text.parse_next(input)?;
+            let params = state.into_params();
+
+            (
+                Prop::Known(KnownProp::Comment(value, params)),
+                unknown_params,
+            )
+        }
+        PropName::Rfc5545(Rfc5545PropName::Description) => {
+            let step = text_param_step(PropName::Rfc5545(
+                Rfc5545PropName::Description,
+            ));
+
+            let (state, unknown_params) = sm_parse_next(
+                StateMachine::new(TextParamState::default(), step),
+                input,
+            )?;
+
+            let _ = ':'.parse_next(input)?;
+            let value = raw_text.parse_next(input)?;
+            let params = state.into_params();
+
+            (
+                Prop::Known(KnownProp::Description(value, params)),
+                unknown_params,
+            )
+        }
+        PropName::Rfc5545(Rfc5545PropName::GeographicPosition) => {
+            let step = trivial_step(PropName::Rfc5545(
+                Rfc5545PropName::GeographicPosition,
+            ));
+
+            let ((), unknown_params) =
+                sm_parse_next(StateMachine::new((), step), input)?;
+
+            let _ = ':'.parse_next(input)?;
+            let value = geo.parse_next(input)?;
+
+            (Prop::Known(KnownProp::Geo(value)), unknown_params)
+        }
+        PropName::Rfc5545(Rfc5545PropName::Location) => {
+            let step =
+                text_param_step(PropName::Rfc5545(Rfc5545PropName::Location));
+
+            let (state, unknown_params) = sm_parse_next(
+                StateMachine::new(TextParamState::default(), step),
+                input,
+            )?;
+
+            let _ = ':'.parse_next(input)?;
+            let value = raw_text.parse_next(input)?;
+            let params = state.into_params();
+
+            (
+                Prop::Known(KnownProp::Location(value, params)),
+                unknown_params,
+            )
+        }
+        PropName::Rfc5545(Rfc5545PropName::PercentComplete) => {
+            let step = trivial_step(PropName::Rfc5545(
+                Rfc5545PropName::PercentComplete,
+            ));
+
+            let ((), unknown_params) =
+                sm_parse_next(StateMachine::new((), step), input)?;
+
+            let _ = ':'.parse_next(input)?;
+            let value = completion_percentage.parse_next(input)?;
+
+            (
+                Prop::Known(KnownProp::PercentComplete(value)),
+                unknown_params,
+            )
+        }
+        PropName::Rfc5545(Rfc5545PropName::Priority) => {
+            let step =
+                trivial_step(PropName::Rfc5545(Rfc5545PropName::Priority));
+
+            let ((), unknown_params) =
+                sm_parse_next(StateMachine::new((), step), input)?;
+
+            let _ = ':'.parse_next(input)?;
+            let value = priority.parse_next(input)?;
+
+            (Prop::Known(KnownProp::Priority(value)), unknown_params)
         }
         PropName::Rfc5545(name) => todo!(),
         PropName::Rfc7986(name) => todo!(),
