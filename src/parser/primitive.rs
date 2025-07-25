@@ -3,9 +3,10 @@
 use chrono::NaiveDate;
 use winnow::{
     Parser,
-    ascii::{Caseless, digit1},
+    ascii::{Caseless, digit0, digit1},
     combinator::{
-        alt, empty, opt, preceded, repeat, separated_pair, terminated, trace,
+        alt, delimited, empty, opt, preceded, repeat, separated_pair,
+        terminated, trace,
     },
     error::{FromExternalError, ParserError},
     stream::{AsBStr, AsChar, Compare, SliceLen, Stream, StreamIsPartial},
@@ -15,9 +16,10 @@ use winnow::{
 use crate::model::primitive::{
     BinaryText, CalendarUserType, ClassValue, Date, DateTime, DisplayType,
     Duration, DurationKind, DurationTime, Encoding, FeatureType, Float,
-    FormatType, FreeBusyType, Language, Method, ParticipationRole,
-    ParticipationStatus, Period, RawText, RawTime, RelationshipType, Sign,
-    Time, TimeFormat, TriggerRelation, Uid, Uri, Utc, UtcOffset, ValueType,
+    FormatType, FreeBusyType, Geo, GeoComponent, Language, Method,
+    ParticipationRole, ParticipationStatus, Period, RawText, RawTime,
+    RelationshipType, Sign, Time, TimeFormat, TriggerRelation, Uid, Uri, Utc,
+    UtcOffset, ValueType,
 };
 
 /// Parses a [`FeatureType`].
@@ -896,6 +898,83 @@ where
     'Z'.void().parse_next(input)
 }
 
+pub enum InvalidGeoError {
+    IntegralTooLarge(u8),
+    LatOutOfBounds(GeoComponent),
+    LonOutOfBounds(GeoComponent),
+}
+
+/// Parses a [`Geo`].
+pub fn geo<I, E>(input: &mut I) -> Result<Geo, E>
+where
+    I: StreamIsPartial + Stream + Compare<char>,
+    I::Slice: AsBStr + Stream,
+    I::Token: AsChar + Clone,
+    <<I as Stream>::Slice as Stream>::Token: AsChar,
+    E: ParserError<I> + FromExternalError<I, InvalidGeoError>,
+{
+    fn geo_component<I, E>(input: &mut I) -> Result<GeoComponent, E>
+    where
+        I: StreamIsPartial + Stream + Compare<char>,
+        I::Slice: AsBStr + Stream,
+        I::Token: AsChar + Clone,
+        <<I as Stream>::Slice as Stream>::Token: AsChar,
+        E: ParserError<I> + FromExternalError<I, InvalidGeoError>,
+    {
+        let sign = opt(sign).parse_next(input)?;
+        let magnitude: u8 = lz_dec_uint.parse_next(input)?;
+
+        if magnitude > 180 {
+            return Err(E::from_external_error(
+                input,
+                InvalidGeoError::IntegralTooLarge(magnitude),
+            ));
+        }
+
+        let integral: i16 =
+            i16::from(magnitude) * (sign.unwrap_or_default() as i16);
+
+        let fraction: u32 =
+            opt(delimited('.', take_while(0..=6, '0'..='9'), digit0))
+                .parse_next(input)?
+                .map(|mut digits| {
+                    let mut total = 0;
+
+                    while let Some(d) = digits.next_token() {
+                        // SAFETY: the parser above guarantees that this char
+                        // will be a valid ascii digit
+                        let value = unsafe {
+                            d.as_char().to_digit(10).unwrap_unchecked()
+                        };
+
+                        total = total * 10 + value;
+                    }
+
+                    total
+                })
+                .unwrap_or_default();
+
+        Ok(GeoComponent { integral, fraction })
+    }
+
+    let (lat, lon) =
+        separated_pair(geo_component, ';', geo_component).parse_next(input)?;
+
+    if !(-90..=90).contains(&lat.integral) {
+        Err(E::from_external_error(
+            input,
+            InvalidGeoError::LatOutOfBounds(lat),
+        ))
+    } else if !(-180..=180).contains(&lon.integral) {
+        Err(E::from_external_error(
+            input,
+            InvalidGeoError::LonOutOfBounds(lon),
+        ))
+    } else {
+        Ok(Geo { lat, lon })
+    }
+}
+
 /// Parses the boolean value of `TRUE` or `FALSE`, ignoring case.
 pub fn bool_caseless<I, E>(input: &mut I) -> Result<bool, E>
 where
@@ -1491,6 +1570,48 @@ mod tests {
             time_format::<_, ()>.parse_peek("Y"),
             Ok(("Y", TimeFormat::Local))
         );
+    }
+
+    #[test]
+    fn geo_parser() {
+        assert_eq!(
+            geo::<_, ()>.parse_peek("00;00"),
+            Ok((
+                "",
+                Geo {
+                    lat: GeoComponent {
+                        integral: 0,
+                        fraction: 0
+                    },
+                    lon: GeoComponent {
+                        integral: 0,
+                        fraction: 0
+                    },
+                }
+            ))
+        );
+
+        assert_eq!(
+            geo::<_, ()>.parse_peek("00;00.12345678"),
+            Ok((
+                "",
+                Geo {
+                    lat: GeoComponent {
+                        integral: 0,
+                        fraction: 0
+                    },
+                    lon: GeoComponent {
+                        integral: 0,
+                        fraction: 123456
+                    },
+                }
+            ))
+        );
+
+        assert!(geo::<_, ()>.parse_peek("90;90").is_ok());
+        assert!(geo::<_, ()>.parse_peek("91;90").is_err());
+        assert!(geo::<_, ()>.parse_peek("90;180").is_ok());
+        assert!(geo::<_, ()>.parse_peek("90;181").is_err());
     }
 
     #[test]

@@ -433,24 +433,24 @@ pub enum DurationTime<T = usize> {
 /// > represented by a decimal number ranging from 0 through 180.
 ///
 /// So as an upper bound, we need to preserve decimal precision up to 6 digits
-/// in the range `-180..=180`. As it happens, `f32` is sufficient to satisfy
-/// this property, since the precision of IEEE-754 floats depends on the
-/// magnitude of their integer component.
+/// in the range `-180..=180`. An estimate of `log2(360) + log2(1E6) ≈ 28.4`
+/// (rounding up to the nearest byte) indicates that we will need at least 32
+/// bits to represent this. Unfortunately, `f32` will not suffice.
 ///
-/// ```
-/// let val: f32 = 179.123456;
-/// assert_eq!(format!("{:.6}", val), "179.123456");
-///
-/// let val: f32 = 179.999999;
-/// assert_eq!(format!("{:.6}", val), "179.999999");
-///
-/// let val: f32 = -179.999999;
-/// assert_eq!(format!("{:.6}", val), "-179.999999");
-/// ```
-#[derive(Debug, Clone)]
+/// The solution is to literally represent the value with fixed precision: an
+/// `i16` for the integral part, and a `u32` for the fractional part. This
+/// doubles the stack size, but guarantees representability.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Geo {
-    pub lat: f32,
-    pub lon: f32,
+    pub lat: GeoComponent,
+    pub lon: GeoComponent,
+}
+
+/// A component of a [`Geo`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct GeoComponent {
+    pub integral: i16,
+    pub fraction: u32,
 }
 
 /// A UTC offset (RFC 5545 §3.3.14).
