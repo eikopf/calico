@@ -30,8 +30,8 @@ use crate::{
         primitive::{
             class_value, completion_percentage, datetime_utc, duration, float,
             geo, gregorian, iana_token, integer, method, participation_status,
-            period, priority, raw_text, time_transparency, utc_offset, v2_0,
-            x_name,
+            period, priority, raw_text, time_transparency, tz_id, utc_offset,
+            v2_0, x_name,
         },
     },
 };
@@ -108,7 +108,7 @@ pub enum KnownProp<S> {
     FreeBusy(Box<[Period]>, FBTypeParams<S>),
     Transparency(TimeTransparency),
     // TIME ZONE COMPONENT PROPERTIES
-    TzId(RawText<S>),
+    TzId(TzId<S>),
     TzName(RawText<S>, LangParams<S>),
     TzOffsetFrom(UtcOffset),
     TzOffsetTo(UtcOffset),
@@ -1040,10 +1040,8 @@ where
                 unknown_params,
             )
         }
-        PropName::Rfc5545(Rfc5545PropName::TimeTransparency) => {
-            let step = trivial_step(PropName::Rfc5545(
-                Rfc5545PropName::TimeTransparency,
-            ));
+        PropName::Rfc5545(prop @ Rfc5545PropName::TimeTransparency) => {
+            let step = trivial_step(PropName::Rfc5545(prop));
 
             let ((), unknown_params) =
                 sm_parse_next(StateMachine::new((), step), input)?;
@@ -1052,6 +1050,17 @@ where
             let value = time_transparency.parse_next(input)?;
 
             (Prop::Known(KnownProp::Transparency(value)), unknown_params)
+        }
+        PropName::Rfc5545(prop @ Rfc5545PropName::TimeZoneIdentifier) => {
+            let step = trivial_step(PropName::Rfc5545(prop));
+
+            let ((), unknown_params) =
+                sm_parse_next(StateMachine::new((), step), input)?;
+
+            let _ = ':'.parse_next(input)?;
+            let value = tz_id.parse_next(input)?;
+
+            (Prop::Known(KnownProp::TzId(value)), unknown_params)
         }
         PropName::Rfc5545(name) => todo!(),
         PropName::Rfc7986(name) => todo!(),
