@@ -192,13 +192,6 @@ pub enum JournalStatus {
     Cancelled,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum Transparency {
-    #[default]
-    Opaque,
-    Transparent,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CalendarUserType<S = Box<str>> {
     Individual,

@@ -99,7 +99,7 @@ pub struct TriggerParams {
 
 #[derive(Debug, Clone, Copy)]
 pub struct FBTypeParams<S = Box<str>> {
-    pub fb_type: Option<FreeBusyType<S>>,
+    pub free_busy_type: Option<FreeBusyType<S>>,
 }
 
 /// The parameters usually associated with text values.

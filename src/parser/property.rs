@@ -14,10 +14,10 @@ use crate::{
         css::Css3Color,
         primitive::{
             AlarmAction, AttachValue, ClassValue, CompletionPercentage,
-            DateTime, DateTimeOrDate, Duration, Encoding, FormatType, Geo,
-            ImageData, Language, Method, ParticipationStatus, Period, Priority,
-            RDate, RawText, Transparency, TzId, Uid, Uri, Utc, UtcOffset,
-            Value, ValueType,
+            DateTime, DateTimeOrDate, Duration, Encoding, FormatType,
+            FreeBusyType, Geo, ImageData, Language, Method,
+            ParticipationStatus, Period, Priority, RDate, RawText,
+            TimeTransparency, TzId, Uid, Uri, Utc, UtcOffset, Value, ValueType,
         },
         property::{
             AttachParams, AttendeeParams, ConfParams, DtParams, FBTypeParams,
@@ -30,7 +30,8 @@ use crate::{
         primitive::{
             class_value, completion_percentage, datetime_utc, duration, float,
             geo, gregorian, iana_token, integer, method, participation_status,
-            period, priority, raw_text, utc_offset, v2_0, x_name,
+            period, priority, raw_text, time_transparency, utc_offset, v2_0,
+            x_name,
         },
     },
 };
@@ -105,7 +106,7 @@ pub enum KnownProp<S> {
     DtStart(DateTimeOrDate, DtParams<S>),
     Duration(Duration),
     FreeBusy(Box<[Period]>, FBTypeParams<S>),
-    Transparency(Transparency),
+    Transparency(TimeTransparency),
     // TIME ZONE COMPONENT PROPERTIES
     TzId(RawText<S>),
     TzName(RawText<S>, LangParams<S>),
@@ -242,6 +243,7 @@ pub struct UnexpectedKnownParamError<S> {
     unexpected_param: KnownParam<S>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AttachParamError<S> {
     /// Value type was a URI and the ENCODING parameter was present.
     EncodingOnUri,
@@ -249,10 +251,20 @@ pub enum AttachParamError<S> {
     BinaryWithoutEncoding,
     /// ENCODING parameter was 8BIT; the only allowed value is BASE64.
     Bit8Encoding,
-    /// A parameter with a multiplicity less than 2 occurred more than once.
-    DuplicateParam(StaticParamName),
     /// The VALUE parameter occurred and was not BINARY.
     NonBinaryValueType,
+    /// A parameter with a multiplicity less than 2 occurred more than once.
+    DuplicateParam(StaticParamName),
+    /// Received an unexpected known parameter.
+    Unexpected(UnexpectedKnownParamError<S>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DtParamError<S> {
+    /// The VALUE parameter occurred and was not DATETIME or DATE.
+    InvalidValueType(ValueType<S>),
+    /// A parameter with a multiplicity less than 2 occurred more than once.
+    DuplicateParam(StaticParamName),
     /// Received an unexpected known parameter.
     Unexpected(UnexpectedKnownParamError<S>),
 }
@@ -281,7 +293,8 @@ where
         + FromExternalError<I, DuplicateParamError>
         + FromExternalError<I, DuplicateOrUnexpectedError<I::Slice>>
         + FromExternalError<I, UnexpectedKnownParamError<I::Slice>>
-        + FromExternalError<I, AttachParamError<I::Slice>>,
+        + FromExternalError<I, AttachParamError<I::Slice>>
+        + FromExternalError<I, DtParamError<I::Slice>>,
 {
     struct StateMachine<Src, S, F> {
         state: S,
@@ -438,8 +451,15 @@ where
         }
     }
 
+    #[derive(Default)]
+    enum DateTimeOrDateType {
+        #[default]
+        DateTime,
+        Date,
+    }
+
     struct DtParamState<S> {
-        value_type: Option<ValueType<S>>,
+        value_type: Option<DateTimeOrDateType>,
         tz_id: Option<TzId<S>>,
     }
 
@@ -454,40 +474,41 @@ where
 
     fn dt_param_step<S: Clone>(
         current_property: PropName<S>,
-    ) -> impl FnMut(
-        KnownParam<S>,
-        &mut DtParamState<S>,
-    ) -> Result<(), DuplicateOrUnexpectedError<S>> {
+    ) -> impl FnMut(KnownParam<S>, &mut DtParamState<S>) -> Result<(), DtParamError<S>>
+    {
         move |param, state| match param {
             KnownParam::Value(value_type) => match state.value_type {
-                Some(_) => Err(DuplicateOrUnexpectedError::Duplicate(
-                    DuplicateParamError(StaticParamName::Rfc5545(
-                        Rfc5545ParamName::ValueDataType,
-                    )),
+                Some(_) => Err(DtParamError::DuplicateParam(
+                    StaticParamName::Rfc5545(Rfc5545ParamName::ValueDataType),
                 )),
                 None => {
-                    // TODO: make a new error type to handle if this is not
-                    // DATETIME or DATE
-                    todo!()
+                    let value_type = match value_type {
+                        ValueType::Date => Ok(DateTimeOrDateType::Date),
+                        ValueType::DateTime => Ok(DateTimeOrDateType::DateTime),
+                        _ => Err(DtParamError::InvalidValueType(value_type)),
+                    }?;
+
+                    state.value_type = Some(value_type);
+                    Ok(())
                 }
             },
             KnownParam::TzId(tz_id) => match state.tz_id {
-                Some(_) => Err(DuplicateOrUnexpectedError::Duplicate(
-                    DuplicateParamError(StaticParamName::Rfc5545(
+                Some(_) => {
+                    Err(DtParamError::DuplicateParam(StaticParamName::Rfc5545(
                         Rfc5545ParamName::TimeZoneIdentifier,
-                    )),
-                )),
+                    )))
+                }
                 None => {
                     state.tz_id = Some(tz_id);
                     Ok(())
                 }
             },
-            unexpected_param => Err(DuplicateOrUnexpectedError::Unexpected(
-                UnexpectedKnownParamError {
+            unexpected_param => {
+                Err(DtParamError::Unexpected(UnexpectedKnownParamError {
                     current_property: current_property.clone(),
                     unexpected_param,
-                },
-            )),
+                }))
+            }
         }
     }
 
@@ -892,18 +913,145 @@ where
 
             let _ = ':'.parse_next(input)?;
 
-            let value = match parse_value(
-                value_type.unwrap_or(ValueType::DateTime),
-                input,
-            )? {
-                Value::Date(date) => DateTimeOrDate::Date(date),
-                Value::DateTime(dt) => DateTimeOrDate::DateTime(dt),
-                _ => unreachable!(),
-            };
+            let value = match value_type.unwrap_or_default() {
+                DateTimeOrDateType::DateTime => {
+                    datetime.parse_next(input).map(DateTimeOrDate::DateTime)
+                }
+                DateTimeOrDateType::Date => {
+                    date.parse_next(input).map(DateTimeOrDate::Date)
+                }
+            }?;
 
             let params = DtParams { tz_id };
 
             (Prop::Known(KnownProp::DtEnd(value, params)), unknown_params)
+        }
+        PropName::Rfc5545(Rfc5545PropName::DateTimeDue) => {
+            let step =
+                dt_param_step(PropName::Rfc5545(Rfc5545PropName::DateTimeDue));
+
+            let (DtParamState { value_type, tz_id }, unknown_params) =
+                sm_parse_next(
+                    StateMachine::new(DtParamState::default(), step),
+                    input,
+                )?;
+
+            let _ = ':'.parse_next(input)?;
+
+            let value = match value_type.unwrap_or_default() {
+                DateTimeOrDateType::DateTime => {
+                    datetime.parse_next(input).map(DateTimeOrDate::DateTime)
+                }
+                DateTimeOrDateType::Date => {
+                    date.parse_next(input).map(DateTimeOrDate::Date)
+                }
+            }?;
+
+            let params = DtParams { tz_id };
+
+            (Prop::Known(KnownProp::DtDue(value, params)), unknown_params)
+        }
+        PropName::Rfc5545(Rfc5545PropName::DateTimeStart) => {
+            let step = dt_param_step(PropName::Rfc5545(
+                Rfc5545PropName::DateTimeStart,
+            ));
+
+            let (DtParamState { value_type, tz_id }, unknown_params) =
+                sm_parse_next(
+                    StateMachine::new(DtParamState::default(), step),
+                    input,
+                )?;
+
+            let _ = ':'.parse_next(input)?;
+
+            let value = match value_type.unwrap_or_default() {
+                DateTimeOrDateType::DateTime => {
+                    datetime.parse_next(input).map(DateTimeOrDate::DateTime)
+                }
+                DateTimeOrDateType::Date => {
+                    date.parse_next(input).map(DateTimeOrDate::Date)
+                }
+            }?;
+
+            let params = DtParams { tz_id };
+
+            (
+                Prop::Known(KnownProp::DtStart(value, params)),
+                unknown_params,
+            )
+        }
+        PropName::Rfc5545(Rfc5545PropName::Duration) => {
+            let step =
+                trivial_step(PropName::Rfc5545(Rfc5545PropName::Duration));
+
+            let ((), unknown_params) =
+                sm_parse_next(StateMachine::new((), step), input)?;
+
+            let _ = ':'.parse_next(input)?;
+            let value = duration.parse_next(input)?;
+
+            (Prop::Known(KnownProp::Duration(value)), unknown_params)
+        }
+        PropName::Rfc5545(Rfc5545PropName::FreeBusyTime) => {
+            type State<S> = Option<FreeBusyType<S>>;
+
+            fn step<S>(
+                param: KnownParam<S>,
+                state: &mut State<S>,
+            ) -> Result<(), DuplicateOrUnexpectedError<S>> {
+                match param {
+                    KnownParam::FBType(free_busy_type) => match state {
+                        Some(_) => Err(DuplicateOrUnexpectedError::Duplicate(
+                            DuplicateParamError(StaticParamName::Rfc5545(
+                                Rfc5545ParamName::FreeBusyTimeType,
+                            )),
+                        )),
+                        None => {
+                            *state = Some(free_busy_type);
+                            Ok(())
+                        }
+                    },
+                    unexpected_param => {
+                        Err(DuplicateOrUnexpectedError::Unexpected(
+                            UnexpectedKnownParamError {
+                                current_property: PropName::Rfc5545(
+                                    Rfc5545PropName::FreeBusyTime,
+                                ),
+                                unexpected_param,
+                            },
+                        ))
+                    }
+                }
+            }
+
+            let (free_busy_type, unknown_params) =
+                sm_parse_next(StateMachine::new(None, step), input)?;
+
+            let _ = ':'.parse_next(input)?;
+
+            let value = separated(1.., period, ',')
+                .map(Vec::into_boxed_slice)
+                .parse_next(input)?;
+
+            let params = FBTypeParams { free_busy_type };
+
+            (
+                Prop::Known(KnownProp::FreeBusy(value, params)),
+                unknown_params,
+            )
+        }
+        PropName::Rfc5545(Rfc5545PropName::TimeTransparency) => {
+            let step = trivial_step(PropName::Rfc5545(
+                Rfc5545PropName::TimeTransparency,
+            ));
+
+            let ((), unknown_params) =
+                sm_parse_next(StateMachine::new((), step), input)?;
+
+            let _ = ':'.parse_next(input)?;
+            let value = time_transparency.parse_next(input)?;
+
+            (Prop::Known(KnownProp::Transparency(value)), unknown_params)
         }
         PropName::Rfc5545(name) => todo!(),
         PropName::Rfc7986(name) => todo!(),
