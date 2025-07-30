@@ -125,6 +125,14 @@ pub enum ImageData<S = Box<str>> {
     Binary(BinaryText<S>),
 }
 
+/// The value of the TRANSP property (RFC 5545 §3.8.2.7).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum TimeTransparency {
+    #[default]
+    Opaque,
+    Transparent,
+}
+
 /// RFC 5545 §3.2.8
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FormatType<S = Box<str>> {

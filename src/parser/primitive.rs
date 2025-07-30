@@ -18,9 +18,22 @@ use crate::model::primitive::{
     DateTime, DisplayType, Duration, DurationKind, DurationTime, Encoding,
     FeatureType, Float, FormatType, FreeBusyType, Geo, GeoComponent, Language,
     Method, ParticipationRole, ParticipationStatus, Period, Priority, RawText,
-    RawTime, RelationshipType, Sign, Time, TimeFormat, TriggerRelation, Uid,
-    Uri, Utc, UtcOffset, ValueType,
+    RawTime, RelationshipType, Sign, Time, TimeFormat, TimeTransparency,
+    TriggerRelation, Uid, Uri, Utc, UtcOffset, ValueType,
 };
+
+/// Parses a [`TimeTransparency`].
+pub fn time_transparency<I, E>(input: &mut I) -> Result<TimeTransparency, E>
+where
+    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
+    E: ParserError<I>,
+{
+    alt((
+        Caseless("TRANSPARENT").value(TimeTransparency::Transparent),
+        Caseless("OPAQUE").value(TimeTransparency::Opaque),
+    ))
+    .parse_next(input)
+}
 
 /// Parses a [`FeatureType`].
 pub fn feature_type<I, E>(input: &mut I) -> Result<FeatureType<I::Slice>, E>
@@ -1119,6 +1132,25 @@ mod tests {
     use crate::parser::escaped::{AsEscaped, Escaped};
 
     use super::*;
+
+    #[test]
+    fn time_transparency_parser() {
+        assert_eq!(
+            time_transparency::<_, ()>.parse_peek("opaque"),
+            Ok(("", TimeTransparency::Opaque))
+        );
+
+        assert_eq!(
+            time_transparency::<_, ()>.parse_peek("TRANSPARENT"),
+            Ok(("", TimeTransparency::Transparent))
+        );
+
+        assert!(
+            time_transparency::<_, ()>
+                .parse_peek("anything else")
+                .is_err()
+        );
+    }
 
     #[test]
     fn feature_type_parser() {
