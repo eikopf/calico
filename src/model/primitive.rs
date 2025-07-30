@@ -2,6 +2,9 @@
 
 use chrono::NaiveDate;
 
+/// The INTEGER type as defined in RFC 5545 §3.3.8.
+pub type Integer = i32;
+
 /// A method as defined in RFC 5546 §1.4
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Method<S = Box<str>> {

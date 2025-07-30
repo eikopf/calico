@@ -17,10 +17,10 @@ use crate::model::primitive::{
     AlarmAction, BinaryText, CalendarUserType, ClassValue,
     CompletionPercentage, Date, DateTime, DisplayType, Duration, DurationKind,
     DurationTime, Encoding, FeatureType, Float, FormatType, FreeBusyType, Geo,
-    GeoComponent, Language, Method, ParticipationRole, ParticipationStatus,
-    Period, Priority, RawTime, RelationshipType, Sign, Text, Time, TimeFormat,
-    TimeTransparency, TriggerRelation, TzId, Uid, Uri, Utc, UtcOffset,
-    ValueType,
+    GeoComponent, Integer, Language, Method, ParticipationRole,
+    ParticipationStatus, Period, Priority, RawTime, RelationshipType, Sign,
+    Text, Time, TimeFormat, TimeTransparency, TriggerRelation, TzId, Uid, Uri,
+    Utc, UtcOffset, ValueType,
 };
 
 /// Parses an [`AlarmAction`].
@@ -942,7 +942,7 @@ where
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct InvalidPriorityError(i32);
+pub struct InvalidPriorityError(Integer);
 
 /// Parses a [`Priority`].
 pub fn priority<I, E>(input: &mut I) -> Result<Priority, E>
@@ -972,7 +972,7 @@ where
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct InvalidCompletionPercentageError(i32);
+pub struct InvalidCompletionPercentageError(Integer);
 
 /// Parses a [`CompletionPercentage`].
 pub fn completion_percentage<I, E>(
@@ -1090,7 +1090,7 @@ pub struct InvalidIntegerError {
     digits: u64,
 }
 
-pub fn integer<I, E>(input: &mut I) -> Result<i32, E>
+pub fn integer<I, E>(input: &mut I) -> Result<Integer, E>
 where
     I: StreamIsPartial + Stream + Compare<char>,
     I::Token: AsChar + Clone,
@@ -1105,7 +1105,7 @@ where
     i64::try_from(digits)
         .ok()
         .and_then(|d| d.checked_mul(sign.unwrap_or_default() as i64))
-        .and_then(|i| i32::try_from(i).ok())
+        .and_then(|i| Integer::try_from(i).ok())
         .ok_or_else(|| E::from_external_error(input, error))
 }
 
@@ -1814,11 +1814,11 @@ mod tests {
         assert_eq!(integer::<_, ()>.parse_peek("-17"), Ok(("", -17)));
         assert_eq!(
             integer::<_, ()>.parse_peek("2147483647"),
-            Ok(("", i32::MAX))
+            Ok(("", Integer::MAX))
         );
         assert_eq!(
             integer::<_, ()>.parse_peek("-2147483648"),
-            Ok(("", i32::MIN))
+            Ok(("", Integer::MIN))
         );
         assert!(integer::<_, ()>.parse_peek("2147483648").is_err());
     }
