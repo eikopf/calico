@@ -2,6 +2,8 @@
 
 use std::collections::HashMap;
 
+use crate::parser::parameter::ParamValue;
+
 use super::primitive::{
     CalendarUserType, DisplayType, FeatureType, FormatType, FreeBusyType,
     ImageData, Language, ParticipationRole, ParticipationStatus,
@@ -47,7 +49,7 @@ pub struct AttendeeParams<S = Box<str>> {
     pub delegatees: Option<Box<[Uri<S>]>>,
     pub delegators: Option<Box<[Uri<S>]>>,
     pub sent_by: Option<Uri<S>>,
-    pub common_name: Option<S>,
+    pub common_name: Option<ParamValue<S>>,
     pub directory_entry_reference: Option<Uri<S>>,
 }
 
@@ -56,14 +58,14 @@ pub struct AttendeeParams<S = Box<str>> {
 pub struct OrganizerParams<S = Box<str>> {
     pub language: Option<Language<S>>,
     pub sent_by: Option<Uri<S>>,
-    pub common_name: Option<S>,
+    pub common_name: Option<ParamValue<S>>,
     pub directory_entry_reference: Option<Uri<S>>,
 }
 
 /// The parameters associated with the `RECURRENCE-ID` property.
 #[derive(Debug, Clone, Copy)]
 pub struct RecurrenceIdParams<S = Box<str>> {
-    pub tz_id: Option<S>,
+    pub tz_id: Option<TzId<S>>,
     pub recurrence_identifier_range: Option<ThisAndFuture>,
 }
 

@@ -16,8 +16,9 @@ use crate::{
             AlarmAction, AttachValue, ClassValue, CompletionPercentage,
             DateTime, DateTimeOrDate, Duration, Encoding, FormatType,
             FreeBusyType, Geo, ImageData, Language, Method,
-            ParticipationStatus, Period, Priority, RDate, Text,
-            TimeTransparency, TzId, Uid, Uri, Utc, UtcOffset, Value, ValueType,
+            ParticipationStatus, Period, Priority, RDate, RelationshipType,
+            Text, ThisAndFuture, TimeTransparency, TzId, Uid, Uri, Utc,
+            UtcOffset, Value, ValueType,
         },
         property::{
             AttachParams, AttendeeParams, ConfParams, DtParams, FBTypeParams,
@@ -30,8 +31,8 @@ use crate::{
         primitive::{
             class_value, completion_percentage, datetime_utc, duration, float,
             geo, gregorian, iana_token, integer, method, participation_status,
-            period, priority, text, time_transparency, tz_id, utc_offset, v2_0,
-            x_name,
+            period, priority, text, time_transparency, tz_id, uid, utc_offset,
+            v2_0, x_name,
         },
     },
 };
@@ -47,7 +48,7 @@ use super::{
 };
 
 // NOTE: the IANA iCalendar property registry lists several registered properties
-// from RFC 6321 §4.2, RFC 7808 §7, RFC 7953 §3.2, RFC 9073 §6, and RFC 9253 § 8
+// from RFC 6321 §4.2, RFC 7808 §7, RFC 7953 §3.2, RFC 9073 §6, and RFC 9253 §8
 // that have not been included here (they would fall under the Other catch-all).
 // perhaps they should be included as static variants at some later point?
 // registry: (https://www.iana.org/assignments/icalendar/icalendar.xhtml#properties)
@@ -75,6 +76,9 @@ impl<S> Prop<S> {
         }
     }
 }
+
+// TODO: refactor value types to make Uri and CalAddress distinct types. this is
+// required for at least the Attendee and Organizer variants of KnownProp
 
 #[derive(Debug, Clone)]
 pub enum KnownProp<S> {
@@ -494,6 +498,18 @@ where
         Date,
     }
 
+    impl DateTimeOrDateType {
+        fn try_from_value_type<S>(
+            value_type: ValueType<S>,
+        ) -> Result<Self, ValueType<S>> {
+            match value_type {
+                ValueType::Date => Ok(Self::Date),
+                ValueType::DateTime => Ok(Self::DateTime),
+                value_type => Err(value_type),
+            }
+        }
+    }
+
     struct DtParamState<S> {
         value_type: Option<DateTimeOrDateType>,
         tz_id: Option<TzId<S>>,
@@ -518,11 +534,9 @@ where
                     StaticParamName::Rfc5545(Rfc5545ParamName::ValueDataType),
                 )),
                 None => {
-                    let value_type = match value_type {
-                        ValueType::Date => Ok(DateTimeOrDateType::Date),
-                        ValueType::DateTime => Ok(DateTimeOrDateType::DateTime),
-                        _ => Err(DtParamError::InvalidValueType(value_type)),
-                    }?;
+                    let value_type =
+                        DateTimeOrDateType::try_from_value_type(value_type)
+                            .map_err(DtParamError::InvalidValueType)?;
 
                     state.value_type = Some(value_type);
                     Ok(())
@@ -1096,6 +1110,440 @@ where
             let value = uri.parse_next(input)?;
 
             (Prop::Known(KnownProp::TzUrl(value)), unknown_params)
+        }
+        PropName::Rfc5545(Rfc5545PropName::Attendee) => {
+            type State<S> = AttendeeParams<S>;
+
+            fn step<S>(
+                param: KnownParam<S>,
+                state: &mut State<S>,
+            ) -> Result<(), DuplicateOrUnexpectedError<S>> {
+                let name = param.name();
+                match param {
+                    KnownParam::CommonName(common_name) => match state
+                        .common_name
+                    {
+                        Some(_) => Err(DuplicateOrUnexpectedError::Duplicate(
+                            DuplicateParamError(name),
+                        )),
+                        None => {
+                            state.common_name = Some(common_name);
+                            Ok(())
+                        }
+                    },
+                    KnownParam::CUType(calendar_user_type) => {
+                        match state.calendar_user_type {
+                            Some(_) => {
+                                Err(DuplicateOrUnexpectedError::Duplicate(
+                                    DuplicateParamError(name),
+                                ))
+                            }
+                            None => {
+                                state.calendar_user_type =
+                                    Some(calendar_user_type);
+                                Ok(())
+                            }
+                        }
+                    }
+                    KnownParam::DelFrom(delegators) => match state.delegators {
+                        Some(_) => Err(DuplicateOrUnexpectedError::Duplicate(
+                            DuplicateParamError(name),
+                        )),
+                        None => {
+                            state.delegators = Some(delegators);
+                            Ok(())
+                        }
+                    },
+                    KnownParam::DelTo(delegatees) => match state.delegatees {
+                        Some(_) => Err(DuplicateOrUnexpectedError::Duplicate(
+                            DuplicateParamError(name),
+                        )),
+                        None => {
+                            state.delegatees = Some(delegatees);
+                            Ok(())
+                        }
+                    },
+                    KnownParam::Dir(dir) => match state
+                        .directory_entry_reference
+                    {
+                        Some(_) => Err(DuplicateOrUnexpectedError::Duplicate(
+                            DuplicateParamError(name),
+                        )),
+                        None => {
+                            state.directory_entry_reference = Some(dir);
+                            Ok(())
+                        }
+                    },
+                    KnownParam::Language(language) => match state.language {
+                        Some(_) => Err(DuplicateOrUnexpectedError::Duplicate(
+                            DuplicateParamError(name),
+                        )),
+                        None => {
+                            state.language = Some(language);
+                            Ok(())
+                        }
+                    },
+                    KnownParam::Member(uris) => match state
+                        .group_or_list_membership
+                    {
+                        Some(_) => Err(DuplicateOrUnexpectedError::Duplicate(
+                            DuplicateParamError(name),
+                        )),
+                        None => {
+                            state.group_or_list_membership = Some(uris);
+                            Ok(())
+                        }
+                    },
+                    KnownParam::PartStatus(participation_status) => match state
+                        .participation_status
+                    {
+                        Some(_) => Err(DuplicateOrUnexpectedError::Duplicate(
+                            DuplicateParamError(name),
+                        )),
+                        None => {
+                            state.participation_status =
+                                Some(participation_status);
+                            Ok(())
+                        }
+                    },
+                    KnownParam::Role(participation_role) => match state
+                        .participation_role
+                    {
+                        Some(_) => Err(DuplicateOrUnexpectedError::Duplicate(
+                            DuplicateParamError(name),
+                        )),
+                        None => {
+                            state.participation_role = Some(participation_role);
+                            Ok(())
+                        }
+                    },
+                    KnownParam::Rsvp(rsvp_expectation) => match state
+                        .rsvp_expectation
+                    {
+                        Some(_) => Err(DuplicateOrUnexpectedError::Duplicate(
+                            DuplicateParamError(name),
+                        )),
+                        None => {
+                            state.rsvp_expectation = Some(rsvp_expectation);
+                            Ok(())
+                        }
+                    },
+                    KnownParam::SentBy(sent_by) => match state.sent_by {
+                        Some(_) => Err(DuplicateOrUnexpectedError::Duplicate(
+                            DuplicateParamError(name),
+                        )),
+                        None => {
+                            state.sent_by = Some(sent_by);
+                            Ok(())
+                        }
+                    },
+                    unexpected_param => {
+                        Err(DuplicateOrUnexpectedError::Unexpected(
+                            UnexpectedKnownParamError {
+                                current_property: PropName::Rfc5545(
+                                    Rfc5545PropName::Attendee,
+                                ),
+                                unexpected_param,
+                            },
+                        ))
+                    }
+                }
+            }
+
+            let (params, unknown_params) = sm_parse_next(
+                StateMachine::new(
+                    AttendeeParams {
+                        language: None,
+                        calendar_user_type: None,
+                        group_or_list_membership: None,
+                        participation_role: None,
+                        participation_status: None,
+                        rsvp_expectation: None,
+                        delegatees: None,
+                        delegators: None,
+                        sent_by: None,
+                        common_name: None,
+                        directory_entry_reference: None,
+                    },
+                    step,
+                ),
+                input,
+            )?;
+
+            let _ = ':'.parse_next(input)?;
+
+            // TODO: this value is properly a CAL-ADDRESS (RFC 5545 §3.3.3) and
+            // so the type should probably be distinguished from ordinary uris
+            let value = uri.parse_next(input)?;
+
+            (
+                Prop::Known(KnownProp::Attendee(value, params)),
+                unknown_params,
+            )
+        }
+        PropName::Rfc5545(prop @ Rfc5545PropName::Contact) => {
+            let step = text_param_step(PropName::Rfc5545(prop));
+
+            let (state, unknown_params) = sm_parse_next(
+                StateMachine::new(TextParamState::default(), step),
+                input,
+            )?;
+
+            let _ = ':'.parse_next(input)?;
+            let value = text.parse_next(input)?;
+            let params = state.into_params();
+
+            (
+                Prop::Known(KnownProp::Contact(value, params)),
+                unknown_params,
+            )
+        }
+        PropName::Rfc5545(Rfc5545PropName::Organizer) => {
+            type State<S> = OrganizerParams<S>;
+
+            fn step<S>(
+                param: KnownParam<S>,
+                state: &mut State<S>,
+            ) -> Result<(), DuplicateOrUnexpectedError<S>> {
+                let name = param.name();
+                match param {
+                    KnownParam::CommonName(common_name) => match state
+                        .common_name
+                    {
+                        Some(_) => Err(DuplicateOrUnexpectedError::Duplicate(
+                            DuplicateParamError(name),
+                        )),
+                        None => {
+                            state.common_name = Some(common_name);
+                            Ok(())
+                        }
+                    },
+                    KnownParam::Dir(dir) => match state
+                        .directory_entry_reference
+                    {
+                        Some(_) => Err(DuplicateOrUnexpectedError::Duplicate(
+                            DuplicateParamError(name),
+                        )),
+                        None => {
+                            state.directory_entry_reference = Some(dir);
+                            Ok(())
+                        }
+                    },
+                    KnownParam::Language(language) => match state.language {
+                        Some(_) => Err(DuplicateOrUnexpectedError::Duplicate(
+                            DuplicateParamError(name),
+                        )),
+                        None => {
+                            state.language = Some(language);
+                            Ok(())
+                        }
+                    },
+                    KnownParam::SentBy(sent_by) => match state.sent_by {
+                        Some(_) => Err(DuplicateOrUnexpectedError::Duplicate(
+                            DuplicateParamError(name),
+                        )),
+                        None => {
+                            state.sent_by = Some(sent_by);
+                            Ok(())
+                        }
+                    },
+                    unexpected_param => {
+                        Err(DuplicateOrUnexpectedError::Unexpected(
+                            UnexpectedKnownParamError {
+                                current_property: PropName::Rfc5545(
+                                    Rfc5545PropName::Organizer,
+                                ),
+                                unexpected_param,
+                            },
+                        ))
+                    }
+                }
+            }
+
+            let (params, unknown_params) = sm_parse_next(
+                StateMachine::new(
+                    OrganizerParams {
+                        language: None,
+                        sent_by: None,
+                        common_name: None,
+                        directory_entry_reference: None,
+                    },
+                    step,
+                ),
+                input,
+            )?;
+
+            let _ = ':'.parse_next(input)?;
+            let value = uri.parse_next(input)?;
+
+            (
+                Prop::Known(KnownProp::Organizer(value, params)),
+                unknown_params,
+            )
+        }
+        PropName::Rfc5545(Rfc5545PropName::RecurrenceId) => {
+            struct State<S> {
+                tz_id: Option<TzId<S>>,
+                recurrence_identifier_range: Option<ThisAndFuture>,
+                value_type: Option<DateTimeOrDateType>,
+            }
+
+            impl<S> Default for State<S> {
+                fn default() -> Self {
+                    Self {
+                        tz_id: Default::default(),
+                        recurrence_identifier_range: Default::default(),
+                        value_type: Default::default(),
+                    }
+                }
+            }
+
+            fn step<S>(
+                param: KnownParam<S>,
+                state: &mut State<S>,
+            ) -> Result<(), DtParamError<S>> {
+                let name = param.name();
+                match param {
+                    KnownParam::RecurrenceIdentifierRange => {
+                        match state.recurrence_identifier_range {
+                            Some(ThisAndFuture) => {
+                                Err(DtParamError::DuplicateParam(name))
+                            }
+                            None => {
+                                state.recurrence_identifier_range =
+                                    Some(ThisAndFuture);
+                                Ok(())
+                            }
+                        }
+                    }
+                    KnownParam::TzId(tz_id) => match state.tz_id {
+                        Some(_) => Err(DtParamError::DuplicateParam(name)),
+                        None => {
+                            state.tz_id = Some(tz_id);
+                            Ok(())
+                        }
+                    },
+                    KnownParam::Value(value_type) => match state.value_type {
+                        Some(_) => Err(DtParamError::DuplicateParam(name)),
+                        None => {
+                            let value_type =
+                                DateTimeOrDateType::try_from_value_type(
+                                    value_type,
+                                )
+                                .map_err(DtParamError::InvalidValueType)?;
+
+                            state.value_type = Some(value_type);
+                            Ok(())
+                        }
+                    },
+                    unexpected_param => Err(DtParamError::Unexpected(
+                        UnexpectedKnownParamError {
+                            current_property: PropName::Rfc5545(
+                                Rfc5545PropName::RecurrenceId,
+                            ),
+                            unexpected_param,
+                        },
+                    )),
+                }
+            }
+
+            let (
+                State {
+                    tz_id,
+                    recurrence_identifier_range,
+                    value_type,
+                },
+                unknown_params,
+            ) = sm_parse_next(
+                StateMachine::new(State::default(), step),
+                input,
+            )?;
+
+            let _ = ':'.parse_next(input)?;
+            let value = match value_type.unwrap_or_default() {
+                DateTimeOrDateType::DateTime => {
+                    datetime.parse_next(input).map(DateTimeOrDate::DateTime)
+                }
+                DateTimeOrDateType::Date => {
+                    date.parse_next(input).map(DateTimeOrDate::Date)
+                }
+            }?;
+
+            let params = RecurrenceIdParams {
+                tz_id,
+                recurrence_identifier_range,
+            };
+
+            (
+                Prop::Known(KnownProp::RecurrenceId(value, params)),
+                unknown_params,
+            )
+        }
+        PropName::Rfc5545(Rfc5545PropName::RelatedTo) => {
+            type State<S> = Option<RelationshipType<S>>;
+
+            fn step<S>(
+                param: KnownParam<S>,
+                state: &mut State<S>,
+            ) -> Result<(), DuplicateOrUnexpectedError<S>> {
+                let name = param.name();
+
+                match param {
+                    KnownParam::RelType(relationship_type) => match state {
+                        Some(_) => Err(DuplicateOrUnexpectedError::Duplicate(
+                            DuplicateParamError(name),
+                        )),
+                        None => {
+                            *state = Some(relationship_type);
+                            Ok(())
+                        }
+                    },
+                    unexpected_param => {
+                        Err(DuplicateOrUnexpectedError::Unexpected(
+                            UnexpectedKnownParamError {
+                                current_property: PropName::Rfc5545(
+                                    Rfc5545PropName::RelatedTo,
+                                ),
+                                unexpected_param,
+                            },
+                        ))
+                    }
+                }
+            }
+
+            let (relationship_type, unknown_params) = sm_parse_next(
+                StateMachine::new(State::default(), step),
+                input,
+            )?;
+
+            let _ = ':'.parse_next(input)?;
+            let value = text.parse_next(input)?;
+            let params = RelTypeParams { relationship_type };
+
+            (
+                Prop::Known(KnownProp::RelatedTo(value, params)),
+                unknown_params,
+            )
+        }
+        PropName::Rfc5545(prop @ Rfc5545PropName::UniformResourceLocator) => {
+            let step = trivial_step(PropName::Rfc5545(prop));
+
+            let ((), unknown_params) =
+                sm_parse_next(StateMachine::new((), step), input)?;
+            let _ = ':'.parse_next(input)?;
+            let value = uri.parse_next(input)?;
+
+            (Prop::Known(KnownProp::Url(value)), unknown_params)
+        }
+        PropName::Rfc5545(prop @ Rfc5545PropName::UniqueIdentifier) => {
+            let step = trivial_step(PropName::Rfc5545(prop));
+
+            let ((), unknown_params) =
+                sm_parse_next(StateMachine::new((), step), input)?;
+            let _ = ':'.parse_next(input)?;
+            let value = uid.parse_next(input)?;
+
+            (Prop::Known(KnownProp::Uid(value)), unknown_params)
         }
         PropName::Rfc5545(name) => todo!(),
         PropName::Rfc7986(name) => todo!(),
