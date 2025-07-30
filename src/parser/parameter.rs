@@ -91,6 +91,86 @@ pub enum KnownParam<S = Box<str>> {
     Label(ParamValue<S>),
 }
 
+impl<S> KnownParam<S> {
+    /// Returns the [`StaticParamName`] corresponding to `self`.
+    pub const fn name(&self) -> StaticParamName {
+        match self {
+            KnownParam::AltRep(_) => StaticParamName::Rfc5545(
+                Rfc5545ParamName::AlternateTextRepresentation,
+            ),
+            KnownParam::CommonName(_) => {
+                StaticParamName::Rfc5545(Rfc5545ParamName::CommonName)
+            }
+            KnownParam::CUType(_) => {
+                StaticParamName::Rfc5545(Rfc5545ParamName::CalendarUserType)
+            }
+            KnownParam::DelFrom(_) => {
+                StaticParamName::Rfc5545(Rfc5545ParamName::Delegators)
+            }
+            KnownParam::DelTo(_) => {
+                StaticParamName::Rfc5545(Rfc5545ParamName::Delegatees)
+            }
+            KnownParam::Dir(_) => StaticParamName::Rfc5545(
+                Rfc5545ParamName::DirectoryEntryReference,
+            ),
+            KnownParam::Encoding(_) => {
+                StaticParamName::Rfc5545(Rfc5545ParamName::InlineEncoding)
+            }
+            KnownParam::FormatType(_) => {
+                StaticParamName::Rfc5545(Rfc5545ParamName::FormatType)
+            }
+            KnownParam::FBType(_) => {
+                StaticParamName::Rfc5545(Rfc5545ParamName::FreeBusyTimeType)
+            }
+            KnownParam::Language(_) => {
+                StaticParamName::Rfc5545(Rfc5545ParamName::Language)
+            }
+            KnownParam::Member(_) => StaticParamName::Rfc5545(
+                Rfc5545ParamName::GroupOrListMembership,
+            ),
+            KnownParam::PartStatus(_) => {
+                StaticParamName::Rfc5545(Rfc5545ParamName::ParticipationStatus)
+            }
+            KnownParam::RecurrenceIdentifierRange => StaticParamName::Rfc5545(
+                Rfc5545ParamName::RecurrenceIdentifierRange,
+            ),
+            KnownParam::AlarmTrigger(_) => StaticParamName::Rfc5545(
+                Rfc5545ParamName::AlarmTriggerRelationship,
+            ),
+            KnownParam::RelType(_) => {
+                StaticParamName::Rfc5545(Rfc5545ParamName::RelationshipType)
+            }
+            KnownParam::Role(_) => {
+                StaticParamName::Rfc5545(Rfc5545ParamName::ParticipationRole)
+            }
+            KnownParam::Rsvp(_) => {
+                StaticParamName::Rfc5545(Rfc5545ParamName::RsvpExpectation)
+            }
+            KnownParam::SentBy(_) => {
+                StaticParamName::Rfc5545(Rfc5545ParamName::SentBy)
+            }
+            KnownParam::TzId(_) => {
+                StaticParamName::Rfc5545(Rfc5545ParamName::TimeZoneIdentifier)
+            }
+            KnownParam::Value(_) => {
+                StaticParamName::Rfc5545(Rfc5545ParamName::ValueDataType)
+            }
+            KnownParam::Display(_) => {
+                StaticParamName::Rfc7986(Rfc7986ParamName::Display)
+            }
+            KnownParam::Email(_) => {
+                StaticParamName::Rfc7986(Rfc7986ParamName::Email)
+            }
+            KnownParam::Feature(_) => {
+                StaticParamName::Rfc7986(Rfc7986ParamName::Feature)
+            }
+            KnownParam::Label(_) => {
+                StaticParamName::Rfc7986(Rfc7986ParamName::Label)
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UnknownParam<S = Box<str>> {
     Iana {
