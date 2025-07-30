@@ -20,7 +20,7 @@ use primitive::{
     DateTimeOrDate, DisplayType, Duration, EventStatus, FeatureType,
     FreeBusyType, Geo, ImageData, JournalStatus, Language, Method,
     ParticipationRole, ParticipationStatus, Period, RDate, RelationshipType,
-    Status, Time, TodoStatus, Transparency, TriggerRelation, Uid, Uri, Utc,
+    Status, Time, TimeTransparency, TodoStatus, TriggerRelation, Uid, Uri, Utc,
     UtcOffset,
 };
 use property::{ConfProp, ImageProp, Prop, TextProp};
@@ -165,7 +165,7 @@ pub struct Event {
     pub dtend: Option<DateTimeOrDate>,
     pub status: Option<EventStatus>,
     pub priority: Option<u8>,
-    pub transparency: Option<Transparency>,
+    pub transparency: Option<TimeTransparency>,
     pub related_to: Vec<RelatedTo>,
     pub alarms: Vec<Alarm>,
 }
@@ -290,7 +290,7 @@ pub enum Property {
     DtStart(DateTimeOrDate),
     Duration(Duration),
     FreeBusy(Vec<FreeBusyPeriod>),
-    Transp(Transparency),
+    Transp(TimeTransparency),
 
     // Time Zone properties
     TzId(String),

@@ -17,8 +17,8 @@ use crate::model::primitive::{
     BinaryText, CalendarUserType, ClassValue, CompletionPercentage, Date,
     DateTime, DisplayType, Duration, DurationKind, DurationTime, Encoding,
     FeatureType, Float, FormatType, FreeBusyType, Geo, GeoComponent, Language,
-    Method, ParticipationRole, ParticipationStatus, Period, Priority, RawText,
-    RawTime, RelationshipType, Sign, Time, TimeFormat, TimeTransparency,
+    Method, ParticipationRole, ParticipationStatus, Period, Priority, RawTime,
+    RelationshipType, Sign, Text, Time, TimeFormat, TimeTransparency,
     TriggerRelation, TzId, Uid, Uri, Utc, UtcOffset, ValueType,
 };
 
@@ -29,7 +29,7 @@ where
     I::Token: AsChar + Clone,
     E: ParserError<I>,
 {
-    ('/', raw_text).take().map(TzId).parse_next(input)
+    ('/', text).take().map(TzId).parse_next(input)
 }
 
 /// Parses a [`TimeTransparency`].
@@ -136,9 +136,7 @@ where
     I::Token: AsChar + Clone,
     E: ParserError<I>,
 {
-    raw_text
-        .map(|RawText(source)| Uid(source))
-        .parse_next(input)
+    text.map(|Text(source)| Uid(source)).parse_next(input)
 }
 
 /// Parses an RFC 5646 language tag.
@@ -460,8 +458,8 @@ where
     ('X', '-', iana_token).take().parse_next(input)
 }
 
-/// Parses a [`RawText`].
-pub fn raw_text<I, E>(input: &mut I) -> Result<RawText<I::Slice>, E>
+/// Parses a [`Text`].
+pub fn text<I, E>(input: &mut I) -> Result<Text<I::Slice>, E>
 where
     I: StreamIsPartial + Stream + Compare<char>,
     I::Token: AsChar + Clone,
@@ -502,7 +500,7 @@ where
         repeat::<_, _, (), _, _>(1.., alt((safe_text, text_escape))),
     )
     .take()
-    .map(RawText)
+    .map(Text)
     .parse_next(input)
 }
 

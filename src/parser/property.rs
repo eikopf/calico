@@ -16,7 +16,7 @@ use crate::{
             AlarmAction, AttachValue, ClassValue, CompletionPercentage,
             DateTime, DateTimeOrDate, Duration, Encoding, FormatType,
             FreeBusyType, Geo, ImageData, Language, Method,
-            ParticipationStatus, Period, Priority, RDate, RawText,
+            ParticipationStatus, Period, Priority, RDate, Text,
             TimeTransparency, TzId, Uid, Uri, Utc, UtcOffset, Value, ValueType,
         },
         property::{
@@ -30,8 +30,8 @@ use crate::{
         primitive::{
             class_value, completion_percentage, datetime_utc, duration, float,
             geo, gregorian, iana_token, integer, method, participation_status,
-            period, priority, raw_text, time_transparency, tz_id, utc_offset,
-            v2_0, x_name,
+            period, priority, text, time_transparency, tz_id, utc_offset, v2_0,
+            x_name,
         },
     },
 };
@@ -84,21 +84,21 @@ pub enum KnownProp<S> {
     // CALENDAR PROPERTIES
     CalScale,
     Method(Method<S>),
-    ProdId(RawText<S>),
+    ProdId(Text<S>),
     Version,
     // DESCRIPTIVE COMPONENT PROPERTIES
     Attach(AttachValue<S>, AttachParams<S>),
-    Categories(Box<[RawText<S>]>, LangParams<S>),
+    Categories(Box<[Text<S>]>, LangParams<S>),
     Class(ClassValue<S>),
-    Comment(RawText<S>, TextParams<S>),
-    Description(RawText<S>, TextParams<S>),
+    Comment(Text<S>, TextParams<S>),
+    Description(Text<S>, TextParams<S>),
     Geo(Geo),
-    Location(RawText<S>, TextParams<S>),
+    Location(Text<S>, TextParams<S>),
     PercentComplete(CompletionPercentage),
     Priority(Priority),
-    Resources(Box<[RawText<S>]>, TextParams<S>),
+    Resources(Box<[Text<S>]>, TextParams<S>),
     Status(ParticipationStatus<S>),
-    Summary(RawText<S>, TextParams<S>),
+    Summary(Text<S>, TextParams<S>),
     // DATE AND TIME COMPONENT PROPERTIES
     DtCompleted(DateTime<Utc>),
     DtEnd(DateTimeOrDate, DtParams<S>),
@@ -109,16 +109,16 @@ pub enum KnownProp<S> {
     Transparency(TimeTransparency),
     // TIME ZONE COMPONENT PROPERTIES
     TzId(TzId<S>),
-    TzName(RawText<S>, LangParams<S>),
+    TzName(Text<S>, LangParams<S>),
     TzOffsetFrom(UtcOffset),
     TzOffsetTo(UtcOffset),
     TzUrl(Uri<S>),
     // RELATIONSHIP COMPONENT PROPERTIES
     Attendee(Uri<S>, AttendeeParams<S>),
-    Contact(RawText<S>, TextParams<S>),
+    Contact(Text<S>, TextParams<S>),
     Organizer(Uri<S>, OrganizerParams<S>),
     RecurrenceId(DateTimeOrDate, RecurrenceIdParams<S>),
-    RelatedTo(RawText<S>, RelTypeParams<S>),
+    RelatedTo(Text<S>, RelTypeParams<S>),
     Url(Uri<S>),
     Uid(Uid<S>),
     // RECURRENCE COMPONENT PROPERTIES
@@ -138,9 +138,9 @@ pub enum KnownProp<S> {
     Sequence(UInt),
     // MISCELLANEOUS COMPONENT PROPERTIES
     // TODO: the value of this property has a more precise grammar (page 143)
-    RequestStatus(RawText<S>, LangParams<S>),
+    RequestStatus(Text<S>, LangParams<S>),
     // RFC 7986 PROPERTIES
-    Name(RawText<S>, TextParams<S>),
+    Name(Text<S>, TextParams<S>),
     RefreshInterval(Duration),
     Source(Uri<S>),
     Color(Css3Color),
@@ -547,7 +547,7 @@ where
                 sm_parse_next(StateMachine::new((), step), input)?;
 
             let _ = ':'.parse_next(input)?;
-            let prod_id = raw_text.parse_next(input)?;
+            let prod_id = text.parse_next(input)?;
 
             (Prop::Known(KnownProp::ProdId(prod_id)), unknown_params)
         }
@@ -718,7 +718,7 @@ where
                 sm_parse_next(StateMachine::new(None, step), input)?;
 
             let _ = ':'.parse_next(input)?;
-            let categories = separated(1.., raw_text, ',')
+            let categories = separated(1.., text, ',')
                 .map(|v: Vec<_>| v.into_boxed_slice())
                 .parse_next(input)?;
 
@@ -752,7 +752,7 @@ where
             )?;
 
             let _ = ':'.parse_next(input)?;
-            let value = raw_text.parse_next(input)?;
+            let value = text.parse_next(input)?;
             let params = state.into_params();
 
             (
@@ -771,7 +771,7 @@ where
             )?;
 
             let _ = ':'.parse_next(input)?;
-            let value = raw_text.parse_next(input)?;
+            let value = text.parse_next(input)?;
             let params = state.into_params();
 
             (
@@ -802,7 +802,7 @@ where
             )?;
 
             let _ = ':'.parse_next(input)?;
-            let value = raw_text.parse_next(input)?;
+            let value = text.parse_next(input)?;
             let params = state.into_params();
 
             (
@@ -848,7 +848,7 @@ where
             )?;
 
             let _ = ':'.parse_next(input)?;
-            let value = separated(1.., raw_text, ',')
+            let value = separated(1.., text, ',')
                 .map(|v: Vec<_>| v.into_boxed_slice())
                 .parse_next(input)?;
 
@@ -880,7 +880,7 @@ where
             )?;
 
             let _ = ':'.parse_next(input)?;
-            let value = raw_text.parse_next(input)?;
+            let value = text.parse_next(input)?;
             let params = state.into_params();
 
             (
