@@ -15,10 +15,10 @@ use crate::{
         primitive::{
             AlarmAction, AttachValue, ClassValue, CompletionPercentage,
             DateTime, DateTimeOrDate, Duration, Encoding, FormatType,
-            FreeBusyType, Geo, ImageData, Language, Method,
+            FreeBusyType, Geo, ImageData, Integer, Language, Method,
             ParticipationStatus, Period, Priority, RDate, RelationshipType,
-            Text, ThisAndFuture, TimeTransparency, TzId, Uid, Uri, Utc,
-            UtcOffset, Value, ValueType,
+            Text, ThisAndFuture, TimeTransparency, TriggerRelation, TzId, Uid,
+            Uri, Utc, UtcOffset, Value, ValueType,
         },
         property::{
             AttachParams, AttendeeParams, ConfParams, DtParams, FBTypeParams,
@@ -29,10 +29,10 @@ use crate::{
     parser::{
         parameter::{KnownParam, Param, Rfc5545ParamName, parameter},
         primitive::{
-            class_value, completion_percentage, datetime_utc, duration, float,
-            geo, gregorian, iana_token, integer, method, participation_status,
-            period, priority, text, time_transparency, tz_id, uid, utc_offset,
-            v2_0, x_name,
+            alarm_action, class_value, completion_percentage, datetime_utc,
+            duration, float, geo, gregorian, iana_token, integer, method,
+            participation_status, period, priority, text, time_transparency,
+            tz_id, uid, utc_offset, v2_0, x_name,
         },
     },
 };
@@ -129,14 +129,14 @@ pub enum KnownProp<S> {
     RRule(()),
     // ALARM COMPONENT PROPERTIES
     Action(AlarmAction<S>),
-    Repeat(usize),
+    Repeat(Integer),
     TriggerRelative(Duration, TriggerParams),
     TriggerAbsolute(DateTime<Utc>),
     // CHANGE MANAGEMENT COMPONENT PROPERTIES
-    Created(DateTime),
-    DtStamp(DateTime),
-    LastModified(DateTime),
-    Sequence(usize),
+    Created(DateTime<Utc>),
+    DtStamp(DateTime<Utc>),
+    LastModified(DateTime<Utc>),
+    Sequence(Integer),
     // MISCELLANEOUS COMPONENT PROPERTIES
     // TODO: the value of this property has a more precise grammar (page 143)
     RequestStatus(Text<S>, LangParams<S>),
@@ -280,6 +280,18 @@ pub enum RDateParamError<S> {
     Unexpected(UnexpectedKnownParamError<S>),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TriggerParamError<S> {
+    /// The VALUE parameter occurred and was not DURATION or DATETIME.
+    InvalidValueType(ValueType<S>),
+    /// The VALUE was DATETIME and the relation parameter was present.
+    DateTimeWithRelation,
+    /// A parameter with a multiplicity less than 2 occurred more than once.
+    DuplicateParam(StaticParamName),
+    /// Received an unexpected known parameter.
+    Unexpected(UnexpectedKnownParamError<S>),
+}
+
 type ParsedProp<S> = (Prop<S>, Box<[UnknownParam<S>]>);
 
 /// Parses a [`Prop`].
@@ -306,7 +318,8 @@ where
         + FromExternalError<I, UnexpectedKnownParamError<I::Slice>>
         + FromExternalError<I, AttachParamError<I::Slice>>
         + FromExternalError<I, DtParamError<I::Slice>>
-        + FromExternalError<I, RDateParamError<I::Slice>>,
+        + FromExternalError<I, RDateParamError<I::Slice>>
+        + FromExternalError<I, TriggerParamError<I::Slice>>,
 {
     struct StateMachine<Src, S, F> {
         state: S,
@@ -1687,7 +1700,179 @@ where
 
             todo!()
         }
-        PropName::Rfc5545(name) => todo!(),
+        PropName::Rfc5545(prop @ Rfc5545PropName::Action) => {
+            let step = trivial_step(PropName::Rfc5545(prop));
+
+            let ((), unknown_params) =
+                sm_parse_next(StateMachine::new((), step), input)?;
+            let _ = ':'.parse_next(input)?;
+            let value = alarm_action.parse_next(input)?;
+
+            (Prop::Known(KnownProp::Action(value)), unknown_params)
+        }
+        PropName::Rfc5545(prop @ Rfc5545PropName::RepeatCount) => {
+            let step = trivial_step(PropName::Rfc5545(prop));
+
+            let ((), unknown_params) =
+                sm_parse_next(StateMachine::new((), step), input)?;
+            let _ = ':'.parse_next(input)?;
+
+            // NOTE: should we restrict this to being positive? the standard
+            // (RFC 5545 §3.8.6.2) doesn't explicitly provide for this, but it
+            // seems semantically incoherent to have a negative number of
+            // repetitions.
+            let value = integer.parse_next(input)?;
+
+            (Prop::Known(KnownProp::Repeat(value)), unknown_params)
+        }
+        PropName::Rfc5545(Rfc5545PropName::Trigger) => {
+            #[derive(Default)]
+            enum TriggerType {
+                #[default]
+                Duration,
+                DateTime,
+            }
+
+            impl<S> TryFrom<ValueType<S>> for TriggerType {
+                type Error = ValueType<S>;
+
+                fn try_from(value: ValueType<S>) -> Result<Self, Self::Error> {
+                    match value {
+                        ValueType::Duration => Ok(Self::Duration),
+                        ValueType::DateTime => Ok(Self::DateTime),
+                        value_type => Err(value_type),
+                    }
+                }
+            }
+
+            #[derive(Default)]
+            struct State {
+                trigger_relation: Option<TriggerRelation>,
+                value_type: Option<TriggerType>,
+            }
+
+            fn step<S>(
+                param: KnownParam<S>,
+                state: &mut State,
+            ) -> Result<(), TriggerParamError<S>> {
+                let name = param.name();
+
+                match param {
+                    KnownParam::AlarmTrigger(trigger_relation) => match state
+                        .trigger_relation
+                    {
+                        Some(_) => Err(TriggerParamError::DuplicateParam(name)),
+                        None => {
+                            state.trigger_relation = Some(trigger_relation);
+                            Ok(())
+                        }
+                    },
+                    KnownParam::Value(value_type) => match state.value_type {
+                        Some(_) => Err(TriggerParamError::DuplicateParam(name)),
+                        None => {
+                            let value_type = TriggerType::try_from(value_type)
+                                .map_err(TriggerParamError::InvalidValueType)?;
+
+                            state.value_type = Some(value_type);
+                            Ok(())
+                        }
+                    },
+                    unexpected_param => Err(TriggerParamError::Unexpected(
+                        UnexpectedKnownParamError {
+                            current_property: PropName::Rfc5545(
+                                Rfc5545PropName::Trigger,
+                            ),
+                            unexpected_param,
+                        },
+                    )),
+                }
+            }
+
+            let (
+                State {
+                    trigger_relation,
+                    value_type,
+                },
+                unknown_params,
+            ) = sm_parse_next(
+                StateMachine::new(State::default(), step),
+                input,
+            )?;
+
+            let _ = ':'.parse_next(input)?;
+
+            let prop = match value_type.unwrap_or_default() {
+                TriggerType::DateTime if trigger_relation.is_some() => {
+                    Err(E::from_external_error(
+                        input,
+                        TriggerParamError::DateTimeWithRelation,
+                    ))
+                }
+                TriggerType::DateTime => {
+                    let value = datetime_utc.parse_next(input)?;
+                    Ok(Prop::Known(KnownProp::TriggerAbsolute(value)))
+                }
+                TriggerType::Duration => {
+                    let value = duration.parse_next(input)?;
+                    let params = TriggerParams { trigger_relation };
+                    Ok(Prop::Known(KnownProp::TriggerRelative(value, params)))
+                }
+            }?;
+
+            (prop, unknown_params)
+        }
+        PropName::Rfc5545(prop @ Rfc5545PropName::DateTimeCreated) => {
+            let step = trivial_step(PropName::Rfc5545(prop));
+
+            let ((), unknown_params) =
+                sm_parse_next(StateMachine::new((), step), input)?;
+            let _ = ':'.parse_next(input)?;
+            let value = datetime_utc.parse_next(input)?;
+
+            (Prop::Known(KnownProp::Created(value)), unknown_params)
+        }
+        PropName::Rfc5545(prop @ Rfc5545PropName::DateTimeStamp) => {
+            let step = trivial_step(PropName::Rfc5545(prop));
+
+            let ((), unknown_params) =
+                sm_parse_next(StateMachine::new((), step), input)?;
+            let _ = ':'.parse_next(input)?;
+            let value = datetime_utc.parse_next(input)?;
+
+            (Prop::Known(KnownProp::DtStamp(value)), unknown_params)
+        }
+        PropName::Rfc5545(prop @ Rfc5545PropName::LastModified) => {
+            let step = trivial_step(PropName::Rfc5545(prop));
+
+            let ((), unknown_params) =
+                sm_parse_next(StateMachine::new((), step), input)?;
+            let _ = ':'.parse_next(input)?;
+            let value = datetime_utc.parse_next(input)?;
+
+            (Prop::Known(KnownProp::LastModified(value)), unknown_params)
+        }
+        PropName::Rfc5545(prop @ Rfc5545PropName::SequenceNumber) => {
+            let step = trivial_step(PropName::Rfc5545(prop));
+
+            let ((), unknown_params) =
+                sm_parse_next(StateMachine::new((), step), input)?;
+            let _ = ':'.parse_next(input)?;
+            let value = integer.parse_next(input)?;
+
+            (Prop::Known(KnownProp::Sequence(value)), unknown_params)
+        }
+        PropName::Rfc5545(prop @ Rfc5545PropName::RequestStatus) => {
+            let step = lang_param_step(PropName::Rfc5545(prop));
+
+            let (LangParamState { language }, unknown_params) = sm_parse_next(
+                StateMachine::new(LangParamState::default(), step),
+                input,
+            )?;
+
+            let _ = ':'.parse_next(input)?;
+
+            todo!()
+        }
         PropName::Rfc7986(name) => todo!(),
         PropName::Iana(name) => {
             let ((value_type, params), unknown_params) = sm_parse_next(
