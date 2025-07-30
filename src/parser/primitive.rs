@@ -14,13 +14,35 @@ use winnow::{
 };
 
 use crate::model::primitive::{
-    BinaryText, CalendarUserType, ClassValue, CompletionPercentage, Date,
-    DateTime, DisplayType, Duration, DurationKind, DurationTime, Encoding,
-    FeatureType, Float, FormatType, FreeBusyType, Geo, GeoComponent, Language,
-    Method, ParticipationRole, ParticipationStatus, Period, Priority, RawTime,
-    RelationshipType, Sign, Text, Time, TimeFormat, TimeTransparency,
-    TriggerRelation, TzId, Uid, Uri, Utc, UtcOffset, ValueType,
+    AlarmAction, BinaryText, CalendarUserType, ClassValue,
+    CompletionPercentage, Date, DateTime, DisplayType, Duration, DurationKind,
+    DurationTime, Encoding, FeatureType, Float, FormatType, FreeBusyType, Geo,
+    GeoComponent, Language, Method, ParticipationRole, ParticipationStatus,
+    Period, Priority, RawTime, RelationshipType, Sign, Text, Time, TimeFormat,
+    TimeTransparency, TriggerRelation, TzId, Uid, Uri, Utc, UtcOffset,
+    ValueType,
 };
+
+/// Parses an [`AlarmAction`].
+pub fn alarm_action<I, E>(input: &mut I) -> Result<AlarmAction<I::Slice>, E>
+where
+    I: StreamIsPartial
+        + Stream
+        + Compare<Caseless<&'static str>>
+        + Compare<char>,
+    I::Token: AsChar + Clone,
+    AlarmAction<I::Slice>: Clone,
+    E: ParserError<I>,
+{
+    alt((
+        Caseless("DISPLAY").value(AlarmAction::Display),
+        Caseless("AUDIO").value(AlarmAction::Audio),
+        Caseless("EMAIL").value(AlarmAction::Email),
+        x_name.map(AlarmAction::X),
+        iana_token.map(AlarmAction::Iana),
+    ))
+    .parse_next(input)
+}
 
 /// Parses a [`TzId`].
 pub fn tz_id<I, E>(input: &mut I) -> Result<TzId<I::Slice>, E>
@@ -1140,6 +1162,40 @@ mod tests {
     use crate::parser::escaped::{AsEscaped, Escaped};
 
     use super::*;
+
+    #[test]
+    fn alarm_action_parser() {
+        assert_eq!(
+            alarm_action::<_, ()>.parse_peek("audio"),
+            Ok(("", AlarmAction::Audio))
+        );
+
+        assert_eq!(
+            alarm_action::<_, ()>.parse_peek("DISPLAY"),
+            Ok(("", AlarmAction::Display))
+        );
+
+        assert_eq!(
+            alarm_action::<_, ()>.parse_peek("Email"),
+            Ok(("", AlarmAction::Email))
+        );
+
+        assert_eq!(
+            alarm_action::<_, ()>.parse_peek("X-extension"),
+            Ok(("", AlarmAction::X("X-extension")))
+        );
+
+        assert_eq!(
+            alarm_action::<_, ()>.parse_peek("iana-token"),
+            Ok(("", AlarmAction::Iana("iana-token")))
+        );
+    }
+
+    #[test]
+    fn tz_id_parser() {
+        assert!(tz_id::<_, ()>.parse_peek("/some text").is_ok());
+        assert!(tz_id::<_, ()>.parse_peek("no prefix").is_err());
+    }
 
     #[test]
     fn time_transparency_parser() {

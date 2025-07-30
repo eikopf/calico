@@ -245,7 +245,8 @@ pub enum AlarmAction<S = Box<str>> {
     Audio,
     Display,
     Email,
-    Other(S),
+    Iana(S),
+    X(S),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
