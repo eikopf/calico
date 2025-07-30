@@ -46,9 +46,6 @@ use super::{
     },
 };
 
-/// The type of "unbounded" unsigned integers.
-type UInt = usize;
-
 // NOTE: the IANA iCalendar property registry lists several registered properties
 // from RFC 6321 §4.2, RFC 7808 §7, RFC 7953 §3.2, RFC 9073 §6, and RFC 9253 § 8
 // that have not been included here (they would fall under the Other catch-all).
@@ -128,14 +125,14 @@ pub enum KnownProp<S> {
     RRule(()),
     // ALARM COMPONENT PROPERTIES
     Action(AlarmAction<S>),
-    Repeat(UInt),
+    Repeat(usize),
     TriggerRelative(Duration, TriggerParams),
     TriggerAbsolute(DateTime<Utc>),
     // CHANGE MANAGEMENT COMPONENT PROPERTIES
     Created(DateTime),
     DtStamp(DateTime),
     LastModified(DateTime),
-    Sequence(UInt),
+    Sequence(usize),
     // MISCELLANEOUS COMPONENT PROPERTIES
     // TODO: the value of this property has a more precise grammar (page 143)
     RequestStatus(Text<S>, LangParams<S>),
@@ -389,6 +386,45 @@ where
         }
     }
 
+    struct LangParamState<S> {
+        language: Option<Language<S>>,
+    }
+
+    impl<S> Default for LangParamState<S> {
+        fn default() -> Self {
+            Self {
+                language: Default::default(),
+            }
+        }
+    }
+
+    fn lang_param_step<S: Clone>(
+        current_property: PropName<S>,
+    ) -> impl FnMut(
+        KnownParam<S>,
+        &mut LangParamState<S>,
+    ) -> Result<(), DuplicateOrUnexpectedError<S>> {
+        move |param, state| match param {
+            KnownParam::Language(language) => match state.language {
+                Some(_) => Err(DuplicateOrUnexpectedError::Duplicate(
+                    DuplicateParamError(StaticParamName::Rfc5545(
+                        Rfc5545ParamName::Language,
+                    )),
+                )),
+                None => {
+                    state.language = Some(language);
+                    Ok(())
+                }
+            },
+            unexpected_param => Err(DuplicateOrUnexpectedError::Unexpected(
+                UnexpectedKnownParamError {
+                    current_property: current_property.clone(),
+                    unexpected_param,
+                },
+            )),
+        }
+    }
+
     struct TextParamState<S> {
         alt_rep: Option<Uri<S>>,
         language: Option<Language<S>>,
@@ -515,9 +551,8 @@ where
     let name = property_name.parse_next(input)?;
 
     Ok(match name {
-        PropName::Rfc5545(Rfc5545PropName::CalendarScale) => {
-            let step =
-                trivial_step(PropName::Rfc5545(Rfc5545PropName::CalendarScale));
+        PropName::Rfc5545(prop @ Rfc5545PropName::CalendarScale) => {
+            let step = trivial_step(PropName::Rfc5545(prop));
 
             let ((), unknown_params) =
                 sm_parse_next(StateMachine::new((), step), input)?;
@@ -527,8 +562,8 @@ where
 
             (Prop::Known(KnownProp::CalScale), unknown_params)
         }
-        PropName::Rfc5545(Rfc5545PropName::Method) => {
-            let step = trivial_step(PropName::Rfc5545(Rfc5545PropName::Method));
+        PropName::Rfc5545(prop @ Rfc5545PropName::Method) => {
+            let step = trivial_step(PropName::Rfc5545(prop));
 
             let ((), unknown_params) =
                 sm_parse_next(StateMachine::new((), step), input)?;
@@ -538,10 +573,8 @@ where
 
             (Prop::Known(KnownProp::Method(method)), unknown_params)
         }
-        PropName::Rfc5545(Rfc5545PropName::ProductIdentifier) => {
-            let step = trivial_step(PropName::Rfc5545(
-                Rfc5545PropName::ProductIdentifier,
-            ));
+        PropName::Rfc5545(prop @ Rfc5545PropName::ProductIdentifier) => {
+            let step = trivial_step(PropName::Rfc5545(prop));
 
             let ((), unknown_params) =
                 sm_parse_next(StateMachine::new((), step), input)?;
@@ -551,9 +584,8 @@ where
 
             (Prop::Known(KnownProp::ProdId(prod_id)), unknown_params)
         }
-        PropName::Rfc5545(Rfc5545PropName::Version) => {
-            let step =
-                trivial_step(PropName::Rfc5545(Rfc5545PropName::Version));
+        PropName::Rfc5545(prop @ Rfc5545PropName::Version) => {
+            let step = trivial_step(PropName::Rfc5545(prop));
 
             let ((), unknown_params) =
                 sm_parse_next(StateMachine::new((), step), input)?;
@@ -682,40 +714,13 @@ where
                 unknown_params,
             )
         }
-        PropName::Rfc5545(Rfc5545PropName::Categories) => {
-            type State<S> = Option<Language<S>>;
+        PropName::Rfc5545(prop @ Rfc5545PropName::Categories) => {
+            let step = lang_param_step(PropName::Rfc5545(prop));
 
-            fn step<S>(
-                param: KnownParam<S>,
-                state: &mut State<S>,
-            ) -> Result<(), DuplicateOrUnexpectedError<S>> {
-                match param {
-                    KnownParam::Language(language) => match state {
-                        Some(_) => Err(DuplicateOrUnexpectedError::Duplicate(
-                            DuplicateParamError(StaticParamName::Rfc5545(
-                                Rfc5545ParamName::Language,
-                            )),
-                        )),
-                        None => {
-                            *state = Some(language);
-                            Ok(())
-                        }
-                    },
-                    unexpected_param => {
-                        Err(DuplicateOrUnexpectedError::Unexpected(
-                            UnexpectedKnownParamError {
-                                current_property: PropName::Rfc5545(
-                                    Rfc5545PropName::Categories,
-                                ),
-                                unexpected_param,
-                            },
-                        ))
-                    }
-                }
-            }
-
-            let (language, unknown_params) =
-                sm_parse_next(StateMachine::new(None, step), input)?;
+            let (LangParamState { language }, unknown_params) = sm_parse_next(
+                StateMachine::new(LangParamState::default(), step),
+                input,
+            )?;
 
             let _ = ':'.parse_next(input)?;
             let categories = separated(1.., text, ',')
@@ -729,10 +734,8 @@ where
                 unknown_params,
             )
         }
-        PropName::Rfc5545(Rfc5545PropName::Classification) => {
-            let step = trivial_step(PropName::Rfc5545(
-                Rfc5545PropName::Classification,
-            ));
+        PropName::Rfc5545(prop @ Rfc5545PropName::Classification) => {
+            let step = trivial_step(PropName::Rfc5545(prop));
 
             let ((), unknown_params) =
                 sm_parse_next(StateMachine::new((), step), input)?;
@@ -742,9 +745,8 @@ where
 
             (Prop::Known(KnownProp::Class(value)), unknown_params)
         }
-        PropName::Rfc5545(Rfc5545PropName::Comment) => {
-            let step =
-                text_param_step(PropName::Rfc5545(Rfc5545PropName::Comment));
+        PropName::Rfc5545(prop @ Rfc5545PropName::Comment) => {
+            let step = text_param_step(PropName::Rfc5545(prop));
 
             let (state, unknown_params) = sm_parse_next(
                 StateMachine::new(TextParamState::default(), step),
@@ -760,10 +762,8 @@ where
                 unknown_params,
             )
         }
-        PropName::Rfc5545(Rfc5545PropName::Description) => {
-            let step = text_param_step(PropName::Rfc5545(
-                Rfc5545PropName::Description,
-            ));
+        PropName::Rfc5545(prop @ Rfc5545PropName::Description) => {
+            let step = text_param_step(PropName::Rfc5545(prop));
 
             let (state, unknown_params) = sm_parse_next(
                 StateMachine::new(TextParamState::default(), step),
@@ -779,10 +779,8 @@ where
                 unknown_params,
             )
         }
-        PropName::Rfc5545(Rfc5545PropName::GeographicPosition) => {
-            let step = trivial_step(PropName::Rfc5545(
-                Rfc5545PropName::GeographicPosition,
-            ));
+        PropName::Rfc5545(prop @ Rfc5545PropName::GeographicPosition) => {
+            let step = trivial_step(PropName::Rfc5545(prop));
 
             let ((), unknown_params) =
                 sm_parse_next(StateMachine::new((), step), input)?;
@@ -792,9 +790,8 @@ where
 
             (Prop::Known(KnownProp::Geo(value)), unknown_params)
         }
-        PropName::Rfc5545(Rfc5545PropName::Location) => {
-            let step =
-                text_param_step(PropName::Rfc5545(Rfc5545PropName::Location));
+        PropName::Rfc5545(prop @ Rfc5545PropName::Location) => {
+            let step = text_param_step(PropName::Rfc5545(prop));
 
             let (state, unknown_params) = sm_parse_next(
                 StateMachine::new(TextParamState::default(), step),
@@ -810,10 +807,8 @@ where
                 unknown_params,
             )
         }
-        PropName::Rfc5545(Rfc5545PropName::PercentComplete) => {
-            let step = trivial_step(PropName::Rfc5545(
-                Rfc5545PropName::PercentComplete,
-            ));
+        PropName::Rfc5545(prop @ Rfc5545PropName::PercentComplete) => {
+            let step = trivial_step(PropName::Rfc5545(prop));
 
             let ((), unknown_params) =
                 sm_parse_next(StateMachine::new((), step), input)?;
@@ -826,9 +821,8 @@ where
                 unknown_params,
             )
         }
-        PropName::Rfc5545(Rfc5545PropName::Priority) => {
-            let step =
-                trivial_step(PropName::Rfc5545(Rfc5545PropName::Priority));
+        PropName::Rfc5545(prop @ Rfc5545PropName::Priority) => {
+            let step = trivial_step(PropName::Rfc5545(prop));
 
             let ((), unknown_params) =
                 sm_parse_next(StateMachine::new((), step), input)?;
@@ -838,9 +832,8 @@ where
 
             (Prop::Known(KnownProp::Priority(value)), unknown_params)
         }
-        PropName::Rfc5545(Rfc5545PropName::Resources) => {
-            let step =
-                text_param_step(PropName::Rfc5545(Rfc5545PropName::Resources));
+        PropName::Rfc5545(prop @ Rfc5545PropName::Resources) => {
+            let step = text_param_step(PropName::Rfc5545(prop));
 
             let (state, unknown_params) = sm_parse_next(
                 StateMachine::new(TextParamState::default(), step),
@@ -859,8 +852,8 @@ where
                 unknown_params,
             )
         }
-        PropName::Rfc5545(Rfc5545PropName::Status) => {
-            let step = trivial_step(PropName::Rfc5545(Rfc5545PropName::Status));
+        PropName::Rfc5545(prop @ Rfc5545PropName::Status) => {
+            let step = trivial_step(PropName::Rfc5545(prop));
 
             let ((), unknown_params) =
                 sm_parse_next(StateMachine::new((), step), input)?;
@@ -870,9 +863,8 @@ where
 
             (Prop::Known(KnownProp::Status(status)), unknown_params)
         }
-        PropName::Rfc5545(Rfc5545PropName::Summary) => {
-            let step =
-                text_param_step(PropName::Rfc5545(Rfc5545PropName::Summary));
+        PropName::Rfc5545(prop @ Rfc5545PropName::Summary) => {
+            let step = text_param_step(PropName::Rfc5545(prop));
 
             let (state, unknown_params) = sm_parse_next(
                 StateMachine::new(TextParamState::default(), step),
@@ -888,10 +880,8 @@ where
                 unknown_params,
             )
         }
-        PropName::Rfc5545(Rfc5545PropName::DateTimeCompleted) => {
-            let step = trivial_step(PropName::Rfc5545(
-                Rfc5545PropName::DateTimeCompleted,
-            ));
+        PropName::Rfc5545(prop @ Rfc5545PropName::DateTimeCompleted) => {
+            let step = trivial_step(PropName::Rfc5545(prop));
 
             let ((), unknown_params) =
                 sm_parse_next(StateMachine::new((), step), input)?;
@@ -901,9 +891,8 @@ where
 
             (Prop::Known(KnownProp::DtCompleted(dt)), unknown_params)
         }
-        PropName::Rfc5545(Rfc5545PropName::DateTimeEnd) => {
-            let step =
-                dt_param_step(PropName::Rfc5545(Rfc5545PropName::DateTimeEnd));
+        PropName::Rfc5545(prop @ Rfc5545PropName::DateTimeEnd) => {
+            let step = dt_param_step(PropName::Rfc5545(prop));
 
             let (DtParamState { value_type, tz_id }, unknown_params) =
                 sm_parse_next(
@@ -926,9 +915,8 @@ where
 
             (Prop::Known(KnownProp::DtEnd(value, params)), unknown_params)
         }
-        PropName::Rfc5545(Rfc5545PropName::DateTimeDue) => {
-            let step =
-                dt_param_step(PropName::Rfc5545(Rfc5545PropName::DateTimeDue));
+        PropName::Rfc5545(prop @ Rfc5545PropName::DateTimeDue) => {
+            let step = dt_param_step(PropName::Rfc5545(prop));
 
             let (DtParamState { value_type, tz_id }, unknown_params) =
                 sm_parse_next(
@@ -951,10 +939,8 @@ where
 
             (Prop::Known(KnownProp::DtDue(value, params)), unknown_params)
         }
-        PropName::Rfc5545(Rfc5545PropName::DateTimeStart) => {
-            let step = dt_param_step(PropName::Rfc5545(
-                Rfc5545PropName::DateTimeStart,
-            ));
+        PropName::Rfc5545(prop @ Rfc5545PropName::DateTimeStart) => {
+            let step = dt_param_step(PropName::Rfc5545(prop));
 
             let (DtParamState { value_type, tz_id }, unknown_params) =
                 sm_parse_next(
@@ -980,9 +966,8 @@ where
                 unknown_params,
             )
         }
-        PropName::Rfc5545(Rfc5545PropName::Duration) => {
-            let step =
-                trivial_step(PropName::Rfc5545(Rfc5545PropName::Duration));
+        PropName::Rfc5545(prop @ Rfc5545PropName::Duration) => {
+            let step = trivial_step(PropName::Rfc5545(prop));
 
             let ((), unknown_params) =
                 sm_parse_next(StateMachine::new((), step), input)?;
@@ -1061,6 +1046,56 @@ where
             let value = tz_id.parse_next(input)?;
 
             (Prop::Known(KnownProp::TzId(value)), unknown_params)
+        }
+        PropName::Rfc5545(prop @ Rfc5545PropName::TimeZoneName) => {
+            let step = lang_param_step(PropName::Rfc5545(prop));
+
+            let (LangParamState { language }, unknown_params) = sm_parse_next(
+                StateMachine::new(LangParamState::default(), step),
+                input,
+            )?;
+
+            let _ = ':'.parse_next(input)?;
+            let value = text.parse_next(input)?;
+            let params = LangParams { language };
+
+            (
+                Prop::Known(KnownProp::TzName(value, params)),
+                unknown_params,
+            )
+        }
+        PropName::Rfc5545(prop @ Rfc5545PropName::TimeZoneOffsetFrom) => {
+            let step = trivial_step(PropName::Rfc5545(prop));
+
+            let ((), unknown_params) =
+                sm_parse_next(StateMachine::new((), step), input)?;
+
+            let _ = ':'.parse_next(input)?;
+            let value = utc_offset.parse_next(input)?;
+
+            (Prop::Known(KnownProp::TzOffsetFrom(value)), unknown_params)
+        }
+        PropName::Rfc5545(prop @ Rfc5545PropName::TimeZoneOffsetTo) => {
+            let step = trivial_step(PropName::Rfc5545(prop));
+
+            let ((), unknown_params) =
+                sm_parse_next(StateMachine::new((), step), input)?;
+
+            let _ = ':'.parse_next(input)?;
+            let value = utc_offset.parse_next(input)?;
+
+            (Prop::Known(KnownProp::TzOffsetTo(value)), unknown_params)
+        }
+        PropName::Rfc5545(prop @ Rfc5545PropName::TimeZoneUrl) => {
+            let step = trivial_step(PropName::Rfc5545(prop));
+
+            let ((), unknown_params) =
+                sm_parse_next(StateMachine::new((), step), input)?;
+
+            let _ = ':'.parse_next(input)?;
+            let value = uri.parse_next(input)?;
+
+            (Prop::Known(KnownProp::TzUrl(value)), unknown_params)
         }
         PropName::Rfc5545(name) => todo!(),
         PropName::Rfc7986(name) => todo!(),
