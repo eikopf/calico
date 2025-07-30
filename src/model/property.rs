@@ -87,12 +87,6 @@ pub struct DtParams<S = Box<str>> {
     pub tz_id: Option<TzId<S>>,
 }
 
-/// The parameters associated with the `RDATE` property.
-#[derive(Debug, Clone, Copy)]
-pub struct RDateParams<S = Box<str>> {
-    pub tz_id: Option<S>,
-}
-
 /// The parameters associated with the `TRIGGER` property.
 #[derive(Debug, Clone, Copy)]
 pub struct TriggerParams {

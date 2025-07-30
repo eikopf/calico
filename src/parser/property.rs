@@ -22,8 +22,8 @@ use crate::{
         },
         property::{
             AttachParams, AttendeeParams, ConfParams, DtParams, FBTypeParams,
-            ImageParams, LangParams, OrganizerParams, RDateParams,
-            RecurrenceIdParams, RelTypeParams, TextParams, TriggerParams,
+            ImageParams, LangParams, OrganizerParams, RecurrenceIdParams,
+            RelTypeParams, TextParams, TriggerParams,
         },
     },
     parser::{
@@ -124,7 +124,7 @@ pub enum KnownProp<S> {
     Uid(Uid<S>),
     // RECURRENCE COMPONENT PROPERTIES
     ExDate(DateTimeOrDate, DtParams<S>),
-    RDate(RDate, RDateParams<S>),
+    RDate(Box<[RDate]>, DtParams<S>),
     // TODO: finish recurrence rule model
     RRule(()),
     // ALARM COMPONENT PROPERTIES
@@ -270,6 +270,16 @@ pub enum DtParamError<S> {
     Unexpected(UnexpectedKnownParamError<S>),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RDateParamError<S> {
+    /// The VALUE parameter occurred and was not DATETIME, DATE, or PERIOD.
+    InvalidValueType(ValueType<S>),
+    /// A parameter with a multiplicity less than 2 occurred more than once.
+    DuplicateParam(StaticParamName),
+    /// Received an unexpected known parameter.
+    Unexpected(UnexpectedKnownParamError<S>),
+}
+
 type ParsedProp<S> = (Prop<S>, Box<[UnknownParam<S>]>);
 
 /// Parses a [`Prop`].
@@ -295,7 +305,8 @@ where
         + FromExternalError<I, DuplicateOrUnexpectedError<I::Slice>>
         + FromExternalError<I, UnexpectedKnownParamError<I::Slice>>
         + FromExternalError<I, AttachParamError<I::Slice>>
-        + FromExternalError<I, DtParamError<I::Slice>>,
+        + FromExternalError<I, DtParamError<I::Slice>>
+        + FromExternalError<I, RDateParamError<I::Slice>>,
 {
     struct StateMachine<Src, S, F> {
         state: S,
@@ -1545,6 +1556,137 @@ where
 
             (Prop::Known(KnownProp::Uid(value)), unknown_params)
         }
+        PropName::Rfc5545(prop @ Rfc5545PropName::ExceptionDateTimes) => {
+            let step = dt_param_step(PropName::Rfc5545(prop));
+
+            let (DtParamState { value_type, tz_id }, unknown_params) =
+                sm_parse_next(
+                    StateMachine::new(DtParamState::default(), step),
+                    input,
+                )?;
+
+            let _ = ':'.parse_next(input)?;
+            let value = match value_type.unwrap_or_default() {
+                DateTimeOrDateType::DateTime => {
+                    datetime.parse_next(input).map(DateTimeOrDate::DateTime)
+                }
+                DateTimeOrDateType::Date => {
+                    date.parse_next(input).map(DateTimeOrDate::Date)
+                }
+            }?;
+
+            let params = DtParams { tz_id };
+
+            (
+                Prop::Known(KnownProp::ExDate(value, params)),
+                unknown_params,
+            )
+        }
+        PropName::Rfc5545(Rfc5545PropName::RecurrenceDateTimes) => {
+            #[derive(Default)]
+            enum RDateType {
+                #[default]
+                DateTime,
+                Date,
+                Period,
+            }
+
+            impl<S> TryFrom<ValueType<S>> for RDateType {
+                type Error = ValueType<S>;
+
+                fn try_from(value: ValueType<S>) -> Result<Self, Self::Error> {
+                    match value {
+                        ValueType::Date => Ok(Self::Date),
+                        ValueType::DateTime => Ok(Self::DateTime),
+                        ValueType::Period => Ok(Self::Period),
+                        value_type => Err(value_type),
+                    }
+                }
+            }
+
+            struct State<S> {
+                value_type: Option<RDateType>,
+                tz_id: Option<TzId<S>>,
+            }
+
+            impl<S> Default for State<S> {
+                fn default() -> Self {
+                    Self {
+                        value_type: Default::default(),
+                        tz_id: Default::default(),
+                    }
+                }
+            }
+
+            fn step<S>(
+                param: KnownParam<S>,
+                state: &mut State<S>,
+            ) -> Result<(), RDateParamError<S>> {
+                let name = param.name();
+
+                match param {
+                    KnownParam::TzId(tz_id) => match state.tz_id {
+                        Some(_) => Err(RDateParamError::DuplicateParam(name)),
+                        None => {
+                            state.tz_id = Some(tz_id);
+                            Ok(())
+                        }
+                    },
+                    KnownParam::Value(value_type) => match state.value_type {
+                        Some(_) => Err(RDateParamError::DuplicateParam(name)),
+                        None => {
+                            let value_type = RDateType::try_from(value_type)
+                                .map_err(RDateParamError::InvalidValueType)?;
+
+                            state.value_type = Some(value_type);
+                            Ok(())
+                        }
+                    },
+                    unexpected_param => Err(RDateParamError::Unexpected(
+                        UnexpectedKnownParamError {
+                            current_property: PropName::Rfc5545(
+                                Rfc5545PropName::RecurrenceDateTimes,
+                            ),
+                            unexpected_param,
+                        },
+                    )),
+                }
+            }
+
+            let (State { value_type, tz_id }, unknown_params) = sm_parse_next(
+                StateMachine::new(State::default(), step),
+                input,
+            )?;
+
+            let params = DtParams { tz_id };
+            let _ = ':'.parse_next(input)?;
+            let value = match value_type.unwrap_or_default() {
+                RDateType::DateTime => {
+                    separated(1.., datetime.map(RDate::DateTime), ',')
+                        .map(Vec::into_boxed_slice)
+                        .parse_next(input)
+                }
+                RDateType::Date => separated(1.., date.map(RDate::Date), ',')
+                    .map(Vec::into_boxed_slice)
+                    .parse_next(input),
+                RDateType::Period => {
+                    separated(1.., period.map(RDate::Period), ',')
+                        .map(Vec::into_boxed_slice)
+                        .parse_next(input)
+                }
+            }?;
+
+            (Prop::Known(KnownProp::RDate(value, params)), unknown_params)
+        }
+        PropName::Rfc5545(prop @ Rfc5545PropName::RecurrenceRule) => {
+            let step = trivial_step(PropName::Rfc5545(prop));
+
+            let ((), unknown_params) =
+                sm_parse_next(StateMachine::new((), step), input)?;
+            let _ = ':'.parse_next(input)?;
+
+            todo!()
+        }
         PropName::Rfc5545(name) => todo!(),
         PropName::Rfc7986(name) => todo!(),
         PropName::Iana(name) => {
@@ -1897,6 +2039,22 @@ mod tests {
     use winnow::Parser;
 
     // PROPERTY PARSING TESTS
+
+    #[test]
+    fn rfc_5545_example_uid_property() {
+        let input = "UID:19960401T080045Z-4000F192713-0052@example.com";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+
+        let Prop::Known(KnownProp::Uid(uid)) = prop else {
+            panic!()
+        };
+
+        assert_eq!(uid, Uid("19960401T080045Z-4000F192713-0052@example.com"));
+    }
 
     #[test]
     fn rfc_5545_example_iana_property() {
