@@ -19,8 +19,18 @@ use crate::model::primitive::{
     FeatureType, Float, FormatType, FreeBusyType, Geo, GeoComponent, Language,
     Method, ParticipationRole, ParticipationStatus, Period, Priority, RawText,
     RawTime, RelationshipType, Sign, Time, TimeFormat, TimeTransparency,
-    TriggerRelation, Uid, Uri, Utc, UtcOffset, ValueType,
+    TriggerRelation, TzId, Uid, Uri, Utc, UtcOffset, ValueType,
 };
+
+/// Parses a [`TzId`].
+pub fn tz_id<I, E>(input: &mut I) -> Result<TzId<I::Slice>, E>
+where
+    I: StreamIsPartial + Stream + Compare<char>,
+    I::Token: AsChar + Clone,
+    E: ParserError<I>,
+{
+    ('/', raw_text).take().map(TzId).parse_next(input)
+}
 
 /// Parses a [`TimeTransparency`].
 pub fn time_transparency<I, E>(input: &mut I) -> Result<TimeTransparency, E>
