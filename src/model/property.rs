@@ -7,17 +7,22 @@ use crate::parser::parameter::ParamValue;
 use super::primitive::{
     CalendarUserType, DisplayType, FeatureType, FormatType, FreeBusyType,
     ImageData, Language, ParticipationRole, ParticipationStatus,
-    RelationshipType, ThisAndFuture, TriggerRelation, TzId, Uri,
+    RelationshipType, Text, ThisAndFuture, TriggerRelation, TzId, Uri,
 };
 
 /// An ordinary textual property.
-pub type TextProp = Prop<Box<str>, TextParams>;
+pub type TextProp<S> = Prop<Text<S>, TextParams<S>>;
+
+/// A textual property with the LANGUAGE parameter.
+pub type LangProp<S> = Prop<Text<S>, LangParams<S>>;
+
+pub type SeqLangProp<S> = Prop<Box<[Text<S>]>, LangParams<S>>;
 
 /// An ordinary image property.
-pub type ImageProp = Prop<ImageData, ImageParams>;
+pub type ImageProp<S> = Prop<ImageData<S>, ImageParams<S>>;
 
 /// A conference property.
-pub type ConfProp = Prop<Uri<Box<str>>, ConfParams>;
+pub type ConfProp<S> = Prop<Uri<S>, ConfParams<S>>;
 
 /// A property generic over values and parameters.
 #[derive(Debug, Clone)]
@@ -94,28 +99,28 @@ pub struct TriggerParams {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct FBTypeParams<S = Box<str>> {
+pub struct FBTypeParams<S> {
     pub free_busy_type: Option<FreeBusyType<S>>,
 }
 
 /// The parameters usually associated with text values.
 #[derive(Debug, Clone, Copy)]
-pub struct TextParams<S = Box<str>> {
+pub struct TextParams<S> {
     pub language: Option<Language<S>>,
     pub alternate_representation: Option<Uri<S>>,
 }
 
 /// The parameters usually associated with image data.
 #[derive(Debug, Clone)]
-pub struct ImageParams<S = Box<str>> {
-    pub format_type: Option<FormatType>,
+pub struct ImageParams<S> {
+    pub format_type: Option<FormatType<S>>,
     pub display: Option<DisplayType<S>>,
     pub alternate_representation: Option<Uri<S>>,
 }
 
 /// The parameters associated with the CONFERENCE property.
 #[derive(Debug, Clone)]
-pub struct ConfParams<S = Box<str>> {
+pub struct ConfParams<S> {
     pub feature_type: Vec<FeatureType<S>>,
     pub label: Option<S>,
     pub language: Option<Language<S>>,

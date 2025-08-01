@@ -20,10 +20,10 @@ use primitive::{
     DateTimeOrDate, DisplayType, Duration, EventStatus, FeatureType,
     FreeBusyType, Geo, ImageData, JournalStatus, Language, Method,
     ParticipationRole, ParticipationStatus, Period, RDate, RelationshipType,
-    Status, Time, TimeTransparency, TodoStatus, TriggerRelation, Uid, Uri, Utc,
-    UtcOffset,
+    Status, Text, Time, TimeTransparency, TodoStatus, TriggerRelation, Uid,
+    Uri, Utc, UtcOffset,
 };
-use property::{ConfProp, ImageProp, Prop, TextProp};
+use property::{ConfProp, ImageProp, Prop, SeqLangProp, TextProp};
 use rrule::RecurrenceRule;
 use std::collections::HashMap;
 
@@ -32,83 +32,90 @@ pub mod primitive;
 pub mod property;
 pub mod rrule;
 
+// TODO: this top-level model requires a significant refactor. in particular,
+// the idea of "sharing property groups" (as in e.g. DescriptiveProperties) is
+// inadequate, since the same property may have a different multiplicity based
+// on the component it occurs in. for example, the description property may
+// occur 0 or 1 times in VEVENT, VTODO, and VALARM, but may occur any number of
+// times in the VJOURNAL component.
+
 // NOTE: some properties are (), but not omitted, because it's still legal to
 // add arbitrary extra parameters to them. if this were not the case, the
 // calendar_scale and version fields on Calendar could be removed.
 
 /// Top-level iCalendar object.
 #[derive(Debug, Clone)]
-pub struct Calendar {
+pub struct Calendar<S> {
     /// RFC 5545 §3.7.1 (always GREGORIAN in practice)
     pub calendar_scale: Prop<()>,
     /// RFC 5545 §3.7.2
-    pub method: Option<Prop<Method>>,
+    pub method: Option<Prop<Method<S>>>,
     /// RFC 5545 §3.7.3
-    pub product_id: Prop<Box<str>>,
+    pub product_id: Prop<Text<S>>,
     /// RFC 5545 §3.7.4 (always 2.0 in practice)
     pub version: Prop<()>,
 
     /// RFC 7986 §5.1
-    pub name: Vec<TextProp>,
+    pub name: Vec<TextProp<S>>,
     /// RFC 7986 §5.2
-    pub description: Vec<TextProp>,
+    pub description: Vec<TextProp<S>>,
     /// RFC 7986 §5.3
-    pub uid: Option<Prop<Uid>>,
+    pub uid: Option<Prop<Uid<S>>>,
     /// RFC 7986 §5.4
-    pub last_modified: Option<Prop<DateTime>>,
+    pub last_modified: Option<Prop<DateTime<Utc>>>,
     /// RFC 7986 §5.5
-    pub url: Option<Prop<Uri<Box<str>>>>,
+    pub url: Option<Prop<Uri<S>>>,
     /// RFC 7986 §5.6
-    pub categories: Vec<TextProp>,
+    pub categories: Vec<TextProp<S>>,
     /// RFC 7986 §5.7
     pub refresh_interval: Option<Prop<Duration>>,
     /// RFC 7986 §5.8
-    pub source: Option<Prop<Uri<Box<str>>>>,
+    pub source: Option<Prop<Uri<S>>>,
     /// RFC 7986 §5.9
     pub color: Option<Prop<Css3Color>>,
     /// RFC 7986 §5.10
-    pub image: Vec<ImageProp>,
+    pub image: Vec<ImageProp<S>>,
     /// RFC 7986 §5.11
-    pub conference: Option<ConfProp>,
+    pub conference: Option<ConfProp<S>>,
 
-    pub components: Vec<Component>,
-    pub extra_properties: HashMap<Box<str>, Prop<Box<str>>>,
+    pub components: Vec<Component<S>>,
+    pub extra_properties: HashMap<S, Prop<S>>,
 }
 
 /// Calendar component types
 #[derive(Debug, Clone)]
-pub enum Component {
-    Event(Event),
-    Todo(Todo),
-    Journal(Journal),
-    FreeBusy(FreeBusy),
+pub enum Component<S> {
+    Event(Event<S>),
+    Todo(Todo<S>),
+    Journal(Journal<S>),
+    FreeBusy(FreeBusy<S>),
     TimeZone(TimeZone),
     Alarm(Alarm),
 }
 
 /// Common fields shared by all components except [`TimeZone`] and [`Alarm`].
 #[derive(Debug, Clone)]
-pub struct ComponentCore {
-    pub uid: Prop<Uid>,
+pub struct ComponentCore<S> {
+    pub uid: Prop<Uid<S>>,
     pub datetime_stamp: Prop<DateTime<Utc>>,
     pub sequence: Prop<Option<u64>>,
     pub created: Prop<Option<DateTime<Utc>>>,
     pub last_modified: Prop<Option<DateTime<Utc>>>,
-    pub x_properties: HashMap<String, XProperty>,
-    pub iana_properties: HashMap<String, Property>,
+    pub x_properties: HashMap<S, XProperty>,
+    pub iana_properties: HashMap<S, Property>,
 }
 
 /// Descriptive properties.
 #[derive(Debug, Clone, Default)]
-pub struct DescriptiveProperties {
-    pub summary: Option<Text>,
-    pub description: Option<Text>,
-    pub categories: Vec<String>,
-    pub class: Option<ClassValue>,
-    pub url: Option<Uri<Box<str>>>,
+pub struct DescriptiveProperties<S> {
+    pub summary: Option<TextProp<S>>,
+    pub description: Option<TextProp<S>>,
+    pub categories: Option<SeqLangProp<S>>,
+    pub class: Option<Prop<ClassValue<S>>>,
+    pub url: Option<Uri<S>>,
     pub attachments: Vec<Attachment>,
-    pub contact: Option<Text>,
-    pub comments: Vec<Text>,
+    pub contact: Option<Text<S>>,
+    pub comments: Box<[TextProp<S>]>,
 }
 
 /// Scheduling properties.
@@ -129,10 +136,10 @@ pub struct RecurrenceProperties {
 
 /// Geographic and location properties.
 #[derive(Debug, Clone, Default)]
-pub struct LocationProperties {
-    pub location: Option<Text>,
+pub struct LocationProperties<S> {
+    pub location: Option<Text<S>>,
     pub geo: Option<Geo>,
-    pub resources: Vec<String>,
+    pub resources: Vec<S>,
 }
 
 /// Time-based properties.
@@ -152,12 +159,12 @@ pub struct ExtensionProperties {
 
 /// Event component (VEVENT).
 #[derive(Debug, Clone)]
-pub struct Event {
-    pub core: ComponentCore,
-    pub descriptive: DescriptiveProperties,
+pub struct Event<S> {
+    pub core: ComponentCore<S>,
+    pub descriptive: DescriptiveProperties<S>,
     pub scheduling: SchedulingProperties,
     pub recurrence: RecurrenceProperties,
-    pub location: LocationProperties,
+    pub location: LocationProperties<S>,
     pub time: TimeProperties,
     pub extensions: ExtensionProperties,
 
@@ -172,12 +179,12 @@ pub struct Event {
 
 /// Todo component (VTODO).
 #[derive(Debug, Clone)]
-pub struct Todo {
-    pub core: ComponentCore,
-    pub descriptive: DescriptiveProperties,
+pub struct Todo<S> {
+    pub core: ComponentCore<S>,
+    pub descriptive: DescriptiveProperties<S>,
     pub scheduling: SchedulingProperties,
     pub recurrence: RecurrenceProperties,
-    pub location: LocationProperties,
+    pub location: LocationProperties<S>,
     pub time: TimeProperties,
     pub extensions: ExtensionProperties,
 
@@ -193,9 +200,9 @@ pub struct Todo {
 
 /// Journal component (VJOURNAL).
 #[derive(Debug, Clone)]
-pub struct Journal {
-    pub core: ComponentCore,
-    pub descriptive: DescriptiveProperties,
+pub struct Journal<S> {
+    pub core: ComponentCore<S>,
+    pub descriptive: DescriptiveProperties<S>,
     pub scheduling: SchedulingProperties,
     pub recurrence: RecurrenceProperties,
 
@@ -211,8 +218,8 @@ pub struct Journal {
 
 /// Free/Busy component (VFREEBUSY).
 #[derive(Debug, Clone)]
-pub struct FreeBusy {
-    pub core: ComponentCore,
+pub struct FreeBusy<S> {
+    pub core: ComponentCore<S>,
 
     // FreeBusy-specific properties.
     pub dtstart: Option<DateTime<Utc>>,
@@ -221,8 +228,8 @@ pub struct FreeBusy {
     pub attendee: Option<CalendarUser>,
     pub url: Option<Uri<Box<str>>>,
     pub freebusy_periods: Vec<FreeBusyPeriod>,
-    pub contact: Option<Text>,
-    pub comments: Vec<Text>,
+    pub contact: Option<Text<S>>,
+    pub comments: Vec<Text<S>>,
 }
 
 /// Time Zone component (VTIMEZONE).
@@ -243,10 +250,10 @@ pub struct TimeZoneRule {
     pub dtstart: DateTime<Utc>,
     pub tzoffsetfrom: UtcOffset,
     pub tzoffsetto: UtcOffset,
-    pub tzname: Option<Text>,
+    pub tzname: Option<Text<Box<str>>>,
     pub recurrence_rule: Option<RecurrenceRule>,
     pub recurrence_dates: Vec<DateTime<Utc>>,
-    pub comments: Vec<Text>,
+    pub comments: Vec<Text<Box<str>>>,
     pub x_properties: HashMap<String, XProperty>,
     pub iana_properties: HashMap<String, Property>,
 }
@@ -254,12 +261,12 @@ pub struct TimeZoneRule {
 /// Alarm component (VALARM).
 #[derive(Debug, Clone)]
 pub struct Alarm {
-    pub action: AlarmAction,
+    pub action: AlarmAction<Box<str>>,
     pub trigger: AlarmTrigger,
     pub duration: Option<Duration>,
     pub repeat: Option<u32>,
-    pub description: Option<Text>,
-    pub summary: Option<Text>,
+    pub description: Option<Text<Box<str>>>,
+    pub summary: Option<Text<Box<str>>>,
     pub attendees: Vec<CalendarUser>,
     pub attachments: Vec<Attachment>,
     pub x_properties: HashMap<String, XProperty>,
@@ -272,16 +279,16 @@ pub enum Property {
     // Descriptive properties
     Attach(Attachment),
     Categories(Vec<String>),
-    Class(ClassValue),
-    Comment(Text),
-    Description(Text),
+    Class(ClassValue<Box<str>>),
+    Comment(Text<Box<str>>),
+    Description(Text<Box<str>>),
     Geo(Geo),
-    Location(Text),
+    Location(Text<Box<str>>),
     PercentComplete(u8),
     Priority(u8),
     Resources(Vec<String>),
     Status(Status),
-    Summary(Text),
+    Summary(Text<Box<str>>),
 
     // Date/Time properties
     Completed(DateTime<Utc>),
@@ -294,19 +301,19 @@ pub enum Property {
 
     // Time Zone properties
     TzId(String),
-    TzName(Text),
+    TzName(Text<Box<str>>),
     TzOffsetFrom(UtcOffset),
     TzOffsetTo(UtcOffset),
     TzUrl(Uri<Box<str>>),
 
     // Relationship properties
     Attendee(Attendee),
-    Contact(Text),
+    Contact(Text<Box<str>>),
     Organizer(CalendarUser),
     RecurrenceId(RecurrenceId),
     RelatedTo(RelatedTo),
     Url(Uri<Box<str>>),
-    Uid(Uid),
+    Uid(Uid<Box<str>>),
 
     // Recurrence properties
     ExDate(Vec<DateTimeOrDate>),
@@ -314,7 +321,7 @@ pub enum Property {
     RRule(RecurrenceRule),
 
     // Alarm properties
-    Action(AlarmAction),
+    Action(AlarmAction<Box<str>>),
     Repeat(u32),
     Trigger(AlarmTrigger),
 
@@ -325,7 +332,7 @@ pub enum Property {
     Sequence(u32),
 
     // RFC 7986 new properties
-    Name(Text),
+    Name(Text<Box<str>>),
     RefreshInterval(Duration),
     Source(Uri<Box<str>>),
     Color(String),
@@ -339,9 +346,9 @@ pub enum Property {
 /// RFC 7986 IMAGE property.
 #[derive(Debug, Clone)]
 pub struct Image {
-    pub data: ImageData,
+    pub data: ImageData<Box<str>>,
     pub fmttype: Option<String>,
-    pub display: Vec<DisplayType>,
+    pub display: Vec<DisplayType<Box<str>>>,
     pub alternate_representation: Option<Uri<Box<str>>>,
 }
 
@@ -349,17 +356,9 @@ pub struct Image {
 #[derive(Debug, Clone)]
 pub struct Conference {
     pub uri: Uri<Box<str>>,
-    pub feature: Vec<FeatureType>,
+    pub feature: Vec<FeatureType<Box<str>>>,
     pub label: Option<String>,
-    pub language: Option<Language>,
-}
-
-/// A text value.
-#[derive(Debug, Clone)]
-pub struct Text {
-    pub contents: String,
-    pub language: Option<Language>,
-    pub alternate_representation: Option<Uri<Box<str>>>,
+    pub language: Option<Language<Box<str>>>,
 }
 
 /// X-Property (non-standard property).
@@ -413,10 +412,10 @@ pub struct CalendarUser {
 #[derive(Debug, Clone)]
 pub struct Attendee {
     pub user: CalendarUser,
-    pub cutype: Option<CalendarUserType>,
+    pub cutype: Option<CalendarUserType<Box<str>>>,
     pub member: Vec<String>,
-    pub role: Option<ParticipationRole>,
-    pub partstat: Option<ParticipationStatus>,
+    pub role: Option<ParticipationRole<Box<str>>>,
+    pub partstat: Option<ParticipationStatus<Box<str>>>,
     pub rsvp: Option<bool>,
     pub delegated_to: Vec<String>,
     pub delegated_from: Vec<String>,
@@ -439,7 +438,7 @@ pub enum Attachment {
 #[derive(Debug, Clone)]
 pub struct FreeBusyPeriod {
     pub period: Period,
-    pub fbtype: FreeBusyType,
+    pub fbtype: FreeBusyType<Box<str>>,
 }
 
 /// Recurrence ID with optional range.
@@ -453,7 +452,7 @@ pub struct RecurrenceId {
 #[derive(Debug, Clone)]
 pub struct RelatedTo {
     pub uid: String,
-    pub reltype: Option<RelationshipType>,
+    pub reltype: Option<RelationshipType<Box<str>>>,
 }
 
 /// Request status.

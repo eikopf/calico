@@ -40,7 +40,7 @@ use crate::{
 use super::primitive::{calendar_user_type, display_type, iana_token, x_name};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Param<S = Box<str>> {
+pub enum Param<S> {
     Known(KnownParam<S>),
     Unknown(UnknownParam<S>),
 }
@@ -64,7 +64,7 @@ impl<S> Param<S> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum KnownParam<S = Box<str>> {
+pub enum KnownParam<S> {
     AltRep(Uri<S>),
     CommonName(ParamValue<S>),
     CUType(CalendarUserType<S>),
@@ -172,7 +172,7 @@ impl<S> KnownParam<S> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum UnknownParam<S = Box<str>> {
+pub enum UnknownParam<S> {
     Iana {
         name: S,
         value: Box<[ParamValue<S>]>,
@@ -185,7 +185,7 @@ pub enum UnknownParam<S = Box<str>> {
 
 /// An X-name parameter.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct XParam<S = Box<str>> {
+pub struct XParam<S> {
     pub name: S,
     pub value: Box<[ParamValue<S>]>,
 }
@@ -392,7 +392,7 @@ pub fn static_param_name(input: &mut &str) -> ModalResult<StaticParamName> {
 
 /// A property parameter name from RFC 5545, RFC 7986, or an arbitrary token.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ParamName<S = Box<str>> {
+pub enum ParamName<S> {
     Rfc5545(Rfc5545ParamName),
     Rfc7986(Rfc7986ParamName),
     Iana(S),
@@ -567,7 +567,7 @@ where
 /// [`Safe`]: ParamValue::Safe
 /// [`Quoted`]: ParamValue::Quoted
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ParamValue<S = Box<str>> {
+pub enum ParamValue<S> {
     Safe(S),
     Quoted(S),
 }

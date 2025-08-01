@@ -21,7 +21,7 @@ pub type Integer = i32;
 
 /// A method as defined in RFC 5546 §1.4
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Method<S = Box<str>> {
+pub enum Method<S> {
     Publish,
     Request,
     Reply,
@@ -39,23 +39,23 @@ pub struct TzId<S>(pub(crate) S);
 
 /// An unescaped text value (RFC 5545 §3.3.11).
 #[derive(Debug, Default, Hash, Clone, Copy, PartialEq, Eq)]
-pub struct Text<S = Box<str>>(pub(crate) S);
+pub struct Text<S>(pub(crate) S);
 
 /// A unique identifier (RFC 5545 §3.8.4.7).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Uid<S = Box<str>>(pub(crate) S);
+pub struct Uid<S>(pub(crate) S);
 
 /// A URI (RFC 3986 §3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Uri<S = Box<str>>(pub(crate) S);
+pub struct Uri<S>(pub(crate) S);
 
 /// A calendar address (RFC 5545 §3.3.3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct CalAddress<S = Box<str>>(pub(crate) S);
+pub struct CalAddress<S>(pub(crate) S);
 
 /// An RFC 5646 language tag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Language<S = Box<str>>(pub(crate) S);
+pub struct Language<S>(pub(crate) S);
 
 /// The data of a BINARY property.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -65,7 +65,7 @@ pub struct Binary {
 
 /// The text of a BINARY value, which may be converted into a [`Binary`].
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct BinaryText<S = Box<str>>(pub(crate) S);
+pub struct BinaryText<S>(pub(crate) S);
 
 /// Date-time or date value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -102,6 +102,7 @@ pub struct RawTime {
 /// A marker struct for absolute UTC time.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Utc;
+
 /// A marker struct for local time.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Local;
@@ -137,7 +138,7 @@ pub enum Encoding {
 
 /// The data of an RFC 7986 IMAGE property.
 #[derive(Debug, Clone)]
-pub enum ImageData<S = Box<str>> {
+pub enum ImageData<S> {
     Uri(Uri<S>),
     Binary(BinaryText<S>),
 }
@@ -152,14 +153,14 @@ pub enum TimeTransparency {
 
 /// RFC 5545 §3.2.8
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FormatType<S = Box<str>> {
+pub struct FormatType<S> {
     pub(crate) source: S,
     pub(crate) separator_index: usize,
 }
 
 /// DISPLAY parameter values (RFC 7986)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DisplayType<S = Box<str>> {
+pub enum DisplayType<S> {
     Badge,
     Graphic,
     Fullsize,
@@ -170,7 +171,7 @@ pub enum DisplayType<S = Box<str>> {
 
 /// FEATURE parameter values (RFC 7986)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FeatureType<S = Box<str>> {
+pub enum FeatureType<S> {
     Audio,
     Chat,
     Feed,
@@ -212,7 +213,7 @@ pub enum JournalStatus {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum CalendarUserType<S = Box<str>> {
+pub enum CalendarUserType<S> {
     Individual,
     Group,
     Resource,
@@ -229,7 +230,7 @@ impl<S> Default for CalendarUserType<S> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ParticipationRole<S = Box<str>> {
+pub enum ParticipationRole<S> {
     Chair,
     ReqParticipant,
     OptParticipant,
@@ -245,7 +246,7 @@ impl<S> Default for ParticipationRole<S> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ParticipationStatus<S = Box<str>> {
+pub enum ParticipationStatus<S> {
     NeedsAction,
     Accepted,
     Declined,
@@ -264,7 +265,7 @@ impl<S> Default for ParticipationStatus<S> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FreeBusyType<S = Box<str>> {
+pub enum FreeBusyType<S> {
     Free,
     Busy,
     BusyUnavailable,
@@ -274,7 +275,7 @@ pub enum FreeBusyType<S = Box<str>> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AlarmAction<S = Box<str>> {
+pub enum AlarmAction<S> {
     Audio,
     Display,
     Email,
@@ -289,7 +290,7 @@ pub enum TriggerRelation {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RelationshipType<S = Box<str>> {
+pub enum RelationshipType<S> {
     Parent,
     Child,
     Sibling,
@@ -299,7 +300,7 @@ pub enum RelationshipType<S = Box<str>> {
 
 /// The type of a [`Value`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ValueType<S = Box<str>> {
+pub enum ValueType<S> {
     Binary,
     Boolean,
     CalAddress,
@@ -320,7 +321,7 @@ pub enum ValueType<S = Box<str>> {
 
 ///A runtime-discriminated property value.
 #[derive(Debug, Clone)]
-pub enum Value<S = Box<str>> {
+pub enum Value<S> {
     Binary(BinaryText<S>),
     Boolean(bool),
     CalAddress(CalAddress<S>),
@@ -366,18 +367,18 @@ impl<S> Value<S> {
 /// the standard imposes no precision requirements for floats, representing them
 /// as strings after validation is the best option.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct Float<S = Box<str>>(pub S);
+pub struct Float<S>(pub S);
 
 /// The possible values of the `ATTACH` property.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AttachValue<S = Box<str>> {
+pub enum AttachValue<S> {
     Uri(Uri<S>),
     Binary(BinaryText<S>),
 }
 
 /// The value type of the `CLASS` property.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ClassValue<S = Box<str>> {
+pub enum ClassValue<S> {
     Public,
     Private,
     Confidential,

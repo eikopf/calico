@@ -54,7 +54,7 @@ use super::{
 // registry: (https://www.iana.org/assignments/icalendar/icalendar.xhtml#properties)
 
 #[derive(Debug, Clone)]
-pub enum Prop<S = Box<str>> {
+pub enum Prop<S> {
     Known(KnownProp<S>),
     Unknown(UnknownProp<S>),
 }
@@ -1839,7 +1839,7 @@ where
 /// A property name, which may be statically known from RFC 5545 or RFC 7986, or
 /// otherwise may be some arbitrary [`iana_token`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum PropName<S = Box<str>> {
+pub enum PropName<S> {
     Rfc5545(Rfc5545PropName),
     Rfc7986(Rfc7986PropName),
     Iana(S),
