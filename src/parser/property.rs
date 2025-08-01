@@ -53,7 +53,7 @@ use super::{
 // perhaps they should be included as static variants at some later point?
 // registry: (https://www.iana.org/assignments/icalendar/icalendar.xhtml#properties)
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Prop<S> {
     Known(KnownProp<S>),
     Unknown(UnknownProp<S>),
@@ -77,7 +77,7 @@ impl<S> Prop<S> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum KnownProp<S> {
     // CALENDAR PROPERTIES
     CalScale,
@@ -146,7 +146,7 @@ pub enum KnownProp<S> {
     Conference(Uri<S>, ConfParams<S>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UnknownProp<S> {
     Iana {
         name: S,
@@ -2141,10 +2141,230 @@ pub enum Rfc7986PropName {
 
 #[cfg(test)]
 mod tests {
+    use crate::{model::primitive::GeoComponent, parser::escaped::AsEscaped};
+
     use super::*;
     use winnow::Parser;
 
     // PROPERTY PARSING TESTS
+
+    #[test]
+    fn rfc_5545_example_calendar_scale_property() {
+        let input = "CALSCALE:GREGORIAN";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+        assert_eq!(prop, Prop::Known(KnownProp::CalScale));
+    }
+
+    #[test]
+    fn rfc_5545_example_method_property() {
+        let input = "METHOD:REQUEST";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+        assert_eq!(prop, Prop::Known(KnownProp::Method(Method::Request)));
+    }
+
+    #[test]
+    fn rfc_5545_example_product_identifier_property() {
+        let input = "PRODID:-//ABC Corporation//NONSGML My Product//EN";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+        assert_eq!(
+            prop,
+            Prop::Known(KnownProp::ProdId(Text(
+                "-//ABC Corporation//NONSGML My Product//EN"
+            )))
+        )
+    }
+
+    #[test]
+    fn rfc_5545_example_version_property() {
+        let input = "VERSION:2.0";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+        assert_eq!(prop, Prop::Known(KnownProp::Version));
+    }
+
+    #[test]
+    fn rfc_5545_example_attachment_property_1() {
+        let input = "ATTACH:CID:jsmith.part3.960817T083000.xyzMail@example.com";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+
+        let Prop::Known(KnownProp::Attach(value, params)) = prop else {
+            panic!()
+        };
+
+        assert!(params.format_type.is_none());
+        assert_eq!(
+            value,
+            AttachValue::Uri(Uri(
+                "CID:jsmith.part3.960817T083000.xyzMail@example.com"
+            ))
+        );
+    }
+
+    #[test]
+    fn rfc_5545_example_attachment_property_2() {
+        let input = "ATTACH;FMTTYPE=application/postscript:ftp://example.com/pub/\r\n reports/r-960812.ps".as_escaped();
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+
+        let Prop::Known(KnownProp::Attach(value, params)) = prop else {
+            panic!()
+        };
+
+        assert_eq!(
+            params.format_type,
+            Some(FormatType {
+                source: "application/postscript".as_escaped(),
+                separator_index: 11
+            })
+        );
+        assert_eq!(
+            value,
+            AttachValue::Uri(Uri(
+                "ftp://example.com/pub/\r\n reports/r-960812.ps".as_escaped()
+            ))
+        );
+    }
+
+    #[test]
+    fn rfc_5545_example_categories_property_1() {
+        let input = "CATEGORIES:APPOINTMENT,EDUCATION";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+
+        let Prop::Known(KnownProp::Categories(values, params)) = prop else {
+            panic!()
+        };
+
+        assert!(params.language.is_none());
+        assert_eq!(
+            values.as_ref(),
+            [Text("APPOINTMENT"), Text("EDUCATION")].as_slice()
+        );
+    }
+
+    #[test]
+    fn rfc_5545_example_categories_property_2() {
+        let input = "CATEGORIES:MEETING";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+
+        let Prop::Known(KnownProp::Categories(values, params)) = prop else {
+            panic!()
+        };
+
+        assert!(params.language.is_none());
+        assert_eq!(values.as_ref(), [Text("MEETING")].as_slice());
+    }
+
+    #[test]
+    fn rfc_5545_example_classification_property() {
+        let input = "CLASS:PUBLIC";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+        assert_eq!(prop, Prop::Known(KnownProp::Class(ClassValue::Public)));
+    }
+
+    #[test]
+    fn rfc_5545_example_comment_property() {
+        let input = "COMMENT:The meeting really needs to include both ourselves \r\n and the customer. We can't hold this meeting without them. \r\n As a matter of fact\\, the venue for the meeting ought to be at \r\n their site. - - John";
+
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input.as_escaped()).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+
+        let Prop::Known(KnownProp::Comment(text, params)) = prop else {
+            panic!()
+        };
+
+        assert!(params.language.is_none());
+        assert!(params.alternate_representation.is_none());
+        assert_eq!(text, Text(input[8..].as_escaped()));
+    }
+
+    #[test]
+    fn rfc_5545_example_description_property() {
+        let input = "DESCRIPTION:Meeting to provide technical review for \"Phoenix\" \r\n design.\\nHappy Face Conference Room. Phoenix design team \r\n MUST attend this meeting.\\nRSVP to team leader.";
+
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input.as_escaped()).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+
+        let Prop::Known(KnownProp::Description(text, params)) = prop else {
+            panic!()
+        };
+
+        assert!(params.language.is_none());
+        assert!(params.alternate_representation.is_none());
+        assert_eq!(text, Text(input[12..].as_escaped()));
+    }
+
+    #[test]
+    fn rfc_5545_example_geographic_position_property() {
+        let input = "GEO:37.386013;-122.082932";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+
+        let Prop::Known(KnownProp::Geo(geo)) = prop else {
+            panic!()
+        };
+
+        assert_eq!(
+            geo.lat,
+            GeoComponent {
+                integral: 37,
+                fraction: 386013
+            }
+        );
+
+        // BUG: this is clearly broken, GeoComponent doesn't handle leading
+        // zeros in the fractional component correctly.
+
+        assert_eq!(
+            geo.lon,
+            GeoComponent {
+                integral: -122,
+                fraction: 082932
+            }
+        );
+    }
 
     #[test]
     fn rfc_5545_example_uid_property() {

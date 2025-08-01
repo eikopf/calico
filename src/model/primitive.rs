@@ -483,6 +483,11 @@ pub struct Geo {
     pub lon: GeoComponent,
 }
 
+// BUG: THIS CANNOT BE CORRECT.
+// take the example -122.082932. notice that the fractional component has a
+// leading zero, so the result numerically will be 082932 == 82932. but clearly
+// -122.082932 != -122.82932, so we have a problem.
+
 /// A component of a [`Geo`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct GeoComponent {
