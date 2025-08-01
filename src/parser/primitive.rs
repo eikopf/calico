@@ -14,7 +14,7 @@ use winnow::{
 };
 
 use crate::model::primitive::{
-    AlarmAction, BinaryText, CalendarUserType, ClassValue,
+    AlarmAction, BinaryText, CalAddress, CalendarUserType, ClassValue,
     CompletionPercentage, Date, DateTime, DisplayType, Duration, DurationKind,
     DurationTime, Encoding, FeatureType, Float, FormatType, FreeBusyType, Geo,
     GeoComponent, Integer, Language, Method, ParticipationRole,
@@ -177,6 +177,17 @@ where
     // WARN: this parser is massively more permissive than it should be, but
     // parsing a language tag exactly is a problem for the future
     iana_token.map(Language).parse_next(input)
+}
+
+/// Parses a [`CalAddress`].
+pub fn cal_address<I, E>(input: &mut I) -> Result<CalAddress<I::Slice>, E>
+where
+    I: StreamIsPartial + Stream,
+    I::Token: AsChar + Clone,
+    E: ParserError<I>,
+{
+    // TODO: check whether this is correct/sufficiently precise
+    uri.map(|Uri(source)| CalAddress(source)).parse_next(input)
 }
 
 /// Parses an RFC 3986 URI. The description of the grammar in RFC 5545 is

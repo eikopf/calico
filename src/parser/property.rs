@@ -13,12 +13,12 @@ use crate::{
     model::{
         css::Css3Color,
         primitive::{
-            AlarmAction, AttachValue, ClassValue, CompletionPercentage,
-            DateTime, DateTimeOrDate, Duration, Encoding, FormatType,
-            FreeBusyType, Geo, ImageData, Integer, Language, Method,
-            ParticipationStatus, Period, Priority, RDate, RelationshipType,
-            Text, ThisAndFuture, TimeTransparency, TriggerRelation, TzId, Uid,
-            Uri, Utc, UtcOffset, Value, ValueType,
+            AlarmAction, AttachValue, CalAddress, ClassValue,
+            CompletionPercentage, DateTime, DateTimeOrDate, Duration, Encoding,
+            FormatType, FreeBusyType, Geo, ImageData, Integer, Language,
+            Method, ParticipationStatus, Period, Priority, RDate,
+            RelationshipType, Text, ThisAndFuture, TimeTransparency,
+            TriggerRelation, TzId, Uid, Uri, Utc, UtcOffset, Value, ValueType,
         },
         property::{
             AttachParams, AttendeeParams, ConfParams, DtParams, FBTypeParams,
@@ -33,10 +33,10 @@ use crate::{
         },
         parameter::{KnownParam, Param, Rfc5545ParamName, parameter},
         primitive::{
-            alarm_action, class_value, completion_percentage, datetime_utc,
-            duration, float, geo, gregorian, iana_token, integer, method,
-            participation_status, period, priority, text, time_transparency,
-            tz_id, uid, utc_offset, v2_0, x_name,
+            alarm_action, cal_address, class_value, completion_percentage,
+            datetime_utc, duration, float, geo, gregorian, iana_token, integer,
+            method, participation_status, period, priority, text,
+            time_transparency, tz_id, uid, utc_offset, v2_0, x_name,
         },
     },
 };
@@ -77,9 +77,6 @@ impl<S> Prop<S> {
     }
 }
 
-// TODO: refactor value types to make Uri and CalAddress distinct types. this is
-// required for at least the Attendee and Organizer variants of KnownProp
-
 #[derive(Debug, Clone)]
 pub enum KnownProp<S> {
     // CALENDAR PROPERTIES
@@ -115,9 +112,9 @@ pub enum KnownProp<S> {
     TzOffsetTo(UtcOffset),
     TzUrl(Uri<S>),
     // RELATIONSHIP COMPONENT PROPERTIES
-    Attendee(Uri<S>, AttendeeParams<S>),
+    Attendee(CalAddress<S>, AttendeeParams<S>),
     Contact(Text<S>, TextParams<S>),
-    Organizer(Uri<S>, OrganizerParams<S>),
+    Organizer(CalAddress<S>, OrganizerParams<S>),
     RecurrenceId(DateTimeOrDate, RecurrenceIdParams<S>),
     RelatedTo(Text<S>, RelTypeParams<S>),
     Url(Uri<S>),
@@ -193,7 +190,9 @@ where
         ValueType::Boolean => {
             bool_caseless.map(Value::Boolean).parse_next(input)
         }
-        ValueType::CalAddress => uri.map(Value::CalAddress).parse_next(input),
+        ValueType::CalAddress => {
+            cal_address.map(Value::CalAddress).parse_next(input)
+        }
         ValueType::Date => date.map(Value::Date).parse_next(input),
         ValueType::DateTime => datetime.map(Value::DateTime).parse_next(input),
         ValueType::Duration => duration.map(Value::Duration).parse_next(input),
@@ -1207,10 +1206,7 @@ where
             )?;
 
             let _ = ':'.parse_next(input)?;
-
-            // TODO: this value is properly a CAL-ADDRESS (RFC 5545 §3.3.3) and
-            // so the type should probably be distinguished from ordinary uris
-            let value = uri.parse_next(input)?;
+            let value = cal_address.parse_next(input)?;
 
             (
                 Prop::Known(KnownProp::Attendee(value, params)),
@@ -1308,7 +1304,7 @@ where
             )?;
 
             let _ = ':'.parse_next(input)?;
-            let value = uri.parse_next(input)?;
+            let value = cal_address.parse_next(input)?;
 
             (
                 Prop::Known(KnownProp::Organizer(value, params)),
