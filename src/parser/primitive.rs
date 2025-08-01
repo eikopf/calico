@@ -24,7 +24,7 @@ use crate::model::primitive::{
 };
 
 use super::error::{
-    InvalidCompletionPercentageError, InvalidDateError,
+    CalendarParseError, InvalidCompletionPercentageError, InvalidDateError,
     InvalidDurationTimeError, InvalidGeoError, InvalidIntegerError,
     InvalidPriorityError, InvalidRawTimeError, InvalidUtcOffsetError,
 };
@@ -542,10 +542,7 @@ where
     I: StreamIsPartial + Stream + Compare<char>,
     <I as Stream>::Slice: AsBStr,
     <I as Stream>::Token: AsChar + Clone,
-    E: ParserError<I>
-        + FromExternalError<I, InvalidDateError>
-        + FromExternalError<I, InvalidRawTimeError>
-        + FromExternalError<I, InvalidDurationTimeError>,
+    E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
     enum DtOrDur {
         Dt(DateTime),
@@ -570,14 +567,14 @@ where
     I: StreamIsPartial + Stream + Compare<char>,
     <I as Stream>::Slice: AsBStr,
     <I as Stream>::Token: AsChar + Clone,
-    E: ParserError<I> + FromExternalError<I, InvalidDurationTimeError>,
+    E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
     fn time<I, E>(input: &mut I) -> Result<DurationTime, E>
     where
         I: StreamIsPartial + Stream + Compare<char>,
         <I as Stream>::Slice: AsBStr,
         <I as Stream>::Token: AsChar + Clone,
-        E: ParserError<I> + FromExternalError<I, InvalidDurationTimeError>,
+        E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
     {
         let checkpoint = input.checkpoint();
 
@@ -613,7 +610,9 @@ where
 
                 Err(E::from_external_error(
                     input,
-                    InvalidDurationTimeError { hours, seconds },
+                    CalendarParseError::InvalidDurationTime(
+                        InvalidDurationTimeError { hours, seconds },
+                    ),
                 ))
             }
         }
@@ -640,9 +639,7 @@ pub fn datetime<I, E>(input: &mut I) -> Result<DateTime<TimeFormat>, E>
 where
     I: StreamIsPartial + Stream + Compare<char>,
     <I as Stream>::Token: AsChar + Clone,
-    E: ParserError<I>
-        + FromExternalError<I, InvalidDateError>
-        + FromExternalError<I, InvalidRawTimeError>,
+    E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
     (date, 'T', time)
         .map(|(date, _, time)| DateTime { date, time })
@@ -655,9 +652,7 @@ pub fn datetime_utc<I, E>(input: &mut I) -> Result<DateTime<Utc>, E>
 where
     I: StreamIsPartial + Stream + Compare<char>,
     <I as Stream>::Token: AsChar + Clone,
-    E: ParserError<I>
-        + FromExternalError<I, InvalidDateError>
-        + FromExternalError<I, InvalidRawTimeError>,
+    E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
     (date, 'T', time_utc)
         .map(|(date, _, time)| DateTime { date, time })
@@ -669,7 +664,7 @@ pub fn date<I, E>(input: &mut I) -> Result<Date, E>
 where
     I: StreamIsPartial + Stream,
     <I as Stream>::Token: AsChar + Clone,
-    E: ParserError<I> + FromExternalError<I, InvalidDateError>,
+    E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
     let checkpoint = input.checkpoint();
 
@@ -725,7 +720,11 @@ where
 
             Err(E::from_external_error(
                 input,
-                InvalidDateError { year, month, day },
+                CalendarParseError::InvalidDate(InvalidDateError {
+                    year,
+                    month,
+                    day,
+                }),
             ))
         }
     }
@@ -736,7 +735,7 @@ pub fn utc_offset<I, E>(input: &mut I) -> Result<UtcOffset, E>
 where
     I: StreamIsPartial + Stream + Compare<char>,
     I::Token: AsChar + Clone,
-    E: ParserError<I> + FromExternalError<I, InvalidUtcOffsetError>,
+    E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
     fn digit2<I, E>(input: &mut I) -> Result<u8, E>
     where
@@ -760,7 +759,9 @@ where
     if hours >= 24 {
         return Err(E::from_external_error(
             input,
-            InvalidUtcOffsetError::BadHours(hours),
+            CalendarParseError::InvalidUtcOffset(
+                InvalidUtcOffsetError::BadHours(hours),
+            ),
         ));
     }
 
@@ -769,7 +770,9 @@ where
     if minutes >= 60 {
         return Err(E::from_external_error(
             input,
-            InvalidUtcOffsetError::BadMinutes(minutes),
+            CalendarParseError::InvalidUtcOffset(
+                InvalidUtcOffsetError::BadMinutes(minutes),
+            ),
         ));
     }
 
@@ -778,7 +781,9 @@ where
     if let Some(seconds @ 60..) = seconds {
         return Err(E::from_external_error(
             input,
-            InvalidUtcOffsetError::BadSeconds(seconds),
+            CalendarParseError::InvalidUtcOffset(
+                InvalidUtcOffsetError::BadSeconds(seconds),
+            ),
         ));
     }
 
@@ -788,12 +793,16 @@ where
         {
             Err(E::from_external_error(
                 input,
-                InvalidUtcOffsetError::NegativeZero,
+                CalendarParseError::InvalidUtcOffset(
+                    InvalidUtcOffsetError::NegativeZero,
+                ),
             ))
         }
         Some(seconds @ 60..) => Err(E::from_external_error(
             input,
-            InvalidUtcOffsetError::BadSeconds(seconds),
+            CalendarParseError::InvalidUtcOffset(
+                InvalidUtcOffsetError::BadSeconds(seconds),
+            ),
         )),
         _ => Ok(UtcOffset {
             sign,
@@ -809,7 +818,7 @@ pub fn time<I, E>(input: &mut I) -> Result<Time<TimeFormat>, E>
 where
     I: StreamIsPartial + Stream + Compare<char>,
     <I as Stream>::Token: AsChar + Clone,
-    E: ParserError<I> + FromExternalError<I, InvalidRawTimeError>,
+    E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
     (raw_time, time_format)
         .parse_next(input)
@@ -821,7 +830,7 @@ pub fn time_utc<I, E>(input: &mut I) -> Result<Time<Utc>, E>
 where
     I: StreamIsPartial + Stream + Compare<char>,
     <I as Stream>::Token: AsChar + Clone,
-    E: ParserError<I> + FromExternalError<I, InvalidRawTimeError>,
+    E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
     (raw_time, utc_marker)
         .parse_next(input)
@@ -833,7 +842,7 @@ pub fn raw_time<I, E>(input: &mut I) -> Result<RawTime, E>
 where
     I: StreamIsPartial + Stream,
     <I as Stream>::Token: AsChar + Clone,
-    E: ParserError<I> + FromExternalError<I, InvalidRawTimeError>,
+    E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
     let checkpoint = input.checkpoint();
 
@@ -887,11 +896,11 @@ where
 
             Err(E::from_external_error(
                 input,
-                InvalidRawTimeError {
+                CalendarParseError::InvalidRawTime(InvalidRawTimeError {
                     hours,
                     minutes,
                     seconds,
-                },
+                }),
             ))
         }
     }
@@ -925,9 +934,7 @@ where
     I: StreamIsPartial + Stream + Compare<char>,
     I::Token: AsChar + Clone,
     I::Slice: AsBStr,
-    E: ParserError<I>
-        + FromExternalError<I, InvalidIntegerError>
-        + FromExternalError<I, InvalidPriorityError>,
+    E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
     let value = integer.parse_next(input)?;
 
@@ -942,7 +949,10 @@ where
         7 => Ok(Priority::C1),
         8 => Ok(Priority::C2),
         9 => Ok(Priority::C3),
-        _ => Err(E::from_external_error(input, InvalidPriorityError(value))),
+        _ => Err(E::from_external_error(
+            input,
+            CalendarParseError::InvalidPriority(InvalidPriorityError(value)),
+        )),
     }
 }
 
@@ -954,9 +964,7 @@ where
     I: StreamIsPartial + Stream + Compare<char>,
     I::Token: AsChar + Clone,
     I::Slice: AsBStr,
-    E: ParserError<I>
-        + FromExternalError<I, InvalidIntegerError>
-        + FromExternalError<I, InvalidCompletionPercentageError>,
+    E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
     let value = integer.parse_next(input)?;
 
@@ -964,7 +972,9 @@ where
         pct @ 0..=100 => Ok(CompletionPercentage(pct as u8)),
         other => Err(E::from_external_error(
             input,
-            InvalidCompletionPercentageError(other),
+            CalendarParseError::InvalidCompletionPercentage(
+                InvalidCompletionPercentageError(other),
+            ),
         )),
     }
 }
@@ -976,7 +986,7 @@ where
     I::Slice: AsBStr + Stream,
     I::Token: AsChar + Clone,
     <<I as Stream>::Slice as Stream>::Token: AsChar,
-    E: ParserError<I> + FromExternalError<I, InvalidGeoError>,
+    E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
     fn geo_component<I, E>(input: &mut I) -> Result<GeoComponent, E>
     where
@@ -984,7 +994,7 @@ where
         I::Slice: AsBStr + Stream,
         I::Token: AsChar + Clone,
         <<I as Stream>::Slice as Stream>::Token: AsChar,
-        E: ParserError<I> + FromExternalError<I, InvalidGeoError>,
+        E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
     {
         let sign = opt(sign).parse_next(input)?;
         let magnitude: u8 = lz_dec_uint.parse_next(input)?;
@@ -992,7 +1002,9 @@ where
         if magnitude > 180 {
             return Err(E::from_external_error(
                 input,
-                InvalidGeoError::IntegralTooLarge(magnitude),
+                CalendarParseError::InvalidGeo(
+                    InvalidGeoError::IntegralTooLarge(magnitude),
+                ),
             ));
         }
 
@@ -1028,12 +1040,16 @@ where
     if !(-90..=90).contains(&lat.integral) {
         Err(E::from_external_error(
             input,
-            InvalidGeoError::LatOutOfBounds(lat),
+            CalendarParseError::InvalidGeo(InvalidGeoError::LatOutOfBounds(
+                lat,
+            )),
         ))
     } else if !(-180..=180).contains(&lon.integral) {
         Err(E::from_external_error(
             input,
-            InvalidGeoError::LonOutOfBounds(lon),
+            CalendarParseError::InvalidGeo(InvalidGeoError::LonOutOfBounds(
+                lon,
+            )),
         ))
     } else {
         Ok(Geo { lat, lon })
@@ -1055,12 +1071,13 @@ where
     I: StreamIsPartial + Stream + Compare<char>,
     I::Token: AsChar + Clone,
     I::Slice: AsBStr,
-    E: ParserError<I> + FromExternalError<I, InvalidIntegerError>,
+    E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
     let sign = opt(sign).parse_next(input)?;
     let digits: u64 = lz_dec_uint.parse_next(input)?;
 
     let error = InvalidIntegerError { sign, digits };
+    let error = CalendarParseError::InvalidInteger(error);
 
     i64::try_from(digits)
         .ok()

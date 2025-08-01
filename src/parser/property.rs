@@ -38,11 +38,7 @@ use crate::{
 };
 
 use super::{
-    error::{
-        CalendarParseError, InvalidCompletionPercentageError, InvalidDateError,
-        InvalidDurationTimeError, InvalidGeoError, InvalidIntegerError,
-        InvalidPriorityError, InvalidRawTimeError, InvalidUtcOffsetError,
-    },
+    error::CalendarParseError,
     parameter::{StaticParamName, UnknownParam},
     primitive::{binary, bool_caseless, date, datetime, time, uri},
 };
@@ -174,12 +170,7 @@ where
         + Compare<char>,
     I::Token: AsChar + Clone,
     I::Slice: AsBStr + Clone,
-    E: ParserError<I>
-        + FromExternalError<I, InvalidDateError>
-        + FromExternalError<I, InvalidRawTimeError>
-        + FromExternalError<I, InvalidDurationTimeError>
-        + FromExternalError<I, InvalidIntegerError>
-        + FromExternalError<I, InvalidUtcOffsetError>,
+    E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
     /// Parses the raw text value of a property.
     fn text<I, E>(input: &mut I) -> Result<I::Slice, E>
@@ -306,14 +297,6 @@ where
     <<I as Stream>::Slice as Stream>::Token: AsChar,
     E: ParserError<I>
         + FromExternalError<I, CalendarParseError<I::Slice>>
-        + FromExternalError<I, InvalidDateError>
-        + FromExternalError<I, InvalidRawTimeError>
-        + FromExternalError<I, InvalidDurationTimeError>
-        + FromExternalError<I, InvalidIntegerError>
-        + FromExternalError<I, InvalidUtcOffsetError>
-        + FromExternalError<I, InvalidGeoError>
-        + FromExternalError<I, InvalidCompletionPercentageError>
-        + FromExternalError<I, InvalidPriorityError>
         + FromExternalError<I, DuplicateParamError>
         + FromExternalError<I, DuplicateOrUnexpectedError<I::Slice>>
         + FromExternalError<I, UnexpectedKnownParamError<I::Slice>>
