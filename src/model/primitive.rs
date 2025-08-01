@@ -35,7 +35,7 @@ pub struct Uid<S = Box<str>>(pub(crate) S);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Uri<S = Box<str>>(pub(crate) S);
 
-/// A calendar address (RFC 5545 §3.3).
+/// A calendar address (RFC 5545 §3.3.3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CalAddress<S = Box<str>>(pub(crate) S);
 
