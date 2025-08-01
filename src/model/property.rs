@@ -36,13 +36,13 @@ pub struct Prop<V, P = ()> {
 /// additional required parameters with statically known values; hence they are
 /// elided in this type.
 #[derive(Debug, Clone)]
-pub struct AttachParams<S = Box<str>> {
+pub struct AttachParams<S> {
     pub format_type: Option<FormatType<S>>,
 }
 
 /// The parameters associated with the `ATTENDEE` property.
 #[derive(Debug, Clone)]
-pub struct AttendeeParams<S = Box<str>> {
+pub struct AttendeeParams<S> {
     pub language: Option<Language<S>>,
     pub calendar_user_type: Option<CalendarUserType<S>>,
     pub group_or_list_membership: Option<Box<[Uri<S>]>>,
@@ -58,7 +58,7 @@ pub struct AttendeeParams<S = Box<str>> {
 
 /// The parameters associated with the `ORGANIZER` property.
 #[derive(Debug, Clone)]
-pub struct OrganizerParams<S = Box<str>> {
+pub struct OrganizerParams<S> {
     pub language: Option<Language<S>>,
     pub sent_by: Option<Uri<S>>,
     pub common_name: Option<ParamValue<S>>,
@@ -67,26 +67,26 @@ pub struct OrganizerParams<S = Box<str>> {
 
 /// The parameters associated with the `RECURRENCE-ID` property.
 #[derive(Debug, Clone, Copy)]
-pub struct RecurrenceIdParams<S = Box<str>> {
+pub struct RecurrenceIdParams<S> {
     pub tz_id: Option<TzId<S>>,
     pub recurrence_identifier_range: Option<ThisAndFuture>,
 }
 
 /// The parameters associated with the `RELATED-TO` property.
 #[derive(Debug, Clone, Copy)]
-pub struct RelTypeParams<S = Box<str>> {
+pub struct RelTypeParams<S> {
     pub relationship_type: Option<RelationshipType<S>>,
 }
 
 /// A variant of [`TextParams`] without the `ALTREP` parameter.
 #[derive(Debug, Clone, Copy)]
-pub struct LangParams<S = Box<str>> {
+pub struct LangParams<S> {
     pub language: Option<Language<S>>,
 }
 
 /// The parameters associated with several date and time properties.
 #[derive(Debug, Clone, Copy)]
-pub struct DtParams<S = Box<str>> {
+pub struct DtParams<S> {
     pub tz_id: Option<TzId<S>>,
 }
 
