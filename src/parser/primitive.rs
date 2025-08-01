@@ -351,7 +351,7 @@ where
 
     let ((type_name, _sep, _subtype_name), source) =
         (reg_name, '/', reg_name).with_taken().parse_next(input)?;
-    let separator_index = type_name.slice_len() + 1;
+    let separator_index = type_name.slice_len();
 
     Ok(FormatType {
         source,
@@ -1414,6 +1414,17 @@ mod tests {
         );
         assert!(format_type::<_, ()>.parse_peek("image/bmp").is_ok());
         assert!(format_type::<_, ()>.parse_peek("garbage").is_err());
+
+        assert_eq!(
+            format_type::<_, ()>.parse_peek("application/postscript"),
+            Ok((
+                "",
+                FormatType {
+                    source: "application/postscript",
+                    separator_index: 11,
+                }
+            ))
+        );
     }
 
     #[test]
