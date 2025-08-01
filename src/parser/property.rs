@@ -38,13 +38,13 @@ use crate::{
 };
 
 use super::{
-    parameter::{StaticParamName, UnknownParam},
-    primitive::{
-        InvalidCompletionPercentageError, InvalidDateError,
+    error::{
+        CalendarParseError, InvalidCompletionPercentageError, InvalidDateError,
         InvalidDurationTimeError, InvalidGeoError, InvalidIntegerError,
         InvalidPriorityError, InvalidRawTimeError, InvalidUtcOffsetError,
-        binary, bool_caseless, date, datetime, time, uri,
     },
+    parameter::{StaticParamName, UnknownParam},
+    primitive::{binary, bool_caseless, date, datetime, time, uri},
 };
 
 // NOTE: the IANA iCalendar property registry lists several registered properties
@@ -305,6 +305,7 @@ where
     I::Slice: AsBStr + Clone + SliceLen + Stream,
     <<I as Stream>::Slice as Stream>::Token: AsChar,
     E: ParserError<I>
+        + FromExternalError<I, CalendarParseError<I::Slice>>
         + FromExternalError<I, InvalidDateError>
         + FromExternalError<I, InvalidRawTimeError>
         + FromExternalError<I, InvalidDurationTimeError>

@@ -23,6 +23,12 @@ use crate::model::primitive::{
     Utc, UtcOffset, ValueType,
 };
 
+use super::error::{
+    InvalidCompletionPercentageError, InvalidDateError,
+    InvalidDurationTimeError, InvalidGeoError, InvalidIntegerError,
+    InvalidPriorityError, InvalidRawTimeError, InvalidUtcOffsetError,
+};
+
 /// Parses an [`AlarmAction`].
 pub fn alarm_action<I, E>(input: &mut I) -> Result<AlarmAction<I::Slice>, E>
 where
@@ -558,12 +564,6 @@ where
     .parse_next(input)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct InvalidDurationTimeError<T = usize> {
-    hours: Option<T>,
-    seconds: Option<T>,
-}
-
 /// Parses a [`Duration`].
 pub fn duration<I, E>(input: &mut I) -> Result<Duration, E>
 where
@@ -664,13 +664,6 @@ where
         .parse_next(input)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct InvalidDateError {
-    year: u16,
-    month: u8,
-    day: u8,
-}
-
 /// Parses a date of the form YYYYMMDD.
 pub fn date<I, E>(input: &mut I) -> Result<Date, E>
 where
@@ -736,14 +729,6 @@ where
             ))
         }
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum InvalidUtcOffsetError {
-    NegativeZero,
-    BadHours(u8),
-    BadMinutes(u8),
-    BadSeconds(u8),
 }
 
 /// Parses a [`UtcOffset`].
@@ -843,13 +828,6 @@ where
         .map(|(raw, ())| Time { raw, format: Utc })
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct InvalidRawTimeError {
-    hours: u8,
-    minutes: u8,
-    seconds: u8,
-}
-
 /// Parses a [`RawTime`].
 pub fn raw_time<I, E>(input: &mut I) -> Result<RawTime, E>
 where
@@ -941,9 +919,6 @@ where
     'Z'.void().parse_next(input)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct InvalidPriorityError(Integer);
-
 /// Parses a [`Priority`].
 pub fn priority<I, E>(input: &mut I) -> Result<Priority, E>
 where
@@ -971,9 +946,6 @@ where
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct InvalidCompletionPercentageError(Integer);
-
 /// Parses a [`CompletionPercentage`].
 pub fn completion_percentage<I, E>(
     input: &mut I,
@@ -995,12 +967,6 @@ where
             InvalidCompletionPercentageError(other),
         )),
     }
-}
-
-pub enum InvalidGeoError {
-    IntegralTooLarge(u8),
-    LatOutOfBounds(GeoComponent),
-    LonOutOfBounds(GeoComponent),
 }
 
 /// Parses a [`Geo`].
@@ -1082,12 +1048,6 @@ where
 {
     alt((Caseless("TRUE").value(true), Caseless("FALSE").value(false)))
         .parse_next(input)
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct InvalidIntegerError {
-    sign: Option<Sign>,
-    digits: u64,
 }
 
 pub fn integer<I, E>(input: &mut I) -> Result<Integer, E>
