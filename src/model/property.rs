@@ -35,13 +35,13 @@ pub struct Prop<V, P = ()> {
 /// Note that if the value of the property is a binary value, then there are
 /// additional required parameters with statically known values; hence they are
 /// elided in this type.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AttachParams<S> {
     pub format_type: Option<FormatType<S>>,
 }
 
 /// The parameters associated with the `ATTENDEE` property.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AttendeeParams<S> {
     pub language: Option<Language<S>>,
     pub calendar_user_type: Option<CalendarUserType<S>>,
@@ -57,7 +57,7 @@ pub struct AttendeeParams<S> {
 }
 
 /// The parameters associated with the `ORGANIZER` property.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OrganizerParams<S> {
     pub language: Option<Language<S>>,
     pub sent_by: Option<Uri<S>>,
@@ -66,50 +66,50 @@ pub struct OrganizerParams<S> {
 }
 
 /// The parameters associated with the `RECURRENCE-ID` property.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RecurrenceIdParams<S> {
     pub tz_id: Option<TzId<S>>,
     pub recurrence_identifier_range: Option<ThisAndFuture>,
 }
 
 /// The parameters associated with the `RELATED-TO` property.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RelTypeParams<S> {
     pub relationship_type: Option<RelationshipType<S>>,
 }
 
 /// A variant of [`TextParams`] without the `ALTREP` parameter.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LangParams<S> {
     pub language: Option<Language<S>>,
 }
 
 /// The parameters associated with several date and time properties.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DtParams<S> {
     pub tz_id: Option<TzId<S>>,
 }
 
 /// The parameters associated with the `TRIGGER` property.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TriggerParams {
     pub trigger_relation: Option<TriggerRelation>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FBTypeParams<S> {
     pub free_busy_type: Option<FreeBusyType<S>>,
 }
 
 /// The parameters usually associated with text values.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TextParams<S> {
     pub language: Option<Language<S>>,
     pub alternate_representation: Option<Uri<S>>,
 }
 
 /// The parameters usually associated with image data.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImageParams<S> {
     pub format_type: Option<FormatType<S>>,
     pub display: Option<DisplayType<S>>,
@@ -117,7 +117,7 @@ pub struct ImageParams<S> {
 }
 
 /// The parameters associated with the CONFERENCE property.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfParams<S> {
     pub feature_type: Vec<FeatureType<S>>,
     pub label: Option<S>,
