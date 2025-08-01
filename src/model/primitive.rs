@@ -64,7 +64,7 @@ pub struct Binary {
 }
 
 /// The text of a BINARY value, which may be converted into a [`Binary`].
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct BinaryText<S>(pub(crate) S);
 
 /// Date-time or date value.
@@ -137,7 +137,7 @@ pub enum Encoding {
 }
 
 /// The data of an RFC 7986 IMAGE property.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImageData<S> {
     Uri(Uri<S>),
     Binary(BinaryText<S>),
@@ -320,7 +320,7 @@ pub enum ValueType<S> {
 }
 
 ///A runtime-discriminated property value.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Value<S> {
     Binary(BinaryText<S>),
     Boolean(bool),
