@@ -13,9 +13,7 @@ use super::primitive::{
 /// An ordinary textual property.
 pub type TextProp<S> = Prop<Text<S>, TextParams<S>>;
 
-/// A textual property with the LANGUAGE parameter.
-pub type LangProp<S> = Prop<Text<S>, LangParams<S>>;
-
+/// A sequence of textual values with the LANGUAGE parameter.
 pub type SeqLangProp<S> = Prop<Box<[Text<S>]>, LangParams<S>>;
 
 /// An ordinary image property.
