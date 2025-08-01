@@ -1,8 +1,13 @@
 //! Error types for parsing iCalendar.
 
-use crate::model::primitive::{GeoComponent, Integer, Sign};
+use crate::model::primitive::{GeoComponent, Integer, Sign, ValueType};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+use super::{
+    parameter::{KnownParam, StaticParamName},
+    property::PropName,
+};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CalendarParseError<S> {
     InvalidRawTime(InvalidRawTimeError),
     InvalidUtcOffset(InvalidUtcOffsetError),
@@ -12,7 +17,13 @@ pub enum CalendarParseError<S> {
     InvalidCompletionPercentage(InvalidCompletionPercentageError),
     InvalidPriority(InvalidPriorityError),
     InvalidDurationTime(InvalidDurationTimeError),
-    _Blah(S),
+    /// A parameter with a multiplicity less than 2 occurred more than once.
+    DuplicateParam(StaticParamName),
+    Unexpected(UnexpectedKnownParamError<S>),
+    AttachParam(AttachParamError<S>),
+    DtParam(DtParamError<S>),
+    RDateParam(RDateParamError<S>),
+    TriggerParam(TriggerParamError<S>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,4 +71,58 @@ pub struct InvalidPriorityError(pub(crate) Integer);
 pub struct InvalidDurationTimeError<T = usize> {
     pub(crate) hours: Option<T>,
     pub(crate) seconds: Option<T>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnexpectedKnownParamError<S> {
+    pub(crate) current_property: PropName<S>,
+    pub(crate) unexpected_param: KnownParam<S>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AttachParamError<S> {
+    /// Value type was a URI and the ENCODING parameter was present.
+    EncodingOnUri,
+    /// Value type was BINARY and the ENCODING parameter was not present.
+    BinaryWithoutEncoding,
+    /// ENCODING parameter was 8BIT; the only allowed value is BASE64.
+    Bit8Encoding,
+    /// The VALUE parameter occurred and was not BINARY.
+    NonBinaryValueType,
+    /// A parameter with a multiplicity less than 2 occurred more than once.
+    DuplicateParam(StaticParamName),
+    /// Received an unexpected known parameter.
+    Unexpected(UnexpectedKnownParamError<S>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DtParamError<S> {
+    /// The VALUE parameter occurred and was not DATETIME or DATE.
+    InvalidValueType(ValueType<S>),
+    /// A parameter with a multiplicity less than 2 occurred more than once.
+    DuplicateParam(StaticParamName),
+    /// Received an unexpected known parameter.
+    Unexpected(UnexpectedKnownParamError<S>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RDateParamError<S> {
+    /// The VALUE parameter occurred and was not DATETIME, DATE, or PERIOD.
+    InvalidValueType(ValueType<S>),
+    /// A parameter with a multiplicity less than 2 occurred more than once.
+    DuplicateParam(StaticParamName),
+    /// Received an unexpected known parameter.
+    Unexpected(UnexpectedKnownParamError<S>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TriggerParamError<S> {
+    /// The VALUE parameter occurred and was not DURATION or DATETIME.
+    InvalidValueType(ValueType<S>),
+    /// The VALUE was DATETIME and the relation parameter was present.
+    DateTimeWithRelation,
+    /// A parameter with a multiplicity less than 2 occurred more than once.
+    DuplicateParam(StaticParamName),
+    /// Received an unexpected known parameter.
+    Unexpected(UnexpectedKnownParamError<S>),
 }

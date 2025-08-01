@@ -27,6 +27,10 @@ use crate::{
         },
     },
     parser::{
+        error::{
+            AttachParamError, DtParamError, RDateParamError, TriggerParamError,
+            UnexpectedKnownParamError,
+        },
         parameter::{KnownParam, Param, Rfc5545ParamName, parameter},
         primitive::{
             alarm_action, class_value, completion_percentage, datetime_utc,
@@ -218,71 +222,6 @@ where
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-/// Either [`DuplicateParamError`] or [`UnexpectedKnownParamError`].
-pub enum DuplicateOrUnexpectedError<S> {
-    Duplicate(DuplicateParamError),
-    Unexpected(UnexpectedKnownParamError<S>),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-/// A parameter with a multiplicity less than 2 occurred more than once.
-pub struct DuplicateParamError(StaticParamName);
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UnexpectedKnownParamError<S> {
-    current_property: PropName<S>,
-    unexpected_param: KnownParam<S>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AttachParamError<S> {
-    /// Value type was a URI and the ENCODING parameter was present.
-    EncodingOnUri,
-    /// Value type was BINARY and the ENCODING parameter was not present.
-    BinaryWithoutEncoding,
-    /// ENCODING parameter was 8BIT; the only allowed value is BASE64.
-    Bit8Encoding,
-    /// The VALUE parameter occurred and was not BINARY.
-    NonBinaryValueType,
-    /// A parameter with a multiplicity less than 2 occurred more than once.
-    DuplicateParam(StaticParamName),
-    /// Received an unexpected known parameter.
-    Unexpected(UnexpectedKnownParamError<S>),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DtParamError<S> {
-    /// The VALUE parameter occurred and was not DATETIME or DATE.
-    InvalidValueType(ValueType<S>),
-    /// A parameter with a multiplicity less than 2 occurred more than once.
-    DuplicateParam(StaticParamName),
-    /// Received an unexpected known parameter.
-    Unexpected(UnexpectedKnownParamError<S>),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RDateParamError<S> {
-    /// The VALUE parameter occurred and was not DATETIME, DATE, or PERIOD.
-    InvalidValueType(ValueType<S>),
-    /// A parameter with a multiplicity less than 2 occurred more than once.
-    DuplicateParam(StaticParamName),
-    /// Received an unexpected known parameter.
-    Unexpected(UnexpectedKnownParamError<S>),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TriggerParamError<S> {
-    /// The VALUE parameter occurred and was not DURATION or DATETIME.
-    InvalidValueType(ValueType<S>),
-    /// The VALUE was DATETIME and the relation parameter was present.
-    DateTimeWithRelation,
-    /// A parameter with a multiplicity less than 2 occurred more than once.
-    DuplicateParam(StaticParamName),
-    /// Received an unexpected known parameter.
-    Unexpected(UnexpectedKnownParamError<S>),
-}
-
 type ParsedProp<S> = (Prop<S>, Box<[UnknownParam<S>]>);
 
 /// Parses a [`Prop`].
@@ -295,15 +234,7 @@ where
     I::Token: AsChar + Clone,
     I::Slice: AsBStr + Clone + SliceLen + Stream,
     <<I as Stream>::Slice as Stream>::Token: AsChar,
-    E: ParserError<I>
-        + FromExternalError<I, CalendarParseError<I::Slice>>
-        + FromExternalError<I, DuplicateParamError>
-        + FromExternalError<I, DuplicateOrUnexpectedError<I::Slice>>
-        + FromExternalError<I, UnexpectedKnownParamError<I::Slice>>
-        + FromExternalError<I, AttachParamError<I::Slice>>
-        + FromExternalError<I, DtParamError<I::Slice>>
-        + FromExternalError<I, RDateParamError<I::Slice>>
-        + FromExternalError<I, TriggerParamError<I::Slice>>,
+    E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
     struct StateMachine<Src, S, F> {
         state: S,
@@ -362,15 +293,15 @@ where
     }
 
     /// The step function for unknown (IANA and X) properties.
-    fn unknown_step<Src>(
-        param: KnownParam<Src>,
-        state: &mut (Option<ValueType<Src>>, Vec<KnownParam<Src>>),
-    ) -> Result<(), DuplicateParamError> {
+    fn unknown_step<S>(
+        param: KnownParam<S>,
+        state: &mut (Option<ValueType<S>>, Vec<KnownParam<S>>),
+    ) -> Result<(), CalendarParseError<S>> {
         match param {
             KnownParam::Value(value_type) => match state.0 {
-                Some(_) => Err(DuplicateParamError(StaticParamName::Rfc5545(
-                    Rfc5545ParamName::ValueDataType,
-                ))),
+                Some(_) => Err(CalendarParseError::DuplicateParam(
+                    StaticParamName::Rfc5545(Rfc5545ParamName::ValueDataType),
+                )),
                 None => {
                     state.0 = Some(value_type);
                     Ok(())
@@ -384,17 +315,15 @@ where
     }
 
     /// Returns the step function for properties with no known parameters.
-    fn trivial_step<Src: Clone>(
-        current_property: PropName<Src>,
-    ) -> impl FnMut(
-        KnownParam<Src>,
-        &mut (),
-    ) -> Result<(), UnexpectedKnownParamError<Src>> {
+    fn trivial_step<S: Clone>(
+        current_property: PropName<S>,
+    ) -> impl FnMut(KnownParam<S>, &mut ()) -> Result<(), CalendarParseError<S>>
+    {
         move |param, &mut ()| {
-            Err(UnexpectedKnownParamError {
+            Err(CalendarParseError::Unexpected(UnexpectedKnownParamError {
                 current_property: current_property.clone(),
                 unexpected_param: param,
-            })
+            }))
         }
     }
 
@@ -415,25 +344,23 @@ where
     ) -> impl FnMut(
         KnownParam<S>,
         &mut LangParamState<S>,
-    ) -> Result<(), DuplicateOrUnexpectedError<S>> {
+    ) -> Result<(), CalendarParseError<S>> {
         move |param, state| match param {
             KnownParam::Language(language) => match state.language {
-                Some(_) => Err(DuplicateOrUnexpectedError::Duplicate(
-                    DuplicateParamError(StaticParamName::Rfc5545(
-                        Rfc5545ParamName::Language,
-                    )),
+                Some(_) => Err(CalendarParseError::DuplicateParam(
+                    StaticParamName::Rfc5545(Rfc5545ParamName::Language),
                 )),
                 None => {
                     state.language = Some(language);
                     Ok(())
                 }
             },
-            unexpected_param => Err(DuplicateOrUnexpectedError::Unexpected(
-                UnexpectedKnownParamError {
+            unexpected_param => {
+                Err(CalendarParseError::Unexpected(UnexpectedKnownParamError {
                     current_property: current_property.clone(),
                     unexpected_param,
-                },
-            )),
+                }))
+            }
         }
     }
 
@@ -466,13 +393,13 @@ where
     ) -> impl FnMut(
         KnownParam<S>,
         &mut TextParamState<S>,
-    ) -> Result<(), DuplicateOrUnexpectedError<S>> {
+    ) -> Result<(), CalendarParseError<S>> {
         move |param, state| match param {
             KnownParam::AltRep(uri) => match state.alt_rep {
-                Some(_) => Err(DuplicateOrUnexpectedError::Duplicate(
-                    DuplicateParamError(StaticParamName::Rfc5545(
+                Some(_) => Err(CalendarParseError::DuplicateParam(
+                    StaticParamName::Rfc5545(
                         Rfc5545ParamName::AlternateTextRepresentation,
-                    )),
+                    ),
                 )),
                 None => {
                     state.alt_rep = Some(uri);
@@ -480,22 +407,20 @@ where
                 }
             },
             KnownParam::Language(language) => match state.language {
-                Some(_) => Err(DuplicateOrUnexpectedError::Duplicate(
-                    DuplicateParamError(StaticParamName::Rfc5545(
-                        Rfc5545ParamName::Language,
-                    )),
+                Some(_) => Err(CalendarParseError::DuplicateParam(
+                    StaticParamName::Rfc5545(Rfc5545ParamName::Language),
                 )),
                 None => {
                     state.language = Some(language);
                     Ok(())
                 }
             },
-            unexpected_param => Err(DuplicateOrUnexpectedError::Unexpected(
-                UnexpectedKnownParamError {
+            unexpected_param => {
+                Err(CalendarParseError::Unexpected(UnexpectedKnownParamError {
                     current_property: current_property.clone(),
                     unexpected_param,
-                },
-            )),
+                }))
+            }
         }
     }
 
@@ -534,35 +459,38 @@ where
 
     fn dt_param_step<S: Clone>(
         current_property: PropName<S>,
-    ) -> impl FnMut(KnownParam<S>, &mut DtParamState<S>) -> Result<(), DtParamError<S>>
-    {
+    ) -> impl FnMut(
+        KnownParam<S>,
+        &mut DtParamState<S>,
+    ) -> Result<(), CalendarParseError<S>> {
         move |param, state| match param {
             KnownParam::Value(value_type) => match state.value_type {
-                Some(_) => Err(DtParamError::DuplicateParam(
+                Some(_) => Err(CalendarParseError::DuplicateParam(
                     StaticParamName::Rfc5545(Rfc5545ParamName::ValueDataType),
                 )),
                 None => {
                     let value_type =
                         DateTimeOrDateType::try_from_value_type(value_type)
-                            .map_err(DtParamError::InvalidValueType)?;
+                            .map_err(DtParamError::InvalidValueType)
+                            .map_err(CalendarParseError::DtParam)?;
 
                     state.value_type = Some(value_type);
                     Ok(())
                 }
             },
             KnownParam::TzId(tz_id) => match state.tz_id {
-                Some(_) => {
-                    Err(DtParamError::DuplicateParam(StaticParamName::Rfc5545(
+                Some(_) => Err(CalendarParseError::DuplicateParam(
+                    StaticParamName::Rfc5545(
                         Rfc5545ParamName::TimeZoneIdentifier,
-                    )))
-                }
+                    ),
+                )),
                 None => {
                     state.tz_id = Some(tz_id);
                     Ok(())
                 }
             },
             unexpected_param => {
-                Err(DtParamError::Unexpected(UnexpectedKnownParamError {
+                Err(CalendarParseError::Unexpected(UnexpectedKnownParamError {
                     current_property: current_property.clone(),
                     unexpected_param,
                 }))
@@ -632,11 +560,11 @@ where
             fn step<S>(
                 param: KnownParam<S>,
                 state: &mut State<S>,
-            ) -> Result<(), AttachParamError<S>> {
+            ) -> Result<(), CalendarParseError<S>> {
                 match param {
                     KnownParam::Value(value_type) => match value_type {
                         ValueType::Binary => match state.value_type {
-                            Some(_) => Err(AttachParamError::DuplicateParam(
+                            Some(_) => Err(CalendarParseError::DuplicateParam(
                                 StaticParamName::Rfc5545(
                                     Rfc5545ParamName::ValueDataType,
                                 ),
@@ -646,11 +574,13 @@ where
                                 Ok(())
                             }
                         },
-                        _ => Err(AttachParamError::NonBinaryValueType),
+                        _ => Err(CalendarParseError::AttachParam(
+                            AttachParamError::NonBinaryValueType,
+                        )),
                     },
                     KnownParam::Encoding(Encoding::Base64) => {
                         match state.encoding {
-                            Some(_) => Err(AttachParamError::DuplicateParam(
+                            Some(_) => Err(CalendarParseError::DuplicateParam(
                                 StaticParamName::Rfc5545(
                                     Rfc5545ParamName::InlineEncoding,
                                 ),
@@ -662,11 +592,13 @@ where
                         }
                     }
                     KnownParam::Encoding(Encoding::Bit8) => {
-                        Err(AttachParamError::Bit8Encoding)
+                        Err(CalendarParseError::AttachParam(
+                            AttachParamError::Bit8Encoding,
+                        ))
                     }
                     KnownParam::FormatType(format_type) => {
                         match state.format_type {
-                            Some(_) => Err(AttachParamError::DuplicateParam(
+                            Some(_) => Err(CalendarParseError::DuplicateParam(
                                 StaticParamName::Rfc5545(
                                     Rfc5545ParamName::FormatType,
                                 ),
@@ -677,7 +609,7 @@ where
                             }
                         }
                     }
-                    known_param => Err(AttachParamError::Unexpected(
+                    known_param => Err(CalendarParseError::Unexpected(
                         UnexpectedKnownParamError {
                             current_property: PropName::Rfc5545(
                                 Rfc5545PropName::Attachment,
@@ -713,7 +645,9 @@ where
                     None => {
                         return Err(E::from_external_error(
                             input,
-                            AttachParamError::BinaryWithoutEncoding,
+                            CalendarParseError::AttachParam(
+                                AttachParamError::BinaryWithoutEncoding,
+                            ),
                         ));
                     }
                 }
@@ -1005,29 +939,27 @@ where
             fn step<S>(
                 param: KnownParam<S>,
                 state: &mut State<S>,
-            ) -> Result<(), DuplicateOrUnexpectedError<S>> {
+            ) -> Result<(), CalendarParseError<S>> {
                 match param {
                     KnownParam::FBType(free_busy_type) => match state {
-                        Some(_) => Err(DuplicateOrUnexpectedError::Duplicate(
-                            DuplicateParamError(StaticParamName::Rfc5545(
+                        Some(_) => Err(CalendarParseError::DuplicateParam(
+                            StaticParamName::Rfc5545(
                                 Rfc5545ParamName::FreeBusyTimeType,
-                            )),
+                            ),
                         )),
                         None => {
                             *state = Some(free_busy_type);
                             Ok(())
                         }
                     },
-                    unexpected_param => {
-                        Err(DuplicateOrUnexpectedError::Unexpected(
-                            UnexpectedKnownParamError {
-                                current_property: PropName::Rfc5545(
-                                    Rfc5545PropName::FreeBusyTime,
-                                ),
-                                unexpected_param,
-                            },
-                        ))
-                    }
+                    unexpected_param => Err(CalendarParseError::Unexpected(
+                        UnexpectedKnownParamError {
+                            current_property: PropName::Rfc5545(
+                                Rfc5545PropName::FreeBusyTime,
+                            ),
+                            unexpected_param,
+                        },
+                    )),
                 }
             }
 
@@ -1125,26 +1057,24 @@ where
             fn step<S>(
                 param: KnownParam<S>,
                 state: &mut State<S>,
-            ) -> Result<(), DuplicateOrUnexpectedError<S>> {
+            ) -> Result<(), CalendarParseError<S>> {
                 let name = param.name();
                 match param {
-                    KnownParam::CommonName(common_name) => match state
-                        .common_name
-                    {
-                        Some(_) => Err(DuplicateOrUnexpectedError::Duplicate(
-                            DuplicateParamError(name),
-                        )),
-                        None => {
-                            state.common_name = Some(common_name);
-                            Ok(())
+                    KnownParam::CommonName(common_name) => {
+                        match state.common_name {
+                            Some(_) => {
+                                Err(CalendarParseError::DuplicateParam(name))
+                            }
+                            None => {
+                                state.common_name = Some(common_name);
+                                Ok(())
+                            }
                         }
-                    },
+                    }
                     KnownParam::CUType(calendar_user_type) => {
                         match state.calendar_user_type {
                             Some(_) => {
-                                Err(DuplicateOrUnexpectedError::Duplicate(
-                                    DuplicateParamError(name),
-                                ))
+                                Err(CalendarParseError::DuplicateParam(name))
                             }
                             None => {
                                 state.calendar_user_type =
@@ -1154,107 +1084,105 @@ where
                         }
                     }
                     KnownParam::DelFrom(delegators) => match state.delegators {
-                        Some(_) => Err(DuplicateOrUnexpectedError::Duplicate(
-                            DuplicateParamError(name),
-                        )),
+                        Some(_) => {
+                            Err(CalendarParseError::DuplicateParam(name))
+                        }
                         None => {
                             state.delegators = Some(delegators);
                             Ok(())
                         }
                     },
                     KnownParam::DelTo(delegatees) => match state.delegatees {
-                        Some(_) => Err(DuplicateOrUnexpectedError::Duplicate(
-                            DuplicateParamError(name),
-                        )),
+                        Some(_) => {
+                            Err(CalendarParseError::DuplicateParam(name))
+                        }
                         None => {
                             state.delegatees = Some(delegatees);
                             Ok(())
                         }
                     },
-                    KnownParam::Dir(dir) => match state
-                        .directory_entry_reference
-                    {
-                        Some(_) => Err(DuplicateOrUnexpectedError::Duplicate(
-                            DuplicateParamError(name),
-                        )),
-                        None => {
-                            state.directory_entry_reference = Some(dir);
-                            Ok(())
+                    KnownParam::Dir(dir) => {
+                        match state.directory_entry_reference {
+                            Some(_) => {
+                                Err(CalendarParseError::DuplicateParam(name))
+                            }
+                            None => {
+                                state.directory_entry_reference = Some(dir);
+                                Ok(())
+                            }
                         }
-                    },
+                    }
                     KnownParam::Language(language) => match state.language {
-                        Some(_) => Err(DuplicateOrUnexpectedError::Duplicate(
-                            DuplicateParamError(name),
-                        )),
+                        Some(_) => {
+                            Err(CalendarParseError::DuplicateParam(name))
+                        }
                         None => {
                             state.language = Some(language);
                             Ok(())
                         }
                     },
-                    KnownParam::Member(uris) => match state
-                        .group_or_list_membership
-                    {
-                        Some(_) => Err(DuplicateOrUnexpectedError::Duplicate(
-                            DuplicateParamError(name),
-                        )),
-                        None => {
-                            state.group_or_list_membership = Some(uris);
-                            Ok(())
+                    KnownParam::Member(uris) => {
+                        match state.group_or_list_membership {
+                            Some(_) => {
+                                Err(CalendarParseError::DuplicateParam(name))
+                            }
+                            None => {
+                                state.group_or_list_membership = Some(uris);
+                                Ok(())
+                            }
                         }
-                    },
-                    KnownParam::PartStatus(participation_status) => match state
-                        .participation_status
-                    {
-                        Some(_) => Err(DuplicateOrUnexpectedError::Duplicate(
-                            DuplicateParamError(name),
-                        )),
-                        None => {
-                            state.participation_status =
-                                Some(participation_status);
-                            Ok(())
+                    }
+                    KnownParam::PartStatus(participation_status) => {
+                        match state.participation_status {
+                            Some(_) => {
+                                Err(CalendarParseError::DuplicateParam(name))
+                            }
+                            None => {
+                                state.participation_status =
+                                    Some(participation_status);
+                                Ok(())
+                            }
                         }
-                    },
+                    }
                     KnownParam::Role(participation_role) => match state
                         .participation_role
                     {
-                        Some(_) => Err(DuplicateOrUnexpectedError::Duplicate(
-                            DuplicateParamError(name),
-                        )),
+                        Some(_) => {
+                            Err(CalendarParseError::DuplicateParam(name))
+                        }
                         None => {
                             state.participation_role = Some(participation_role);
                             Ok(())
                         }
                     },
-                    KnownParam::Rsvp(rsvp_expectation) => match state
-                        .rsvp_expectation
-                    {
-                        Some(_) => Err(DuplicateOrUnexpectedError::Duplicate(
-                            DuplicateParamError(name),
-                        )),
-                        None => {
-                            state.rsvp_expectation = Some(rsvp_expectation);
-                            Ok(())
+                    KnownParam::Rsvp(rsvp_expectation) => {
+                        match state.rsvp_expectation {
+                            Some(_) => {
+                                Err(CalendarParseError::DuplicateParam(name))
+                            }
+                            None => {
+                                state.rsvp_expectation = Some(rsvp_expectation);
+                                Ok(())
+                            }
                         }
-                    },
+                    }
                     KnownParam::SentBy(sent_by) => match state.sent_by {
-                        Some(_) => Err(DuplicateOrUnexpectedError::Duplicate(
-                            DuplicateParamError(name),
-                        )),
+                        Some(_) => {
+                            Err(CalendarParseError::DuplicateParam(name))
+                        }
                         None => {
                             state.sent_by = Some(sent_by);
                             Ok(())
                         }
                     },
-                    unexpected_param => {
-                        Err(DuplicateOrUnexpectedError::Unexpected(
-                            UnexpectedKnownParamError {
-                                current_property: PropName::Rfc5545(
-                                    Rfc5545PropName::Attendee,
-                                ),
-                                unexpected_param,
-                            },
-                        ))
-                    }
+                    unexpected_param => Err(CalendarParseError::Unexpected(
+                        UnexpectedKnownParamError {
+                            current_property: PropName::Rfc5545(
+                                Rfc5545PropName::Attendee,
+                            ),
+                            unexpected_param,
+                        },
+                    )),
                 }
             }
 
@@ -1312,59 +1240,57 @@ where
             fn step<S>(
                 param: KnownParam<S>,
                 state: &mut State<S>,
-            ) -> Result<(), DuplicateOrUnexpectedError<S>> {
+            ) -> Result<(), CalendarParseError<S>> {
                 let name = param.name();
                 match param {
-                    KnownParam::CommonName(common_name) => match state
-                        .common_name
-                    {
-                        Some(_) => Err(DuplicateOrUnexpectedError::Duplicate(
-                            DuplicateParamError(name),
-                        )),
-                        None => {
-                            state.common_name = Some(common_name);
-                            Ok(())
+                    KnownParam::CommonName(common_name) => {
+                        match state.common_name {
+                            Some(_) => {
+                                Err(CalendarParseError::DuplicateParam(name))
+                            }
+                            None => {
+                                state.common_name = Some(common_name);
+                                Ok(())
+                            }
                         }
-                    },
-                    KnownParam::Dir(dir) => match state
-                        .directory_entry_reference
-                    {
-                        Some(_) => Err(DuplicateOrUnexpectedError::Duplicate(
-                            DuplicateParamError(name),
-                        )),
-                        None => {
-                            state.directory_entry_reference = Some(dir);
-                            Ok(())
+                    }
+                    KnownParam::Dir(dir) => {
+                        match state.directory_entry_reference {
+                            Some(_) => {
+                                Err(CalendarParseError::DuplicateParam(name))
+                            }
+                            None => {
+                                state.directory_entry_reference = Some(dir);
+                                Ok(())
+                            }
                         }
-                    },
+                    }
                     KnownParam::Language(language) => match state.language {
-                        Some(_) => Err(DuplicateOrUnexpectedError::Duplicate(
-                            DuplicateParamError(name),
-                        )),
+                        Some(_) => {
+                            Err(CalendarParseError::DuplicateParam(name))
+                        }
                         None => {
                             state.language = Some(language);
                             Ok(())
                         }
                     },
                     KnownParam::SentBy(sent_by) => match state.sent_by {
-                        Some(_) => Err(DuplicateOrUnexpectedError::Duplicate(
-                            DuplicateParamError(name),
-                        )),
+                        Some(_) => {
+                            Err(CalendarParseError::DuplicateParam(name))
+                        }
                         None => {
                             state.sent_by = Some(sent_by);
                             Ok(())
                         }
                     },
-                    unexpected_param => {
-                        Err(DuplicateOrUnexpectedError::Unexpected(
-                            UnexpectedKnownParamError {
-                                current_property: PropName::Rfc5545(
-                                    Rfc5545PropName::Organizer,
-                                ),
-                                unexpected_param,
-                            },
-                        ))
-                    }
+                    unexpected_param => Err(CalendarParseError::Unexpected(
+                        UnexpectedKnownParamError {
+                            current_property: PropName::Rfc5545(
+                                Rfc5545PropName::Organizer,
+                            ),
+                            unexpected_param,
+                        },
+                    )),
                 }
             }
 
@@ -1409,13 +1335,13 @@ where
             fn step<S>(
                 param: KnownParam<S>,
                 state: &mut State<S>,
-            ) -> Result<(), DtParamError<S>> {
+            ) -> Result<(), CalendarParseError<S>> {
                 let name = param.name();
                 match param {
                     KnownParam::RecurrenceIdentifierRange => {
                         match state.recurrence_identifier_range {
                             Some(ThisAndFuture) => {
-                                Err(DtParamError::DuplicateParam(name))
+                                Err(CalendarParseError::DuplicateParam(name))
                             }
                             None => {
                                 state.recurrence_identifier_range =
@@ -1425,26 +1351,31 @@ where
                         }
                     }
                     KnownParam::TzId(tz_id) => match state.tz_id {
-                        Some(_) => Err(DtParamError::DuplicateParam(name)),
+                        Some(_) => {
+                            Err(CalendarParseError::DuplicateParam(name))
+                        }
                         None => {
                             state.tz_id = Some(tz_id);
                             Ok(())
                         }
                     },
                     KnownParam::Value(value_type) => match state.value_type {
-                        Some(_) => Err(DtParamError::DuplicateParam(name)),
+                        Some(_) => {
+                            Err(CalendarParseError::DuplicateParam(name))
+                        }
                         None => {
                             let value_type =
                                 DateTimeOrDateType::try_from_value_type(
                                     value_type,
                                 )
-                                .map_err(DtParamError::InvalidValueType)?;
+                                .map_err(DtParamError::InvalidValueType)
+                                .map_err(CalendarParseError::DtParam)?;
 
                             state.value_type = Some(value_type);
                             Ok(())
                         }
                     },
-                    unexpected_param => Err(DtParamError::Unexpected(
+                    unexpected_param => Err(CalendarParseError::Unexpected(
                         UnexpectedKnownParamError {
                             current_property: PropName::Rfc5545(
                                 Rfc5545PropName::RecurrenceId,
@@ -1493,29 +1424,27 @@ where
             fn step<S>(
                 param: KnownParam<S>,
                 state: &mut State<S>,
-            ) -> Result<(), DuplicateOrUnexpectedError<S>> {
+            ) -> Result<(), CalendarParseError<S>> {
                 let name = param.name();
 
                 match param {
                     KnownParam::RelType(relationship_type) => match state {
-                        Some(_) => Err(DuplicateOrUnexpectedError::Duplicate(
-                            DuplicateParamError(name),
-                        )),
+                        Some(_) => {
+                            Err(CalendarParseError::DuplicateParam(name))
+                        }
                         None => {
                             *state = Some(relationship_type);
                             Ok(())
                         }
                     },
-                    unexpected_param => {
-                        Err(DuplicateOrUnexpectedError::Unexpected(
-                            UnexpectedKnownParamError {
-                                current_property: PropName::Rfc5545(
-                                    Rfc5545PropName::RelatedTo,
-                                ),
-                                unexpected_param,
-                            },
-                        ))
-                    }
+                    unexpected_param => Err(CalendarParseError::Unexpected(
+                        UnexpectedKnownParamError {
+                            current_property: PropName::Rfc5545(
+                                Rfc5545PropName::RelatedTo,
+                            ),
+                            unexpected_param,
+                        },
+                    )),
                 }
             }
 
@@ -1618,28 +1547,33 @@ where
             fn step<S>(
                 param: KnownParam<S>,
                 state: &mut State<S>,
-            ) -> Result<(), RDateParamError<S>> {
+            ) -> Result<(), CalendarParseError<S>> {
                 let name = param.name();
 
                 match param {
                     KnownParam::TzId(tz_id) => match state.tz_id {
-                        Some(_) => Err(RDateParamError::DuplicateParam(name)),
+                        Some(_) => {
+                            Err(CalendarParseError::DuplicateParam(name))
+                        }
                         None => {
                             state.tz_id = Some(tz_id);
                             Ok(())
                         }
                     },
                     KnownParam::Value(value_type) => match state.value_type {
-                        Some(_) => Err(RDateParamError::DuplicateParam(name)),
+                        Some(_) => {
+                            Err(CalendarParseError::DuplicateParam(name))
+                        }
                         None => {
                             let value_type = RDateType::try_from(value_type)
-                                .map_err(RDateParamError::InvalidValueType)?;
+                                .map_err(RDateParamError::InvalidValueType)
+                                .map_err(CalendarParseError::RDateParam)?;
 
                             state.value_type = Some(value_type);
                             Ok(())
                         }
                     },
-                    unexpected_param => Err(RDateParamError::Unexpected(
+                    unexpected_param => Err(CalendarParseError::Unexpected(
                         UnexpectedKnownParamError {
                             current_property: PropName::Rfc5545(
                                 Rfc5545PropName::RecurrenceDateTimes,
@@ -1738,30 +1672,35 @@ where
             fn step<S>(
                 param: KnownParam<S>,
                 state: &mut State,
-            ) -> Result<(), TriggerParamError<S>> {
+            ) -> Result<(), CalendarParseError<S>> {
                 let name = param.name();
 
                 match param {
-                    KnownParam::AlarmTrigger(trigger_relation) => match state
-                        .trigger_relation
-                    {
-                        Some(_) => Err(TriggerParamError::DuplicateParam(name)),
-                        None => {
-                            state.trigger_relation = Some(trigger_relation);
-                            Ok(())
+                    KnownParam::AlarmTrigger(trigger_relation) => {
+                        match state.trigger_relation {
+                            Some(_) => {
+                                Err(CalendarParseError::DuplicateParam(name))
+                            }
+                            None => {
+                                state.trigger_relation = Some(trigger_relation);
+                                Ok(())
+                            }
                         }
-                    },
+                    }
                     KnownParam::Value(value_type) => match state.value_type {
-                        Some(_) => Err(TriggerParamError::DuplicateParam(name)),
+                        Some(_) => {
+                            Err(CalendarParseError::DuplicateParam(name))
+                        }
                         None => {
                             let value_type = TriggerType::try_from(value_type)
-                                .map_err(TriggerParamError::InvalidValueType)?;
+                                .map_err(TriggerParamError::InvalidValueType)
+                                .map_err(CalendarParseError::TriggerParam)?;
 
                             state.value_type = Some(value_type);
                             Ok(())
                         }
                     },
-                    unexpected_param => Err(TriggerParamError::Unexpected(
+                    unexpected_param => Err(CalendarParseError::Unexpected(
                         UnexpectedKnownParamError {
                             current_property: PropName::Rfc5545(
                                 Rfc5545PropName::Trigger,
@@ -1789,7 +1728,9 @@ where
                 TriggerType::DateTime if trigger_relation.is_some() => {
                     Err(E::from_external_error(
                         input,
-                        TriggerParamError::DateTimeWithRelation,
+                        CalendarParseError::TriggerParam(
+                            TriggerParamError::DateTimeWithRelation,
+                        ),
                     ))
                 }
                 TriggerType::DateTime => {
