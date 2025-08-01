@@ -157,6 +157,7 @@ where
         Caseless("COUNTER").value(Method::Counter),
         Caseless("PUBLISH").value(Method::Publish),
         Caseless("REFRESH").value(Method::Refresh),
+        Caseless("REQUEST").value(Method::Request),
         Caseless("CANCEL").value(Method::Cancel),
         Caseless("REPLY").value(Method::Reply),
         Caseless("ADD").value(Method::Add),
