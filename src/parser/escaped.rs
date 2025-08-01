@@ -4,8 +4,8 @@ use winnow::{
     ascii::Caseless,
     error::Needed,
     stream::{
-        AsBytes, Checkpoint, Compare, CompareResult, Offset, SliceLen, Stream,
-        StreamIsPartial,
+        AsBStr, AsBytes, Checkpoint, Compare, CompareResult, Offset, SliceLen,
+        Stream, StreamIsPartial,
     },
 };
 
@@ -28,9 +28,25 @@ impl AsEscaped for [u8] {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Escaped<'a>(pub &'a [u8]);
 
+impl<'a> Escaped<'a> {
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
 impl<'a> std::fmt::Debug for Escaped<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         <winnow::BStr as std::fmt::Debug>::fmt(winnow::BStr::new(self.0), f)
+    }
+}
+
+impl<'a> AsBStr for Escaped<'a> {
+    fn as_bstr(&self) -> &[u8] {
+        self.0.as_bstr()
     }
 }
 
