@@ -150,7 +150,8 @@ pub enum DisplayType<S = Box<str>> {
     Graphic,
     Fullsize,
     Thumbnail,
-    Other(S),
+    Iana(S),
+    X(S),
 }
 
 /// FEATURE parameter values (RFC 7986)
@@ -163,7 +164,8 @@ pub enum FeatureType<S = Box<str>> {
     Phone,
     Screen,
     Video,
-    Other(S),
+    Iana(S),
+    X(S),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -202,7 +204,8 @@ pub enum CalendarUserType<S = Box<str>> {
     Resource,
     Room,
     Unknown,
-    Other(S),
+    Iana(S),
+    X(S),
 }
 
 impl<S> Default for CalendarUserType<S> {
@@ -217,7 +220,14 @@ pub enum ParticipationRole<S = Box<str>> {
     ReqParticipant,
     OptParticipant,
     NonParticipant,
-    Other(S),
+    Iana(S),
+    X(S),
+}
+
+impl<S> Default for ParticipationRole<S> {
+    fn default() -> Self {
+        Self::ReqParticipant
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -229,7 +239,8 @@ pub enum ParticipationStatus<S = Box<str>> {
     Delegated,
     Completed,
     InProcess,
-    Other(S),
+    Iana(S),
+    X(S),
 }
 
 impl<S> Default for ParticipationStatus<S> {
@@ -244,7 +255,8 @@ pub enum FreeBusyType<S = Box<str>> {
     Busy,
     BusyUnavailable,
     BusyTentative,
-    Other(S),
+    Iana(S),
+    X(S),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -267,7 +279,8 @@ pub enum RelationshipType<S = Box<str>> {
     Parent,
     Child,
     Sibling,
-    Other(S),
+    Iana(S),
+    X(S),
 }
 
 /// The type of a [`Value`].

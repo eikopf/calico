@@ -76,7 +76,10 @@ where
 /// Parses a [`FeatureType`].
 pub fn feature_type<I, E>(input: &mut I) -> Result<FeatureType<I::Slice>, E>
 where
-    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
+    I: StreamIsPartial
+        + Stream
+        + Compare<Caseless<&'static str>>
+        + Compare<char>,
     <I as Stream>::Token: AsChar + Clone,
     FeatureType<I::Slice>: Clone,
     E: ParserError<I>,
@@ -89,7 +92,8 @@ where
         Caseless("VIDEO").value(FeatureType::Video),
         Caseless("CHAT").value(FeatureType::Chat),
         Caseless("FEED").value(FeatureType::Feed),
-        iana_token.map(FeatureType::Other),
+        x_name.map(FeatureType::X),
+        iana_token.map(FeatureType::Iana),
     ))
     .parse_next(input)
 }
@@ -97,7 +101,10 @@ where
 /// Parses a [`DisplayType`].
 pub fn display_type<I, E>(input: &mut I) -> Result<DisplayType<I::Slice>, E>
 where
-    I: Stream + StreamIsPartial + Compare<Caseless<&'static str>>,
+    I: Stream
+        + StreamIsPartial
+        + Compare<Caseless<&'static str>>
+        + Compare<char>,
     I::Token: AsChar + Clone,
     DisplayType<I::Slice>: Clone,
     E: ParserError<I>,
@@ -107,7 +114,8 @@ where
         Caseless("FULLSIZE").value(DisplayType::Fullsize),
         Caseless("GRAPHIC").value(DisplayType::Graphic),
         Caseless("BADGE").value(DisplayType::Badge),
-        iana_token.map(DisplayType::Other),
+        x_name.map(DisplayType::X),
+        iana_token.map(DisplayType::Iana),
     ))
     .parse_next(input)
 }
@@ -272,7 +280,10 @@ pub fn calendar_user_type<I, E>(
     input: &mut I,
 ) -> Result<CalendarUserType<I::Slice>, E>
 where
-    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
+    I: StreamIsPartial
+        + Stream
+        + Compare<Caseless<&'static str>>
+        + Compare<char>,
     I::Token: AsChar + Clone,
     CalendarUserType<I::Slice>: Clone,
     E: ParserError<I>,
@@ -283,7 +294,8 @@ where
         Caseless("RESOURCE").value(CalendarUserType::Resource),
         Caseless("ROOM").value(CalendarUserType::Room),
         Caseless("UNKNOWN").value(CalendarUserType::Unknown),
-        iana_token.map(CalendarUserType::Other),
+        x_name.map(CalendarUserType::X),
+        iana_token.map(CalendarUserType::Iana),
     ))
     .parse_next(input)
 }
@@ -349,7 +361,10 @@ where
 /// Parses a [`FreeBusyType`].
 pub fn free_busy_type<I, E>(input: &mut I) -> Result<FreeBusyType<I::Slice>, E>
 where
-    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
+    I: StreamIsPartial
+        + Stream
+        + Compare<Caseless<&'static str>>
+        + Compare<char>,
     I::Token: AsChar + Clone,
     FreeBusyType<I::Slice>: Clone,
     E: ParserError<I>,
@@ -359,7 +374,8 @@ where
         Caseless("BUSY-TENTATIVE").value(FreeBusyType::BusyTentative),
         Caseless("BUSY").value(FreeBusyType::Busy),
         Caseless("FREE").value(FreeBusyType::Free),
-        iana_token.map(FreeBusyType::Other),
+        x_name.map(FreeBusyType::X),
+        iana_token.map(FreeBusyType::Iana),
     ))
     .parse_next(input)
 }
@@ -369,7 +385,10 @@ pub fn participation_status<I, E>(
     input: &mut I,
 ) -> Result<ParticipationStatus<I::Slice>, E>
 where
-    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
+    I: StreamIsPartial
+        + Stream
+        + Compare<Caseless<&'static str>>
+        + Compare<char>,
     I::Token: AsChar + Clone,
     ParticipationStatus<I::Slice>: Clone,
     E: ParserError<I>,
@@ -382,7 +401,8 @@ where
         Caseless("TENTATIVE").value(ParticipationStatus::Tentative),
         Caseless("ACCEPTED").value(ParticipationStatus::Accepted),
         Caseless("DECLINED").value(ParticipationStatus::Declined),
-        iana_token.map(ParticipationStatus::Other),
+        x_name.map(ParticipationStatus::X),
+        iana_token.map(ParticipationStatus::Iana),
     ))
     .parse_next(input)
 }
@@ -407,7 +427,10 @@ pub fn relationship_type<I, E>(
     input: &mut I,
 ) -> Result<RelationshipType<I::Slice>, E>
 where
-    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
+    I: StreamIsPartial
+        + Stream
+        + Compare<Caseless<&'static str>>
+        + Compare<char>,
     I::Token: AsChar + Clone,
     RelationshipType<I::Slice>: Clone,
     E: ParserError<I>,
@@ -416,7 +439,8 @@ where
         Caseless("SIBLING").value(RelationshipType::Sibling),
         Caseless("PARENT").value(RelationshipType::Parent),
         Caseless("CHILD").value(RelationshipType::Child),
-        iana_token.map(RelationshipType::Other),
+        x_name.map(RelationshipType::X),
+        iana_token.map(RelationshipType::Iana),
     ))
     .parse_next(input)
 }
@@ -426,7 +450,10 @@ pub fn participation_role<I, E>(
     input: &mut I,
 ) -> Result<ParticipationRole<I::Slice>, E>
 where
-    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
+    I: StreamIsPartial
+        + Stream
+        + Compare<Caseless<&'static str>>
+        + Compare<char>,
     I::Token: AsChar + Clone,
     ParticipationRole<I::Slice>: Clone,
     E: ParserError<I>,
@@ -436,7 +463,8 @@ where
         Caseless("OPT-PARTICIPANT").value(ParticipationRole::OptParticipant),
         Caseless("NON-PARTICIPANT").value(ParticipationRole::NonParticipant),
         Caseless("CHAIR").value(ParticipationRole::Chair),
-        iana_token.map(ParticipationRole::Other),
+        x_name.map(ParticipationRole::X),
+        iana_token.map(ParticipationRole::Iana),
     ))
     .parse_next(input)
 }
@@ -1229,7 +1257,7 @@ mod tests {
                 .parse_peek(Escaped("\r\n\tX-TH\r\n\tING".as_bytes()))
                 .unwrap()
                 .1,
-            FeatureType::Other("\r\n\tX-TH\r\n\tING".as_escaped()),
+            FeatureType::X("\r\n\tX-TH\r\n\tING".as_escaped()),
         );
     }
 
@@ -1245,7 +1273,7 @@ mod tests {
         );
         assert_eq!(
             display_type::<_, ()>.parse_peek("X-OTHER").unwrap().1,
-            DisplayType::Other("X-OTHER"),
+            DisplayType::X("X-OTHER"),
         );
     }
 
@@ -1353,7 +1381,7 @@ mod tests {
                 .parse_peek("iana-token")
                 .unwrap()
                 .1,
-            CalendarUserType::Other("iana-token"),
+            CalendarUserType::Iana("iana-token"),
         );
     }
 
@@ -1461,7 +1489,7 @@ mod tests {
 
         assert_eq!(
             relationship_type::<_, ()>.parse_peek("X-SOMETHING-ELSE"),
-            Ok(("", RelationshipType::Other("X-SOMETHING-ELSE"))),
+            Ok(("", RelationshipType::X("X-SOMETHING-ELSE"))),
         );
     }
 
@@ -1479,7 +1507,7 @@ mod tests {
 
         assert_eq!(
             participation_role::<_, ()>.parse_peek("X-ANYTHING"),
-            Ok(("", ParticipationRole::Other("X-ANYTHING"))),
+            Ok(("", ParticipationRole::X("X-ANYTHING"))),
         );
     }
 

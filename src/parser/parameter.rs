@@ -834,7 +834,7 @@ mod tests {
                 .parse_peek("DISPLAY=X-SOMETHING-ELSE")
                 .ok()
                 .and_then(|(_, p)| p.try_into_known().ok()),
-            Some(KnownParam::Display(DisplayType::Other("X-SOMETHING-ELSE"))),
+            Some(KnownParam::Display(DisplayType::X("X-SOMETHING-ELSE"))),
         );
 
         assert_eq!(
@@ -874,7 +874,7 @@ mod tests {
                 .parse_peek("feature=random-iana-token")
                 .ok()
                 .and_then(|(_, p)| p.try_into_known().ok()),
-            Some(KnownParam::Feature(FeatureType::Other("random-iana-token"))),
+            Some(KnownParam::Feature(FeatureType::Iana("random-iana-token"))),
         );
 
         assert_eq!(
