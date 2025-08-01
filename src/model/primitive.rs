@@ -1,4 +1,18 @@
 //! Primitive types for the object model.
+//!
+//! # Type Parameters
+//!
+//! There are two primary groups of type parameters on the types in this module;
+//! they are called `S` and `F` by convention.
+//!
+//! The `S` parameter denotes the _source_ of a type, i.e. the underlying data
+//! over which the type is providing a view. Typically this is a slice of the
+//! parsed input, e.g. `&str`, `&[u8]`, or
+//! [`Escaped`](crate::parser::escaped::Escaped).
+//!
+//! The `F` parameter is the _time format_ of a type. This is used to distinguish
+//! between temporal values which are strictly [`Local`], strictly in reference
+//! to [`Utc`], or which may have either a local or absolute [`TimeFormat`].
 
 use chrono::NaiveDate;
 
