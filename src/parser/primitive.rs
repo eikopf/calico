@@ -57,7 +57,7 @@ where
     I::Token: AsChar + Clone,
     E: ParserError<I>,
 {
-    ('/', text).take().map(TzId).parse_next(input)
+    (opt('/'), text).take().map(TzId).parse_next(input)
 }
 
 /// Parses a [`TimeTransparency`].
@@ -1232,7 +1232,7 @@ mod tests {
     #[test]
     fn tz_id_parser() {
         assert!(tz_id::<_, ()>.parse_peek("/some text").is_ok());
-        assert!(tz_id::<_, ()>.parse_peek("no prefix").is_err());
+        assert!(tz_id::<_, ()>.parse_peek("no prefix").is_ok());
     }
 
     #[test]
