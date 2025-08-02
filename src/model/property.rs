@@ -5,8 +5,8 @@ use std::collections::HashMap;
 use crate::parser::parameter::ParamValue;
 
 use super::primitive::{
-    CalendarUserType, DisplayType, FeatureType, FormatType, FreeBusyType,
-    ImageData, Language, ParticipationRole, ParticipationStatus,
+    CalAddress, CalendarUserType, DisplayType, FeatureType, FormatType,
+    FreeBusyType, ImageData, Language, ParticipationRole, ParticipationStatus,
     RelationshipType, Text, ThisAndFuture, TriggerRelation, TzId, Uri,
 };
 
@@ -45,15 +45,33 @@ pub struct AttachParams<S> {
 pub struct AttendeeParams<S> {
     pub language: Option<Language<S>>,
     pub calendar_user_type: Option<CalendarUserType<S>>,
-    pub group_or_list_membership: Option<Box<[Uri<S>]>>,
+    pub group_or_list_membership: Option<Box<[CalAddress<S>]>>,
     pub participation_role: Option<ParticipationRole<S>>,
     pub participation_status: Option<ParticipationStatus<S>>,
     pub rsvp_expectation: Option<bool>,
-    pub delegatees: Option<Box<[Uri<S>]>>,
-    pub delegators: Option<Box<[Uri<S>]>>,
+    pub delegatees: Option<Box<[CalAddress<S>]>>,
+    pub delegators: Option<Box<[CalAddress<S>]>>,
     pub sent_by: Option<Uri<S>>,
     pub common_name: Option<ParamValue<S>>,
     pub directory_entry_reference: Option<Uri<S>>,
+}
+
+impl<S> Default for AttendeeParams<S> {
+    fn default() -> Self {
+        Self {
+            language: Default::default(),
+            calendar_user_type: Default::default(),
+            group_or_list_membership: Default::default(),
+            participation_role: Default::default(),
+            participation_status: Default::default(),
+            rsvp_expectation: Default::default(),
+            delegatees: Default::default(),
+            delegators: Default::default(),
+            sent_by: Default::default(),
+            common_name: Default::default(),
+            directory_entry_reference: Default::default(),
+        }
+    }
 }
 
 /// The parameters associated with the `ORGANIZER` property.
@@ -106,6 +124,15 @@ pub struct FBTypeParams<S> {
 pub struct TextParams<S> {
     pub language: Option<Language<S>>,
     pub alternate_representation: Option<Uri<S>>,
+}
+
+impl<S> Default for TextParams<S> {
+    fn default() -> Self {
+        Self {
+            language: Default::default(),
+            alternate_representation: Default::default(),
+        }
+    }
 }
 
 /// The parameters usually associated with image data.

@@ -16,9 +16,9 @@ use crate::{
             AlarmAction, AttachValue, CalAddress, ClassValue,
             CompletionPercentage, DateTime, DateTimeOrDate, Duration, Encoding,
             FormatType, FreeBusyType, Geo, ImageData, Integer, Language,
-            Method, ParticipationStatus, Period, Priority, RDate,
-            RelationshipType, Status, Text, ThisAndFuture, TimeTransparency,
-            TriggerRelation, TzId, Uid, Uri, Utc, UtcOffset, Value, ValueType,
+            Method, Period, Priority, RDate, RelationshipType, Status, Text,
+            ThisAndFuture, TimeTransparency, TriggerRelation, TzId, Uid, Uri,
+            Utc, UtcOffset, Value, ValueType,
         },
         property::{
             AttachParams, AttendeeParams, ConfParams, DtParams, FBTypeParams,
@@ -35,8 +35,8 @@ use crate::{
         primitive::{
             alarm_action, cal_address, class_value, completion_percentage,
             datetime_utc, duration, float, geo, gregorian, iana_token, integer,
-            method, participation_status, period, priority, status, text,
-            time_transparency, tz_id, uid, utc_offset, v2_0, x_name,
+            method, period, priority, status, text, time_transparency, tz_id,
+            uid, utc_offset, v2_0, x_name,
         },
     },
 };
@@ -190,9 +190,9 @@ where
         ValueType::Boolean => {
             bool_caseless.map(Value::Boolean).parse_next(input)
         }
-        ValueType::CalAddress => {
-            cal_address.map(Value::CalAddress).parse_next(input)
-        }
+        ValueType::CalAddress => cal_address::<_, _, false>
+            .map(Value::CalAddress)
+            .parse_next(input),
         ValueType::Date => date.map(Value::Date).parse_next(input),
         ValueType::DateTime => datetime.map(Value::DateTime).parse_next(input),
         ValueType::Duration => duration.map(Value::Duration).parse_next(input),
@@ -202,7 +202,7 @@ where
         ValueType::Recur => todo!(),
         ValueType::Text => text.map(Value::Text).parse_next(input),
         ValueType::Time => time.map(Value::Time).parse_next(input),
-        ValueType::Uri => uri.map(Value::Uri).parse_next(input),
+        ValueType::Uri => uri::<_, _, false>.map(Value::Uri).parse_next(input),
         ValueType::UtcOffset => {
             utc_offset.map(Value::UtcOffset).parse_next(input)
         }
@@ -1046,7 +1046,7 @@ where
                 sm_parse_next(StateMachine::new((), step), input)?;
 
             let _ = ':'.parse_next(input)?;
-            let value = uri.parse_next(input)?;
+            let value = uri::<_, _, false>.parse_next(input)?;
 
             (Prop::Known(KnownProp::TzUrl(value)), unknown_params)
         }
@@ -1206,7 +1206,7 @@ where
             )?;
 
             let _ = ':'.parse_next(input)?;
-            let value = cal_address.parse_next(input)?;
+            let value = cal_address::<_, _, false>.parse_next(input)?;
 
             (
                 Prop::Known(KnownProp::Attendee(value, params)),
@@ -1304,7 +1304,7 @@ where
             )?;
 
             let _ = ':'.parse_next(input)?;
-            let value = cal_address.parse_next(input)?;
+            let value = cal_address::<_, _, false>.parse_next(input)?;
 
             (
                 Prop::Known(KnownProp::Organizer(value, params)),
@@ -1464,7 +1464,7 @@ where
             let ((), unknown_params) =
                 sm_parse_next(StateMachine::new((), step), input)?;
             let _ = ':'.parse_next(input)?;
-            let value = uri.parse_next(input)?;
+            let value = uri::<_, _, false>.parse_next(input)?;
 
             (Prop::Known(KnownProp::Url(value)), unknown_params)
         }
@@ -2143,10 +2143,10 @@ pub enum Rfc7986PropName {
 mod tests {
     use crate::{
         model::primitive::{
-            Date, DurationKind, DurationTime, GeoComponent, RawTime, Time,
-            TimeFormat,
+            Date, DurationKind, DurationTime, GeoComponent, ParticipationRole,
+            ParticipationStatus, RawTime, Sign, Time, TimeFormat,
         },
-        parser::escaped::AsEscaped,
+        parser::{escaped::AsEscaped, parameter::ParamValue},
     };
 
     use super::*;
@@ -2772,6 +2772,499 @@ mod tests {
             }]
             .as_slice()
         );
+    }
+
+    #[test]
+    fn rfc_5545_example_free_busy_time_property_2() {
+        let input =
+            "FREEBUSY;FBTYPE=FREE:19970308T160000Z/PT3H,19970308T200000Z/PT1H";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+
+        let Prop::Known(KnownProp::FreeBusy(periods, params)) = prop else {
+            panic!()
+        };
+
+        assert_eq!(params.free_busy_type, Some(FreeBusyType::Free));
+        assert_eq!(
+            periods.as_ref(),
+            [
+                Period::Start {
+                    start: DateTime {
+                        date: Date(
+                            NaiveDate::from_ymd_opt(1997, 3, 8).unwrap()
+                        ),
+                        time: Time {
+                            raw: RawTime {
+                                hours: 16,
+                                minutes: 0,
+                                seconds: 0
+                            },
+                            format: TimeFormat::Utc
+                        },
+                    },
+                    duration: Duration {
+                        sign: None,
+                        kind: DurationKind::Time {
+                            time: DurationTime::H { hours: 3 },
+                        }
+                    }
+                },
+                Period::Start {
+                    start: DateTime {
+                        date: Date(
+                            NaiveDate::from_ymd_opt(1997, 3, 8).unwrap()
+                        ),
+                        time: Time {
+                            raw: RawTime {
+                                hours: 20,
+                                minutes: 0,
+                                seconds: 0
+                            },
+                            format: TimeFormat::Utc
+                        },
+                    },
+                    duration: Duration {
+                        sign: None,
+                        kind: DurationKind::Time {
+                            time: DurationTime::H { hours: 1 },
+                        }
+                    }
+                },
+            ]
+            .as_slice()
+        );
+    }
+
+    #[test]
+    fn rfc_5545_example_free_busy_time_property_3() {
+        let input = "FREEBUSY;FBTYPE=FREE:19970308T160000Z/PT3H,19970308T200000Z/PT1H\r\n\t,19970308T230000Z/19970309T000000Z";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input.as_escaped()).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+
+        let Prop::Known(KnownProp::FreeBusy(periods, params)) = prop else {
+            panic!()
+        };
+
+        assert_eq!(params.free_busy_type, Some(FreeBusyType::Free));
+        assert_eq!(
+            periods.as_ref(),
+            [
+                Period::Start {
+                    start: DateTime {
+                        date: Date(
+                            NaiveDate::from_ymd_opt(1997, 3, 8).unwrap()
+                        ),
+                        time: Time {
+                            raw: RawTime {
+                                hours: 16,
+                                minutes: 0,
+                                seconds: 0
+                            },
+                            format: TimeFormat::Utc
+                        },
+                    },
+                    duration: Duration {
+                        sign: None,
+                        kind: DurationKind::Time {
+                            time: DurationTime::H { hours: 3 },
+                        }
+                    }
+                },
+                Period::Start {
+                    start: DateTime {
+                        date: Date(
+                            NaiveDate::from_ymd_opt(1997, 3, 8).unwrap()
+                        ),
+                        time: Time {
+                            raw: RawTime {
+                                hours: 20,
+                                minutes: 0,
+                                seconds: 0
+                            },
+                            format: TimeFormat::Utc
+                        },
+                    },
+                    duration: Duration {
+                        sign: None,
+                        kind: DurationKind::Time {
+                            time: DurationTime::H { hours: 1 },
+                        }
+                    }
+                },
+                Period::Explicit {
+                    start: DateTime {
+                        date: Date(
+                            NaiveDate::from_ymd_opt(1997, 3, 8).unwrap()
+                        ),
+                        time: Time {
+                            raw: RawTime {
+                                hours: 23,
+                                minutes: 0,
+                                seconds: 0
+                            },
+                            format: TimeFormat::Utc
+                        },
+                    },
+                    end: DateTime {
+                        date: Date(
+                            NaiveDate::from_ymd_opt(1997, 3, 9).unwrap()
+                        ),
+                        time: Time {
+                            raw: RawTime {
+                                hours: 0,
+                                minutes: 0,
+                                seconds: 0
+                            },
+                            format: TimeFormat::Utc
+                        },
+                    },
+                }
+            ]
+            .as_slice()
+        );
+    }
+
+    #[test]
+    fn rfc_5545_example_time_transparency_property_1() {
+        let input = "TRANSP:TRANSPARENT";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+        assert_eq!(
+            prop,
+            Prop::Known(KnownProp::Transparency(TimeTransparency::Transparent))
+        );
+    }
+
+    #[test]
+    fn rfc_5545_example_time_transparency_property_2() {
+        let input = "TRANSP:OPAQUE";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+        assert_eq!(
+            prop,
+            Prop::Known(KnownProp::Transparency(TimeTransparency::Opaque))
+        );
+    }
+
+    #[test]
+    fn rfc_5545_example_time_zone_identifier_property_1() {
+        let input = "TZID:America/New_York";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+        assert_eq!(
+            prop,
+            Prop::Known(KnownProp::TzId(TzId("America/New_York")))
+        );
+    }
+
+    #[test]
+    fn rfc_5545_example_time_zone_identifier_property_2() {
+        let input = "TZID:America/Los_Angeles";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+        assert_eq!(
+            prop,
+            Prop::Known(KnownProp::TzId(TzId("America/Los_Angeles")))
+        );
+    }
+
+    #[test]
+    fn rfc_5545_example_time_zone_identifier_property_3() {
+        let input = "TZID:/example.org/America/New_York";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+        assert_eq!(
+            prop,
+            Prop::Known(KnownProp::TzId(TzId("/example.org/America/New_York")))
+        );
+    }
+
+    #[test]
+    fn rfc_5545_example_time_zone_name_property_1() {
+        let input = "TZNAME:EST";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+
+        let Prop::Known(KnownProp::TzName(name, params)) = prop else {
+            panic!()
+        };
+
+        assert!(params.language.is_none());
+        assert_eq!(name, Text("EST"));
+    }
+
+    #[test]
+    fn rfc_5545_example_time_zone_name_property_2() {
+        let input = "TZNAME;LANGUAGE=fr-CA:HNE";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+
+        let Prop::Known(KnownProp::TzName(name, params)) = prop else {
+            panic!()
+        };
+
+        assert_eq!(params.language, Some(Language("fr-CA")));
+        assert_eq!(name, Text("HNE"));
+    }
+
+    #[test]
+    fn rfc_5545_example_time_zone_offset_from_property_1() {
+        let input = "TZOFFSETFROM:-0500";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+        assert_eq!(
+            prop,
+            Prop::Known(KnownProp::TzOffsetFrom(UtcOffset {
+                sign: Sign::Negative,
+                hours: 5,
+                minutes: 0,
+                seconds: None,
+            }))
+        );
+    }
+
+    #[test]
+    fn rfc_5545_example_time_zone_offset_from_property_2() {
+        let input = "TZOFFSETFROM:+1345";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+        assert_eq!(
+            prop,
+            Prop::Known(KnownProp::TzOffsetFrom(UtcOffset {
+                sign: Sign::Positive,
+                hours: 13,
+                minutes: 45,
+                seconds: None,
+            }))
+        );
+    }
+
+    #[test]
+    fn rfc_5545_example_time_zone_offset_to_property_1() {
+        let input = "TZOFFSETTO:-0400";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+        assert_eq!(
+            prop,
+            Prop::Known(KnownProp::TzOffsetTo(UtcOffset {
+                sign: Sign::Negative,
+                hours: 4,
+                minutes: 0,
+                seconds: None,
+            }))
+        );
+    }
+
+    #[test]
+    fn rfc_5545_example_time_zone_offset_to_property_2() {
+        let input = "TZOFFSETTO:+1245";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+        assert_eq!(
+            prop,
+            Prop::Known(KnownProp::TzOffsetTo(UtcOffset {
+                sign: Sign::Positive,
+                hours: 12,
+                minutes: 45,
+                seconds: None,
+            }))
+        );
+    }
+
+    #[test]
+    fn rfc_5545_example_time_zone_url_property() {
+        let input =
+            "TZURL:http://timezones.example.org/tz/America-Los_Angeles.ics";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+        assert_eq!(
+            prop,
+            Prop::Known(KnownProp::TzUrl(Uri(
+                "http://timezones.example.org/tz/America-Los_Angeles.ics"
+            ))),
+        );
+    }
+
+    #[test]
+    fn rfc_5545_example_attendee_property_1() {
+        let input = "ATTENDEE;MEMBER=\"mailto:DEV-GROUP@example.com\":\r\n mailto:joecool@example.com";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input.as_escaped()).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+
+        let Prop::Known(KnownProp::Attendee(address, params)) = prop else {
+            panic!()
+        };
+
+        assert_eq!(
+            params,
+            AttendeeParams {
+                group_or_list_membership: Some(
+                    vec![CalAddress(
+                        "mailto:DEV-GROUP@example.com".as_escaped()
+                    )]
+                    .into()
+                ),
+                ..Default::default()
+            }
+        );
+
+        assert_eq!(
+            address,
+            CalAddress("\r\n mailto:joecool@example.com".as_escaped())
+        );
+    }
+
+    #[test]
+    fn rfc_5545_example_attendee_property_2() {
+        let input = "ATTENDEE;DELEGATED-FROM=\"mailto:immud@example.com\":\r\n mailto:ildoit@example.com";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input.as_escaped()).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+
+        let Prop::Known(KnownProp::Attendee(address, params)) = prop else {
+            panic!()
+        };
+
+        assert_eq!(
+            params,
+            AttendeeParams {
+                delegators: Some(
+                    vec![CalAddress("mailto:immud@example.com".as_escaped())]
+                        .into()
+                ),
+                ..Default::default()
+            }
+        );
+
+        assert_eq!(
+            address,
+            CalAddress("\r\n mailto:ildoit@example.com".as_escaped())
+        );
+    }
+
+    #[test]
+    fn rfc_5545_example_attendee_property_3() {
+        let input = "ATTENDEE;ROLE=REQ-PARTICIPANT;PARTSTAT=TENTATIVE;CN=Henry\r\n Cabot:mailto:hcabot@example.com";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input.as_escaped()).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+
+        let Prop::Known(KnownProp::Attendee(address, params)) = prop else {
+            panic!()
+        };
+
+        assert_eq!(
+            params,
+            AttendeeParams {
+                participation_role: Some(ParticipationRole::ReqParticipant),
+                participation_status: Some(ParticipationStatus::Tentative),
+                common_name: Some(ParamValue::Safe(
+                    "Henry\r\n Cabot".as_escaped()
+                )),
+                ..Default::default()
+            }
+        );
+
+        assert_eq!(
+            address,
+            CalAddress("mailto:hcabot@example.com".as_escaped())
+        );
+    }
+
+    #[test]
+    fn rfc_5545_example_contact_property_1() {
+        let input = "CONTACT:Jim Dolittle\\, ABC Industries\\, +1-919-555-1234";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+
+        let Prop::Known(KnownProp::Contact(contact, params)) = prop else {
+            panic!()
+        };
+
+        assert_eq!(params, TextParams::default());
+        assert_eq!(
+            contact,
+            Text("Jim Dolittle\\, ABC Industries\\, +1-919-555-1234")
+        );
+    }
+
+    #[test]
+    fn rfc_5545_example_contact_property_2() {
+        let input = "CONTACT;ALTREP=\"ldap://example.com:6666/o=ABC%20Industries\\,\r\n c=US???(cn=Jim%20Dolittle)\":Jim Dolittle\\, ABC Industries\\,\r\n +1-919-555-1234";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input.as_escaped()).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+
+        let Prop::Known(KnownProp::Contact(contact, params)) = prop else {
+            panic!()
+        };
+
+        assert_eq!(
+            params,
+            TextParams {
+                language: None,
+                alternate_representation: Some(
+                    Uri(input[16..89].as_escaped(),)
+                )
+            }
+        );
+
+        assert_eq!(contact, Text(input[91..].as_escaped()));
     }
 
     #[test]

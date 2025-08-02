@@ -26,9 +26,10 @@ use winnow::{
 
 use crate::{
     model::primitive::{
-        CalendarUserType, DisplayType, Encoding, FeatureType, FormatType,
-        FreeBusyType, Language, ParticipationRole, ParticipationStatus,
-        RelationshipType, TriggerRelation, TzId, Uri, ValueType,
+        CalAddress, CalendarUserType, DisplayType, Encoding, FeatureType,
+        FormatType, FreeBusyType, Language, ParticipationRole,
+        ParticipationStatus, RelationshipType, TriggerRelation, TzId, Uri,
+        ValueType,
     },
     parser::primitive::{
         alarm_trigger_relationship, bool_caseless, feature_type, format_type,
@@ -68,14 +69,14 @@ pub enum KnownParam<S> {
     AltRep(Uri<S>),
     CommonName(ParamValue<S>),
     CUType(CalendarUserType<S>),
-    DelFrom(Box<[Uri<S>]>),
-    DelTo(Box<[Uri<S>]>),
+    DelFrom(Box<[CalAddress<S>]>),
+    DelTo(Box<[CalAddress<S>]>),
     Dir(Uri<S>),
     Encoding(Encoding),
     FormatType(FormatType<S>),
     FBType(FreeBusyType<S>),
     Language(Language<S>),
-    Member(Box<[Uri<S>]>),
+    Member(Box<[CalAddress<S>]>),
     PartStatus(ParticipationStatus<S>),
     RecurrenceIdentifierRange,
     AlarmTrigger(TriggerRelation),
@@ -211,18 +212,20 @@ where
         I::Token: AsChar + Clone,
         E: ParserError<I>,
     {
-        delimited('"', uri, '"').parse_next(input)
+        delimited('"', uri::<_, _, true>, '"').parse_next(input)
     }
 
-    /// Parses a sequence of at least one URI delimited by double quotes and
-    /// separated by commas.
-    fn quoted_uris<I, E>(input: &mut I) -> Result<Box<[Uri<I::Slice>]>, E>
+    fn quoted_addresses<I, E>(
+        input: &mut I,
+    ) -> Result<Box<[CalAddress<I::Slice>]>, E>
     where
         I: StreamIsPartial + Stream + Compare<char>,
         I::Token: AsChar + Clone,
         E: ParserError<I>,
     {
-        let uris: Vec<_> = separated(1.., quoted_uri, ',').parse_next(input)?;
+        let uris: Vec<_> =
+            separated(1.., quoted_uri.map(|Uri(uri)| CalAddress(uri)), ',')
+                .parse_next(input)?;
         Ok(uris.into_boxed_slice())
     }
 
@@ -258,11 +261,11 @@ where
                 .map(KnownParam::CUType)
                 .map(Param::Known)
                 .parse_next(input),
-            Rfc5545ParamName::Delegators => quoted_uris
+            Rfc5545ParamName::Delegators => quoted_addresses
                 .map(KnownParam::DelFrom)
                 .map(Param::Known)
                 .parse_next(input),
-            Rfc5545ParamName::Delegatees => quoted_uris
+            Rfc5545ParamName::Delegatees => quoted_addresses
                 .map(KnownParam::DelTo)
                 .map(Param::Known)
                 .parse_next(input),
@@ -286,7 +289,7 @@ where
                 .map(KnownParam::Language)
                 .map(Param::Known)
                 .parse_next(input),
-            Rfc5545ParamName::GroupOrListMembership => quoted_uris
+            Rfc5545ParamName::GroupOrListMembership => quoted_addresses
                 .map(KnownParam::Member)
                 .map(Param::Known)
                 .parse_next(input),
@@ -912,7 +915,7 @@ mod tests {
                     "mailto:carla@place.com",
                 ]
                 .into_iter()
-                .map(Uri)
+                .map(CalAddress)
                 .collect()
             ))),
         );

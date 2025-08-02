@@ -189,23 +189,27 @@ where
 }
 
 /// Parses a [`CalAddress`].
-pub fn cal_address<I, E>(input: &mut I) -> Result<CalAddress<I::Slice>, E>
+pub fn cal_address<I, E, const ESCAPED: bool>(
+    input: &mut I,
+) -> Result<CalAddress<I::Slice>, E>
 where
-    I: StreamIsPartial + Stream,
+    I: StreamIsPartial + Stream + Compare<char>,
     I::Token: AsChar + Clone,
     E: ParserError<I>,
 {
     // TODO: check whether this is correct/sufficiently precise
-    uri.map(|Uri(source)| CalAddress(source)).parse_next(input)
+    uri::<I, E, ESCAPED>
+        .map(|Uri(source)| CalAddress(source))
+        .parse_next(input)
 }
 
 /// Parses an RFC 3986 URI. The description of the grammar in RFC 5545 is
 /// somewhat ambiguous, so in particular we first parse a sequence of characters
 /// which may occur in a URI and then attempt to verify that it is actually a
 /// valid URI.
-pub fn uri<I, E>(input: &mut I) -> Result<Uri<I::Slice>, E>
+pub fn uri<I, E, const ESCAPED: bool>(input: &mut I) -> Result<Uri<I::Slice>, E>
 where
-    I: StreamIsPartial + Stream,
+    I: StreamIsPartial + Stream + Compare<char>,
     I::Token: AsChar + Clone,
     E: ParserError<I>,
 {
@@ -221,10 +225,27 @@ where
             .parse_next(input)
     }
 
-    repeat::<_, _, (), _, _>(1.., uri_character)
-        .take()
-        .map(Uri)
-        .parse_next(input)
+    /// Accepts a subset of textual escapes if ESCAPED is true.
+    fn text_escape<I, E>(input: &mut I) -> Result<(), E>
+    where
+        I: StreamIsPartial + Stream + Compare<char>,
+        I::Token: AsChar + Clone,
+        E: ParserError<I>,
+    {
+        ('\\', alt((';', ','))).void().parse_next(input)
+    }
+
+    if ESCAPED {
+        repeat::<_, _, (), _, _>(1.., alt((text_escape, uri_character.void())))
+            .take()
+            .map(Uri)
+            .parse_next(input)
+    } else {
+        repeat::<_, _, (), _, _>(1.., uri_character)
+            .take()
+            .map(Uri)
+            .parse_next(input)
+    }
 }
 
 /// Parses a base64-encoded character string.
@@ -1340,14 +1361,14 @@ mod tests {
     fn uri_parser() {
         // these examples are from RFC 3986 §3
         assert!(
-            uri::<_, ()>
+            uri::<_, (), false>
                 .parse_peek(
                     "foo://example.com:8042/over/there?name=ferret#nose"
                 )
                 .is_ok()
         );
         assert!(
-            uri::<_, ()>
+            uri::<_, (), false>
                 .parse_peek("urn:example:animal:ferret:nose")
                 .is_ok()
         );
