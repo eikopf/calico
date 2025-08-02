@@ -1048,10 +1048,9 @@ where
             ));
         }
 
-        let integral: i16 =
-            i16::from(magnitude) * (sign.unwrap_or_default() as i16);
+        let integral = i32::from(magnitude);
 
-        let fraction: u32 =
+        let fraction: i32 =
             opt(delimited('.', take_while(0..=6, '0'..='9'), digit0))
                 .parse_next(input)?
                 .map(|mut digits| {
@@ -1061,30 +1060,33 @@ where
                         // SAFETY: the parser above guarantees that this char
                         // will be a valid ascii digit
                         let value = unsafe {
-                            d.as_char().to_digit(10).unwrap_unchecked()
+                            d.as_char().to_digit(10).unwrap_unchecked() as i32
                         };
 
-                        total = total * 10 + value;
+                        total = total * 10i32 + value;
                     }
 
                     total
                 })
                 .unwrap_or_default();
 
-        Ok(GeoComponent { integral, fraction })
+        let value = (sign.unwrap_or_default() as i32)
+            * (integral * 10i32.pow(6) + fraction);
+
+        Ok(GeoComponent(value))
     }
 
     let (lat, lon) =
         separated_pair(geo_component, ';', geo_component).parse_next(input)?;
 
-    if !(-90..=90).contains(&lat.integral) {
+    if !(-90_000_000..=90_000_000).contains(&lat.0) {
         Err(E::from_external_error(
             input,
             CalendarParseError::InvalidGeo(InvalidGeoError::LatOutOfBounds(
                 lat,
             )),
         ))
-    } else if !(-180..=180).contains(&lon.integral) {
+    } else if !(-180_000_000..=180_000_000).contains(&lon.0) {
         Err(E::from_external_error(
             input,
             CalendarParseError::InvalidGeo(InvalidGeoError::LonOutOfBounds(
@@ -1759,14 +1761,8 @@ mod tests {
             Ok((
                 "",
                 Geo {
-                    lat: GeoComponent {
-                        integral: 0,
-                        fraction: 0
-                    },
-                    lon: GeoComponent {
-                        integral: 0,
-                        fraction: 0
-                    },
+                    lat: GeoComponent(0),
+                    lon: GeoComponent(0),
                 }
             ))
         );
@@ -1776,14 +1772,8 @@ mod tests {
             Ok((
                 "",
                 Geo {
-                    lat: GeoComponent {
-                        integral: 0,
-                        fraction: 0
-                    },
-                    lon: GeoComponent {
-                        integral: 0,
-                        fraction: 123456
-                    },
+                    lat: GeoComponent(0),
+                    lon: GeoComponent(123456),
                 }
             ))
         );

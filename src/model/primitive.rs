@@ -474,25 +474,22 @@ pub enum DurationTime<T = usize> {
 /// (rounding up to the nearest byte) indicates that we will need at least 32
 /// bits to represent this. Unfortunately, `f32` will not suffice.
 ///
-/// The solution is to literally represent the value with fixed precision: an
-/// `i16` for the integral part, and a `u32` for the fractional part. This
-/// doubles the stack size, but guarantees representability.
+/// The solution is to literally represent the value with fixed precision: we
+/// do this by multiplying the value by 10^6 so that it has no fractional
+/// component, and storing it as an `i32`. This has the advantage of preserving
+/// most of the algebraic properties of the original domain.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Geo {
     pub lat: GeoComponent,
     pub lon: GeoComponent,
 }
 
-// BUG: THIS CANNOT BE CORRECT.
-// take the example -122.082932. notice that the fractional component has a
-// leading zero, so the result numerically will be 082932 == 82932. but clearly
-// -122.082932 != -122.82932, so we have a problem.
-
 /// A component of a [`Geo`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct GeoComponent {
-    pub(crate) integral: i16,
-    pub(crate) fraction: u32,
+pub struct GeoComponent(pub(crate) i32);
+
+impl GeoComponent {
+    pub const SCALING_FACTOR: i32 = 10i32.pow(6);
 }
 
 /// An integer in the range `0..=100`.
