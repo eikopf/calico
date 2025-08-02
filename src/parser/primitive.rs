@@ -19,8 +19,8 @@ use crate::model::primitive::{
     DurationTime, Encoding, FeatureType, Float, FormatType, FreeBusyType, Geo,
     GeoComponent, Integer, Language, Method, ParticipationRole,
     ParticipationStatus, Period, Priority, RawTime, RelationshipType, Sign,
-    Text, Time, TimeFormat, TimeTransparency, TriggerRelation, TzId, Uid, Uri,
-    Utc, UtcOffset, ValueType,
+    Status, Text, Time, TimeFormat, TimeTransparency, TriggerRelation, TzId,
+    Uid, Uri, Utc, UtcOffset, ValueType,
 };
 
 use super::error::{
@@ -377,6 +377,25 @@ where
         Caseless("FREE").value(FreeBusyType::Free),
         x_name.map(FreeBusyType::X),
         iana_token.map(FreeBusyType::Iana),
+    ))
+    .parse_next(input)
+}
+
+/// Parses a [`Status`].
+pub fn status<I, E>(input: &mut I) -> Result<Status, E>
+where
+    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
+    E: ParserError<I>,
+{
+    alt((
+        Caseless("NEEDS-ACTION").value(Status::NeedsAction),
+        Caseless("IN-PROCESS").value(Status::InProcess),
+        Caseless("CANCELLED").value(Status::Cancelled),
+        Caseless("COMPLETED").value(Status::Completed),
+        Caseless("CONFIRMED").value(Status::Confirmed),
+        Caseless("TENTATIVE").value(Status::Tentative),
+        Caseless("DRAFT").value(Status::Draft),
+        Caseless("FINAL").value(Status::Final),
     ))
     .parse_next(input)
 }

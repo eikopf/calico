@@ -183,35 +183,6 @@ pub enum FeatureType<S> {
     X(S),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Status {
-    Event(EventStatus),
-    Todo(TodoStatus),
-    Journal(JournalStatus),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EventStatus {
-    Tentative,
-    Confirmed,
-    Cancelled,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TodoStatus {
-    NeedsAction,
-    Completed,
-    InProcess,
-    Cancelled,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum JournalStatus {
-    Draft,
-    Final,
-    Cancelled,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CalendarUserType<S> {
     Individual,
@@ -243,6 +214,40 @@ impl<S> Default for ParticipationRole<S> {
     fn default() -> Self {
         Self::ReqParticipant
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Status {
+    Tentative,
+    Confirmed,
+    Cancelled,
+    NeedsAction,
+    Completed,
+    InProcess,
+    Draft,
+    Final,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EventStatus {
+    Tentative,
+    Confirmed,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TodoStatus {
+    NeedsAction,
+    Completed,
+    InProcess,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JournalStatus {
+    Draft,
+    Final,
+    Cancelled,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
