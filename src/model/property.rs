@@ -83,6 +83,17 @@ pub struct OrganizerParams<S> {
     pub directory_entry_reference: Option<Uri<S>>,
 }
 
+impl<S> Default for OrganizerParams<S> {
+    fn default() -> Self {
+        Self {
+            language: Default::default(),
+            sent_by: Default::default(),
+            common_name: Default::default(),
+            directory_entry_reference: Default::default(),
+        }
+    }
+}
+
 /// The parameters associated with the `RECURRENCE-ID` property.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RecurrenceIdParams<S> {

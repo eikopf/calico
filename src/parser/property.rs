@@ -3268,6 +3268,114 @@ mod tests {
     }
 
     #[test]
+    fn rfc_5545_example_organizer_property_1() {
+        let input = "ORGANIZER;CN=John Smith:mailto:jsmith@example.com";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+
+        let Prop::Known(KnownProp::Organizer(organizer, params)) = prop else {
+            panic!()
+        };
+
+        assert_eq!(
+            params,
+            OrganizerParams {
+                common_name: Some(ParamValue::Safe("John Smith")),
+                ..Default::default()
+            }
+        );
+
+        assert_eq!(organizer, CalAddress("mailto:jsmith@example.com"));
+    }
+
+    #[test]
+    fn rfc_5545_example_organizer_property_2() {
+        let input = "ORGANIZER;CN=JohnSmith;DIR=\"ldap://example.com:6666/o=DC%20Ass\r\n ociates,c=US???(cn=John%20Smith)\":mailto:jsmith@example.com";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input.as_escaped()).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+
+        let Prop::Known(KnownProp::Organizer(organizer, params)) = prop else {
+            panic!()
+        };
+
+        assert_eq!(
+            params,
+            OrganizerParams {
+                common_name: Some(ParamValue::Safe("JohnSmith".as_escaped())),
+                directory_entry_reference: Some(
+                    Uri(input[28..97].as_escaped())
+                ),
+                ..Default::default()
+            }
+        );
+
+        assert_eq!(organizer, CalAddress(input[99..].as_escaped()));
+    }
+
+    #[test]
+    fn rfc_5545_example_recurrence_identifier_property_1() {
+        let input = "RECURRENCE-ID;VALUE=DATE:19960401";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+
+        let Prop::Known(KnownProp::RecurrenceId(
+            DateTimeOrDate::Date(date),
+            params,
+        )) = prop
+        else {
+            panic!()
+        };
+
+        assert!(params.tz_id.is_none());
+        assert!(params.recurrence_identifier_range.is_none());
+        assert_eq!(date, Date(NaiveDate::from_ymd_opt(1996, 4, 1).unwrap()));
+    }
+
+    #[test]
+    fn rfc_5545_example_recurrence_identifier_property_2() {
+        let input = "RECURRENCE-ID;RANGE=THISANDFUTURE:19960120T120000Z";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+
+        let Prop::Known(KnownProp::RecurrenceId(
+            DateTimeOrDate::DateTime(dt),
+            params,
+        )) = prop
+        else {
+            panic!()
+        };
+
+        assert!(params.tz_id.is_none());
+        assert_eq!(params.recurrence_identifier_range, Some(ThisAndFuture));
+        assert_eq!(
+            dt,
+            DateTime {
+                date: Date(NaiveDate::from_ymd_opt(1996, 1, 20).unwrap()),
+                time: Time {
+                    raw: RawTime {
+                        hours: 12,
+                        minutes: 0,
+                        seconds: 0
+                    },
+                    format: TimeFormat::Utc
+                },
+            }
+        );
+    }
+
+    #[test]
     fn rfc_5545_example_uid_property() {
         let input = "UID:19960401T080045Z-4000F192713-0052@example.com";
         let (tail, (prop, unknown_params)) =
