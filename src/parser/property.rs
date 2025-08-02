@@ -17,7 +17,7 @@ use crate::{
             CompletionPercentage, DateTime, DateTimeOrDate, Duration, Encoding,
             FormatType, FreeBusyType, Geo, ImageData, Integer, Language,
             Method, ParticipationStatus, Period, Priority, RDate,
-            RelationshipType, Text, ThisAndFuture, TimeTransparency,
+            RelationshipType, Status, Text, ThisAndFuture, TimeTransparency,
             TriggerRelation, TzId, Uid, Uri, Utc, UtcOffset, Value, ValueType,
         },
         property::{
@@ -35,7 +35,7 @@ use crate::{
         primitive::{
             alarm_action, cal_address, class_value, completion_percentage,
             datetime_utc, duration, float, geo, gregorian, iana_token, integer,
-            method, participation_status, period, priority, text,
+            method, participation_status, period, priority, status, text,
             time_transparency, tz_id, uid, utc_offset, v2_0, x_name,
         },
     },
@@ -95,7 +95,7 @@ pub enum KnownProp<S> {
     PercentComplete(CompletionPercentage),
     Priority(Priority),
     Resources(Box<[Text<S>]>, TextParams<S>),
-    Status(ParticipationStatus<S>),
+    Status(Status),
     Summary(Text<S>, TextParams<S>),
     // DATE AND TIME COMPONENT PROPERTIES
     DtCompleted(DateTime<Utc>),
@@ -814,7 +814,7 @@ where
                 sm_parse_next(StateMachine::new((), step), input)?;
 
             let _ = ':'.parse_next(input)?;
-            let status = participation_status.parse_next(input)?;
+            let status = status.parse_next(input)?;
 
             (Prop::Known(KnownProp::Status(status)), unknown_params)
         }
@@ -2141,9 +2141,16 @@ pub enum Rfc7986PropName {
 
 #[cfg(test)]
 mod tests {
-    use crate::{model::primitive::GeoComponent, parser::escaped::AsEscaped};
+    use crate::{
+        model::primitive::{
+            Date, DurationKind, DurationTime, GeoComponent, RawTime, Time,
+            TimeFormat,
+        },
+        parser::escaped::AsEscaped,
+    };
 
     use super::*;
+    use chrono::NaiveDate;
     use winnow::Parser;
 
     // PROPERTY PARSING TESTS
@@ -2346,23 +2353,424 @@ mod tests {
             panic!()
         };
 
+        assert_eq!(geo.lat, GeoComponent(37386013));
+        assert_eq!(geo.lon, GeoComponent(-122082932));
+    }
+
+    #[test]
+    fn rfc_5545_example_location_property_1() {
+        let input = "LOCATION:Conference Room - F123\\, Bldg. 002";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+
+        let Prop::Known(KnownProp::Location(text, params)) = prop else {
+            panic!()
+        };
+
+        assert!(params.language.is_none());
+        assert!(params.alternate_representation.is_none());
+        assert_eq!(text, Text("Conference Room - F123\\, Bldg. 002"));
+    }
+
+    #[test]
+    fn rfc_5545_example_location_property_2() {
+        let input = "LOCATION;ALTREP=\"http://xyzcorp.com/conf-rooms/f123.vcf\":\r\n Conference Room - F123\\, Bldg. 002";
+
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input.as_escaped()).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+
+        let Prop::Known(KnownProp::Location(text, params)) = prop else {
+            panic!()
+        };
+
+        assert!(params.language.is_none());
         assert_eq!(
-            geo.lat,
-            GeoComponent {
-                integral: 37,
-                fraction: 386013
-            }
+            params.alternate_representation,
+            Some(Uri("http://xyzcorp.com/conf-rooms/f123.vcf".as_escaped()))
         );
 
-        // BUG: this is clearly broken, GeoComponent doesn't handle leading
-        // zeros in the fractional component correctly.
+        assert_eq!(text, Text(input[57..].as_escaped()));
+    }
+
+    #[test]
+    fn rfc_5545_example_percent_complete_property() {
+        let input = "PERCENT-COMPLETE:39";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+
+        let Prop::Known(KnownProp::PercentComplete(pct)) = prop else {
+            panic!()
+        };
+
+        assert_eq!(pct, CompletionPercentage(39));
+    }
+
+    #[test]
+    fn rfc_5545_example_priority_property_1() {
+        let input = "PRIORITY:1";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+        assert_eq!(prop, Prop::Known(KnownProp::Priority(Priority::A1)));
+    }
+
+    #[test]
+    fn rfc_5545_example_priority_property_2() {
+        let input = "PRIORITY:2";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+        assert_eq!(prop, Prop::Known(KnownProp::Priority(Priority::A2)));
+    }
+
+    #[test]
+    fn rfc_5545_example_priority_property_3() {
+        let input = "PRIORITY:0";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+        assert_eq!(prop, Prop::Known(KnownProp::Priority(Priority::Zero)));
+    }
+
+    #[test]
+    fn rfc_5545_example_resources_property_1() {
+        let input = "RESOURCES:EASEL,PROJECTOR,VCR";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+
+        let Prop::Known(KnownProp::Resources(values, params)) = prop else {
+            panic!()
+        };
+
+        assert!(params.language.is_none());
+        assert!(params.alternate_representation.is_none());
+        assert_eq!(
+            values.as_ref(),
+            [Text("EASEL"), Text("PROJECTOR"), Text("VCR")].as_slice()
+        );
+    }
+
+    #[test]
+    fn rfc_5545_example_resources_property_2() {
+        let input = "RESOURCES;LANGUAGE=fr:Nettoyeur haute pression";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+
+        let Prop::Known(KnownProp::Resources(values, params)) = prop else {
+            panic!()
+        };
+
+        assert!(params.alternate_representation.is_none());
+        assert_eq!(params.language, Some(Language("fr")));
+        assert_eq!(
+            values.as_ref(),
+            [Text("Nettoyeur haute pression")].as_slice()
+        );
+    }
+
+    #[test]
+    fn rfc_5545_example_status_property_1() {
+        let input = "STATUS:TENTATIVE";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+        assert_eq!(prop, Prop::Known(KnownProp::Status(Status::Tentative)));
+    }
+
+    #[test]
+    fn rfc_5545_example_status_property_2() {
+        let input = "STATUS:NEEDS-ACTION";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+        assert_eq!(prop, Prop::Known(KnownProp::Status(Status::NeedsAction)));
+    }
+
+    #[test]
+    fn rfc_5545_example_status_property_3() {
+        let input = "STATUS:DRAFT";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+        assert_eq!(prop, Prop::Known(KnownProp::Status(Status::Draft)));
+    }
+
+    #[test]
+    fn rfc_5545_example_summary_property() {
+        let input = "SUMMARY:Department Party";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+
+        let Prop::Known(KnownProp::Summary(text, params)) = prop else {
+            panic!()
+        };
+
+        assert!(params.language.is_none());
+        assert!(params.alternate_representation.is_none());
+        assert_eq!(text, Text("Department Party"));
+    }
+
+    #[test]
+    fn rfc_5545_example_date_time_completed_property() {
+        let input = "COMPLETED:19960401T150000Z";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+
+        let Prop::Known(KnownProp::DtCompleted(datetime)) = prop else {
+            panic!()
+        };
 
         assert_eq!(
-            geo.lon,
-            GeoComponent {
-                integral: -122,
-                fraction: 082932
+            datetime.date.0,
+            NaiveDate::from_ymd_opt(1996, 4, 1).unwrap()
+        );
+        assert_eq!(
+            datetime.time.raw,
+            RawTime {
+                hours: 15,
+                minutes: 0,
+                seconds: 0
             }
+        );
+        assert_eq!(datetime.time.format, Utc);
+    }
+
+    #[test]
+    fn rfc_5545_example_date_time_end_property_1() {
+        let input = "DTEND:19960401T150000Z";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+
+        let Prop::Known(KnownProp::DtEnd(value, params)) = prop else {
+            panic!()
+        };
+
+        assert!(params.tz_id.is_none());
+        assert_eq!(
+            value,
+            DateTimeOrDate::DateTime(DateTime {
+                date: Date(NaiveDate::from_ymd_opt(1996, 4, 1).unwrap()),
+                time: Time {
+                    raw: RawTime {
+                        hours: 15,
+                        minutes: 0,
+                        seconds: 0
+                    },
+                    format: TimeFormat::Utc
+                },
+            })
+        );
+    }
+
+    #[test]
+    fn rfc_5545_example_date_time_end_property_2() {
+        let input = "DTEND;VALUE=DATE:19980704";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+
+        let Prop::Known(KnownProp::DtEnd(value, params)) = prop else {
+            panic!()
+        };
+
+        assert!(params.tz_id.is_none());
+        assert_eq!(
+            value,
+            DateTimeOrDate::Date(Date(
+                NaiveDate::from_ymd_opt(1998, 7, 4).unwrap()
+            ))
+        );
+    }
+
+    #[test]
+    fn rfc_5545_example_date_time_due_property() {
+        let input = "DUE:19980430T000000Z";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+
+        let Prop::Known(KnownProp::DtDue(value, params)) = prop else {
+            panic!()
+        };
+
+        assert!(params.tz_id.is_none());
+        assert_eq!(
+            value,
+            DateTimeOrDate::DateTime(DateTime {
+                date: Date(NaiveDate::from_ymd_opt(1998, 4, 30).unwrap()),
+                time: Time {
+                    raw: RawTime {
+                        hours: 0,
+                        minutes: 0,
+                        seconds: 0
+                    },
+                    format: TimeFormat::Utc,
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn rfc_5545_example_date_time_start_property() {
+        let input = "DTSTART:19980118T073000Z";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+
+        let Prop::Known(KnownProp::DtStart(value, params)) = prop else {
+            panic!()
+        };
+
+        assert!(params.tz_id.is_none());
+        assert_eq!(
+            value,
+            DateTimeOrDate::DateTime(DateTime {
+                date: Date(NaiveDate::from_ymd_opt(1998, 1, 18).unwrap()),
+                time: Time {
+                    raw: RawTime {
+                        hours: 7,
+                        minutes: 30,
+                        seconds: 0
+                    },
+                    format: TimeFormat::Utc,
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn rfc_5545_example_duration_property_1() {
+        let input = "DURATION:PT1H0M0S";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+
+        let Prop::Known(KnownProp::Duration(duration)) = prop else {
+            panic!()
+        };
+
+        assert_eq!(
+            duration,
+            Duration {
+                sign: None,
+                kind: DurationKind::Time {
+                    time: DurationTime::HMS {
+                        hours: 1,
+                        minutes: 0,
+                        seconds: 0
+                    }
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn rfc_5545_example_duration_property_2() {
+        let input = "DURATION:PT15M";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+
+        let Prop::Known(KnownProp::Duration(duration)) = prop else {
+            panic!()
+        };
+
+        assert_eq!(
+            duration,
+            Duration {
+                sign: None,
+                kind: DurationKind::Time {
+                    time: DurationTime::M { minutes: 15 }
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn rfc_5545_example_free_busy_time_property_1() {
+        let input = "FREEBUSY;FBTYPE=BUSY-UNAVAILABLE:19970308T160000Z/PT8H30M";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+
+        let Prop::Known(KnownProp::FreeBusy(periods, params)) = prop else {
+            panic!()
+        };
+
+        assert_eq!(params.free_busy_type, Some(FreeBusyType::BusyUnavailable));
+        assert_eq!(
+            periods.as_ref(),
+            [Period::Start {
+                start: DateTime {
+                    date: Date(NaiveDate::from_ymd_opt(1997, 3, 8).unwrap()),
+                    time: Time {
+                        raw: RawTime {
+                            hours: 16,
+                            minutes: 0,
+                            seconds: 0
+                        },
+                        format: TimeFormat::Utc
+                    },
+                },
+                duration: Duration {
+                    sign: None,
+                    kind: DurationKind::Time {
+                        time: DurationTime::HM {
+                            hours: 8,
+                            minutes: 30
+                        },
+                    }
+                }
+            }]
+            .as_slice()
         );
     }
 
