@@ -1,11 +1,11 @@
 //! Error types for parsing iCalendar.
 
-use crate::model::primitive::{GeoComponent, Integer, Sign, ValueType};
-
-use super::{
+use crate::model::{
     parameter::{KnownParam, StaticParamName},
-    property::PropName,
+    primitive::{GeoComponent, Integer, Sign, ValueType},
 };
+
+use super::property::PropName;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CalendarParseError<S> {

@@ -12,6 +12,9 @@ use winnow::{
 use crate::{
     model::{
         css::Css3Color,
+        parameter::{
+            KnownParam, Param, Rfc5545ParamName, StaticParamName, UnknownParam,
+        },
         primitive::{
             AlarmAction, AttachValue, CalAddress, ClassValue,
             CompletionPercentage, DateTime, DateTimeOrDate, Duration, Encoding,
@@ -31,7 +34,7 @@ use crate::{
             AttachParamError, DtParamError, RDateParamError, TriggerParamError,
             UnexpectedKnownParamError,
         },
-        parameter::{KnownParam, Param, Rfc5545ParamName, parameter},
+        parameter::parameter,
         primitive::{
             alarm_action, cal_address, class_value, completion_percentage,
             datetime_utc, duration, float, geo, gregorian, iana_token, integer,
@@ -43,7 +46,6 @@ use crate::{
 
 use super::{
     error::CalendarParseError,
-    parameter::{StaticParamName, UnknownParam},
     primitive::{binary, bool_caseless, date, datetime, time, uri},
 };
 

@@ -28,6 +28,7 @@ use rrule::RecurrenceRule;
 use std::collections::HashMap;
 
 pub mod css;
+pub mod parameter;
 pub mod primitive;
 pub mod property;
 pub mod rrule;
