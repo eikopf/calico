@@ -10,7 +10,7 @@ use winnow::{
     },
     error::{FromExternalError, ParserError},
     stream::{AsBStr, AsChar, Compare, SliceLen, Stream, StreamIsPartial},
-    token::{none_of, one_of, take_while},
+    token::{any, none_of, one_of, take_while},
 };
 
 use crate::model::primitive::{
@@ -1237,6 +1237,19 @@ where
         .parse_next(input)
 }
 
+/// Parses a single digit (of the base given by `RADIX`) and returns its value.
+pub fn digit<I, E, const RADIX: u32>(input: &mut I) -> Result<u8, E>
+where
+    I: StreamIsPartial + Stream,
+    I::Token: AsChar + Clone,
+    E: ParserError<I>,
+{
+    match any.parse_next(input)?.as_char().to_digit(RADIX) {
+        Some(value) => Ok(value as u8),
+        None => Err(E::from_input(input)),
+    }
+}
+
 /// A version of [`dec_uint`] that accepts leading zeros.
 ///
 /// [`dec_uint`]: winnow::ascii::dec_uint
@@ -2011,5 +2024,18 @@ mod tests {
             sign::<_, ()>.parse_peek(Escaped("\r\n -".as_bytes())),
             Ok((Escaped("".as_bytes()), Sign::Negative))
         );
+    }
+
+    #[test]
+    fn digit_parser() {
+        assert_eq!(digit::<_, (), 10>.parse_peek("0"), Ok(("", 0)));
+        assert_eq!(digit::<_, (), 10>.parse_peek("1"), Ok(("", 1)));
+        assert_eq!(digit::<_, (), 10>.parse_peek("2"), Ok(("", 2)));
+        // ...
+        assert_eq!(digit::<_, (), 10>.parse_peek("8"), Ok(("", 8)));
+        assert_eq!(digit::<_, (), 10>.parse_peek("9"), Ok(("", 9)));
+
+        assert!(digit::<_, (), 10>.parse_peek("A").is_err());
+        assert!(digit::<_, (), 16>.parse_peek("A").is_ok());
     }
 }
