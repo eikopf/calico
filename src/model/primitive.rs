@@ -14,6 +14,8 @@
 //! between temporal values which are strictly [`Local`], strictly in reference
 //! to [`Utc`], or which may have either a local or absolute [`TimeFormat`].
 
+use std::num::NonZero;
+
 use chrono::NaiveDate;
 
 /// The INTEGER type as defined in RFC 5545 §3.3.8.
@@ -594,6 +596,81 @@ pub struct UtcOffset {
     pub seconds: Option<u8>,
 }
 
+/// An ISO week ranging from W1 to W53.
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum IsoWeek {
+    W1 = 1,
+    W2,
+    W3,
+    W4,
+    W5,
+    W6,
+    W7,
+    W8,
+    W9,
+    W10,
+    W11,
+    W12,
+    W13,
+    W14,
+    W15,
+    W16,
+    W17,
+    W18,
+    W19,
+    W20,
+    W21,
+    W22,
+    W23,
+    W24,
+    W25,
+    W26,
+    W27,
+    W28,
+    W29,
+    W30,
+    W31,
+    W32,
+    W33,
+    W34,
+    W35,
+    W36,
+    W37,
+    W38,
+    W39,
+    W40,
+    W41,
+    W42,
+    W43,
+    W44,
+    W45,
+    W46,
+    W47,
+    W48,
+    W49,
+    W50,
+    W51,
+    W52,
+    W53,
+}
+
+impl IsoWeek {
+    pub const fn index(&self) -> NonZero<u8> {
+        NonZero::new(*self as u8).unwrap()
+    }
+
+    pub const fn from_index(index: u8) -> Option<Self> {
+        match index {
+            1..=53 => {
+                let week: Self = unsafe { std::mem::transmute(index) };
+                Some(week)
+            }
+            _ => None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -669,5 +746,28 @@ mod tests {
         assert_eq!(Priority::C1.into_class(), Some(PriorityClass::Low));
         assert_eq!(Priority::C2.into_class(), Some(PriorityClass::Low));
         assert_eq!(Priority::C3.into_class(), Some(PriorityClass::Low));
+    }
+
+    #[test]
+    fn iso_week_from_index() {
+        assert_eq!(IsoWeek::from_index(0), None);
+        assert_eq!(IsoWeek::from_index(1), Some(IsoWeek::W1));
+        assert_eq!(IsoWeek::from_index(2), Some(IsoWeek::W2));
+        assert_eq!(IsoWeek::from_index(3), Some(IsoWeek::W3));
+        assert_eq!(IsoWeek::from_index(4), Some(IsoWeek::W4));
+        assert_eq!(IsoWeek::from_index(5), Some(IsoWeek::W5));
+        // ...
+        assert_eq!(IsoWeek::from_index(25), Some(IsoWeek::W25));
+        assert_eq!(IsoWeek::from_index(26), Some(IsoWeek::W26));
+        assert_eq!(IsoWeek::from_index(27), Some(IsoWeek::W27));
+        // ...
+        assert_eq!(IsoWeek::from_index(51), Some(IsoWeek::W51));
+        assert_eq!(IsoWeek::from_index(52), Some(IsoWeek::W52));
+        assert_eq!(IsoWeek::from_index(53), Some(IsoWeek::W53));
+        assert_eq!(IsoWeek::from_index(54), None);
+        assert_eq!(IsoWeek::from_index(55), None);
+        //...
+        assert_eq!(IsoWeek::from_index(254), None);
+        assert_eq!(IsoWeek::from_index(255), None);
     }
 }

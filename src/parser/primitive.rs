@@ -17,8 +17,8 @@ use crate::model::primitive::{
     AlarmAction, BinaryText, CalAddress, CalendarUserType, ClassValue,
     CompletionPercentage, Date, DateTime, DateTimeOrDate, DisplayType,
     Duration, DurationKind, DurationTime, Encoding, FeatureType, Float,
-    FormatType, FreeBusyType, Geo, GeoComponent, Integer, Language, Method,
-    ParticipationRole, ParticipationStatus, Period, Priority, RawTime,
+    FormatType, FreeBusyType, Geo, GeoComponent, Integer, IsoWeek, Language,
+    Method, ParticipationRole, ParticipationStatus, Period, Priority, RawTime,
     RelationshipType, Sign, Status, Text, Time, TimeFormat, TimeTransparency,
     TriggerRelation, TzId, Uid, Uri, Utc, UtcOffset, ValueType,
 };
@@ -1025,6 +1025,35 @@ where
     'Z'.void().parse_next(input)
 }
 
+/// Parses 1 or 2 digits into an [`IsoWeek`].
+pub fn iso_week_index<I, E>(input: &mut I) -> Result<IsoWeek, E>
+where
+    I: StreamIsPartial + Stream,
+    I::Token: AsChar + Clone,
+    E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
+{
+    let (a, b) =
+        (one_of('0'..='9'), opt(one_of('0'..='9'))).parse_next(input)?;
+
+    let a = unsafe { a.as_char().to_digit(10).unwrap_unchecked() };
+
+    let value = match b {
+        Some(t) => {
+            10 * (a as u8)
+                + unsafe { t.as_char().to_digit(10).unwrap_unchecked() as u8 }
+        }
+        None => a as u8,
+    };
+
+    match IsoWeek::from_index(value) {
+        Some(week) => Ok(week),
+        None => Err(E::from_external_error(
+            input,
+            CalendarParseError::InvalidIsoWeekIndex(value),
+        )),
+    }
+}
+
 /// Parses a [`Priority`].
 pub fn priority<I, E>(input: &mut I) -> Result<Priority, E>
 where
@@ -1860,6 +1889,32 @@ mod tests {
     fn utc_marker_parser() {
         assert_eq!(utc_marker::<_, ()>.parse_peek("Z"), Ok(("", ())));
         assert!(utc_marker::<_, ()>.parse_peek("Y").is_err());
+    }
+
+    #[test]
+    fn iso_week_index_parser() {
+        assert_eq!(
+            iso_week_index::<_, ()>.parse_peek("1"),
+            Ok(("", IsoWeek::W1))
+        );
+
+        assert_eq!(
+            iso_week_index::<_, ()>.parse_peek("01"),
+            Ok(("", IsoWeek::W1))
+        );
+
+        assert_eq!(
+            iso_week_index::<_, ()>.parse_peek("10"),
+            Ok(("", IsoWeek::W10))
+        );
+
+        assert_eq!(
+            iso_week_index::<_, ()>.parse_peek("53"),
+            Ok(("", IsoWeek::W53))
+        );
+
+        assert!(iso_week_index::<_, ()>.parse_peek("00").is_err());
+        assert!(iso_week_index::<_, ()>.parse_peek("54").is_err());
     }
 
     #[test]
