@@ -671,6 +671,43 @@ impl IsoWeek {
     }
 }
 
+/// One of the twelve Gregorian months.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u8)]
+pub enum Month {
+    Jan,
+    Feb,
+    Mar,
+    Apr,
+    May,
+    Jun,
+    Jul,
+    Aug,
+    Sep,
+    Oct,
+    Nov,
+    Dec,
+}
+
+impl Month {
+    /// Returns the month number of `self`, which lies in the range `1..=12`.
+    pub const fn number(&self) -> NonZero<u8> {
+        // SAFETY: the expression `(*self as u8) + 1` is in the range 1..=12.
+        unsafe { NonZero::new_unchecked((*self as u8) + 1) }
+    }
+
+    pub const fn from_number(number: u8) -> Option<Self> {
+        match number {
+            1..=12 => {
+                // SAFETY: (1..=12) - 1 is effectively 0..=11, which are all
+                // valid discriminants of Month
+                Some(unsafe { std::mem::transmute::<u8, Self>(number - 1) })
+            }
+            _ => None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

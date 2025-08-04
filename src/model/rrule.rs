@@ -4,7 +4,9 @@ use std::num::NonZero;
 
 use winnow::stream::Accumulate;
 
-use super::primitive::{DateTime, DateTimeOrDate, IsoWeek, Sign, Utc, Weekday};
+use super::primitive::{
+    DateTime, DateTimeOrDate, IsoWeek, Month, Sign, Utc, Weekday,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecurrenceRule {
@@ -74,8 +76,88 @@ pub struct SecondSet(NonZero<u64>);
 pub struct MinuteSet(NonZero<u64>);
 
 /// A bitset of values from 0 through 23.
+///
+/// ```text
+/// 0                      23
+/// |                      |
+/// xxxxxxxxxxxxxxxxxxxxxxxx00000001 (0-31)
+///                                |
+///                               msb
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HourSet(NonZero<u32>);
+
+impl Accumulate<Hour> for HourSet {
+    fn initial(_capacity: Option<usize>) -> Self {
+        Self::EMPTY
+    }
+
+    fn accumulate(&mut self, hour: Hour) {
+        self.set(hour)
+    }
+}
+
+impl HourSet {
+    pub(crate) const EMPTY: Self = Self(NonZero::new(1 << 31).unwrap());
+
+    pub const fn get(&self, hour: Hour) -> bool {
+        let mask = 1 << (hour as u8);
+        (self.0.get() & mask) != 0
+    }
+
+    pub const fn set(&mut self, hour: Hour) {
+        let mask = 1 << (hour as u8);
+        let updated = self.0.get() | mask;
+
+        // SAFETY: bitwise OR cannot reduce the number of set bits
+        *self = Self(unsafe { NonZero::new_unchecked(updated) })
+    }
+}
+
+impl Default for HourSet {
+    fn default() -> Self {
+        Self::EMPTY
+    }
+}
+
+/// An hour of the day, ranging from H0 through H23.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u8)]
+pub enum Hour {
+    H0,
+    H1,
+    H2,
+    H3,
+    H4,
+    H5,
+    H6,
+    H7,
+    H8,
+    H9,
+    H10,
+    H11,
+    H12,
+    H13,
+    H14,
+    H15,
+    H16,
+    H17,
+    H18,
+    H19,
+    H20,
+    H21,
+    H22,
+    H23,
+}
+
+impl Hour {
+    pub const fn from_index(index: u8) -> Option<Self> {
+        match index {
+            0..=23 => Some(unsafe { std::mem::transmute::<u8, Self>(index) }),
+            _ => None,
+        }
+    }
+}
 
 /// A bitset of values from 1 through 12. The most significant bit is always set
 /// to guarantee that the entire set is never zero.
@@ -89,6 +171,49 @@ pub struct HourSet(NonZero<u32>);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MonthSet(NonZero<u16>);
+
+/// A valid index into a [`MonthSet`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct MonthSetIndex(NonZero<u8>);
+
+impl Accumulate<MonthSetIndex> for MonthSet {
+    fn initial(_capacity: Option<usize>) -> Self {
+        Self::EMPTY
+    }
+
+    fn accumulate(&mut self, index: MonthSetIndex) {
+        self.set(index)
+    }
+}
+
+impl MonthSet {
+    pub(crate) const EMPTY: Self = Self(NonZero::new(1 << 15).unwrap());
+
+    pub const fn get(&self, index: MonthSetIndex) -> bool {
+        let mask = 1 << index.0.get();
+        (self.0.get() & mask) != 0
+    }
+
+    pub const fn set(&mut self, index: MonthSetIndex) {
+        let mask = 1 << index.0.get();
+        let updated = self.0.get() | mask;
+
+        // SAFETY: bitwise OR cannot reduce the number of set bits
+        *self = Self(unsafe { NonZero::new_unchecked(updated) })
+    }
+}
+
+impl Default for MonthSet {
+    fn default() -> Self {
+        Self::EMPTY
+    }
+}
+
+impl From<Month> for MonthSetIndex {
+    fn from(value: Month) -> Self {
+        Self(value.number())
+    }
+}
 
 /// A bitset of values from -31 through -1 and from 1 through 31. The most
 /// significant bit is always to set to guarantee the entire set is nonzero.
@@ -325,6 +450,95 @@ pub(crate) enum PartName {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hour_set_empty() {
+        let empty = HourSet::default();
+        let bitstring = format!("{:b}", empty.0);
+        assert_eq!(bitstring.len(), 32);
+
+        let mut chars = bitstring.chars();
+        assert_eq!(chars.next(), Some('1'));
+
+        for char in chars {
+            assert_eq!(char, '0');
+        }
+    }
+
+    #[test]
+    fn hour_set_bit_twiddling() {
+        let mut set = HourSet::default();
+
+        let i1 = Hour::H0;
+        let i2 = Hour::H3;
+        let i3 = Hour::H4;
+        let i4 = Hour::H13;
+        let i5 = Hour::H22;
+
+        for i in [i1, i2, i3, i4, i5] {
+            assert!(!set.get(i));
+        }
+
+        for i in [i1, i2, i3, i4, i5] {
+            set.set(i);
+        }
+
+        for i in [i1, i2, i3, i4, i5] {
+            assert!(set.get(i));
+        }
+    }
+
+    #[test]
+    fn month_set_empty() {
+        let empty = MonthSet::default();
+        let bitstring = format!("{:b}", empty.0);
+        assert_eq!(bitstring.len(), 16);
+
+        let mut chars = bitstring.chars();
+        assert_eq!(chars.next(), Some('1'));
+
+        for char in chars {
+            assert_eq!(char, '0');
+        }
+    }
+
+    #[test]
+    fn month_set_index_from_month() {
+        assert_eq!(MonthSetIndex::from(Month::Jan).0.get(), 1);
+        assert_eq!(MonthSetIndex::from(Month::Feb).0.get(), 2);
+        assert_eq!(MonthSetIndex::from(Month::Mar).0.get(), 3);
+        assert_eq!(MonthSetIndex::from(Month::Apr).0.get(), 4);
+        assert_eq!(MonthSetIndex::from(Month::May).0.get(), 5);
+        assert_eq!(MonthSetIndex::from(Month::Jun).0.get(), 6);
+        assert_eq!(MonthSetIndex::from(Month::Jul).0.get(), 7);
+        assert_eq!(MonthSetIndex::from(Month::Aug).0.get(), 8);
+        assert_eq!(MonthSetIndex::from(Month::Sep).0.get(), 9);
+        assert_eq!(MonthSetIndex::from(Month::Oct).0.get(), 10);
+        assert_eq!(MonthSetIndex::from(Month::Nov).0.get(), 11);
+        assert_eq!(MonthSetIndex::from(Month::Dec).0.get(), 12);
+    }
+
+    #[test]
+    fn month_set_bit_twiddling() {
+        let mut month_set = MonthSet::default();
+
+        let i1 = MonthSetIndex::from(Month::Jan);
+        let i2 = MonthSetIndex::from(Month::Apr);
+        let i3 = MonthSetIndex::from(Month::Aug);
+        let i4 = MonthSetIndex::from(Month::Sep);
+
+        for i in [i1, i2, i3, i4] {
+            assert!(!month_set.get(i));
+        }
+
+        for i in [i1, i2, i3, i4] {
+            month_set.set(i);
+        }
+
+        for i in [i1, i2, i3, i4] {
+            assert!(month_set.get(i));
+        }
+    }
 
     #[test]
     fn month_day_set_empty() {

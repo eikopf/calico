@@ -11,9 +11,12 @@ use winnow::{
 };
 
 use crate::{
-    model::rrule::{
-        Frequency, Interval, MonthDay, MonthDaySetIndex, Part, PartName,
-        RecurrenceRule, WeekNoSetIndex,
+    model::{
+        primitive::Month,
+        rrule::{
+            Frequency, Hour, Interval, MonthDay, MonthDaySetIndex,
+            MonthSetIndex, Part, PartName, RecurrenceRule, WeekNoSetIndex,
+        },
     },
     parser::primitive::{digit, iso_week_index, lz_dec_uint, sign},
 };
@@ -61,7 +64,10 @@ where
         }
         PartName::BySecond => todo!(),
         PartName::ByMinute => todo!(),
-        PartName::ByHour => todo!(),
+        PartName::ByHour => {
+            let set = separated(1.., hour, ',').parse_next(input)?;
+            Part::ByHour(set)
+        }
         PartName::ByDay => todo!(),
         PartName::ByMonthDay => {
             let set = separated(1.., month_day_num, ',').parse_next(input)?;
@@ -72,7 +78,10 @@ where
             let set = separated(1.., week_num, ',').parse_next(input)?;
             Part::ByWeekNo(set)
         }
-        PartName::ByMonth => todo!(),
+        PartName::ByMonth => {
+            let set = separated(1.., month_num, ',').parse_next(input)?;
+            Part::ByMonth(set)
+        }
         PartName::BySetPos => todo!(),
         PartName::WkSt => todo!(),
     })
@@ -174,6 +183,54 @@ where
     (sign, iso_week_index)
         .map(|(sign, week)| WeekNoSetIndex::from_signed_week(sign, week))
         .parse_next(input)
+}
+
+/// Parses a [`MonthSetIndex`].
+pub fn month_num<I, E>(input: &mut I) -> Result<MonthSetIndex, E>
+where
+    I: StreamIsPartial + Stream + Compare<char>,
+    I::Token: AsChar + Clone,
+    E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
+{
+    let (a, b) =
+        (digit::<I, E, 10>, opt(digit::<I, E, 10>)).parse_next(input)?;
+
+    let value = match b {
+        Some(b) => 10 * a + b,
+        None => a,
+    };
+
+    match Month::from_number(value) {
+        Some(month) => Ok(month.into()),
+        None => Err(E::from_external_error(
+            input,
+            CalendarParseError::InvalidMonthNumber(value),
+        )),
+    }
+}
+
+/// Parses an [`Hour`].
+pub fn hour<I, E>(input: &mut I) -> Result<Hour, E>
+where
+    I: StreamIsPartial + Stream + Compare<char>,
+    I::Token: AsChar + Clone,
+    E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
+{
+    let (a, b) =
+        (digit::<I, E, 10>, opt(digit::<I, E, 10>)).parse_next(input)?;
+
+    let index = match b {
+        Some(b) => 10 * a + b,
+        None => a,
+    };
+
+    match Hour::from_index(index) {
+        Some(hour) => Ok(hour),
+        None => Err(E::from_external_error(
+            input,
+            CalendarParseError::InvalidHourIndex(index),
+        )),
+    }
 }
 
 #[cfg(test)]
@@ -387,5 +444,54 @@ mod tests {
                 )
             ))
         );
+    }
+
+    #[test]
+    fn month_num_parser() {
+        assert_eq!(
+            month_num::<_, ()>.parse_peek("1"),
+            Ok(("", Month::Jan.into()))
+        );
+
+        assert_eq!(
+            month_num::<_, ()>.parse_peek("2"),
+            Ok(("", Month::Feb.into()))
+        );
+
+        assert_eq!(
+            month_num::<_, ()>.parse_peek("3"),
+            Ok(("", Month::Mar.into()))
+        );
+
+        assert_eq!(
+            month_num::<_, ()>.parse_peek("4"),
+            Ok(("", Month::Apr.into()))
+        );
+
+        // ...
+
+        assert_eq!(
+            month_num::<_, ()>.parse_peek("11"),
+            Ok(("", Month::Nov.into()))
+        );
+
+        assert_eq!(
+            month_num::<_, ()>.parse_peek("12"),
+            Ok(("", Month::Dec.into()))
+        );
+
+        assert!(month_num::<_, ()>.parse_peek("13").is_err());
+        assert!(month_num::<_, ()>.parse_peek("14").is_err());
+    }
+
+    #[test]
+    fn hour_parser() {
+        assert_eq!(hour::<_, ()>.parse_peek("0"), Ok(("", Hour::H0)));
+        assert_eq!(hour::<_, ()>.parse_peek("00"), Ok(("", Hour::H0)));
+
+        assert_eq!(hour::<_, ()>.parse_peek("4"), Ok(("", Hour::H4)));
+        assert_eq!(hour::<_, ()>.parse_peek("04"), Ok(("", Hour::H4)));
+
+        assert!(hour::<_, ()>.parse_peek("24").is_err());
     }
 }
