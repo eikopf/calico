@@ -5,14 +5,17 @@ use std::num::NonZeroU64;
 use winnow::{
     Parser,
     ascii::Caseless,
-    combinator::{alt, terminated},
+    combinator::{alt, opt, separated, terminated},
     error::{FromExternalError, ParserError},
     stream::{AsBStr, AsChar, Compare, Stream, StreamIsPartial},
 };
 
 use crate::{
-    model::rrule::{Frequency, Interval, Part, PartName, RecurrenceRule},
-    parser::primitive::lz_dec_uint,
+    model::rrule::{
+        Frequency, Interval, MonthDay, MonthDaySetIndex, Part, PartName,
+        RecurrenceRule, WeekNoSetIndex,
+    },
+    parser::primitive::{digit, iso_week_index, lz_dec_uint, sign},
 };
 
 use super::{error::CalendarParseError, primitive::datetime_or_date};
@@ -60,9 +63,15 @@ where
         PartName::ByMinute => todo!(),
         PartName::ByHour => todo!(),
         PartName::ByDay => todo!(),
-        PartName::ByMonthDay => todo!(),
+        PartName::ByMonthDay => {
+            let set = separated(1.., month_day_num, ',').parse_next(input)?;
+            Part::ByMonthDay(set)
+        }
         PartName::ByYearDay => todo!(),
-        PartName::ByWeekNo => todo!(),
+        PartName::ByWeekNo => {
+            let set = separated(1.., week_num, ',').parse_next(input)?;
+            Part::ByWeekNo(set)
+        }
         PartName::ByMonth => todo!(),
         PartName::BySetPos => todo!(),
         PartName::WkSt => todo!(),
@@ -131,8 +140,46 @@ where
     }
 }
 
+/// Parses a [`MonthDaySetIndex`].
+pub fn month_day_num<I, E>(input: &mut I) -> Result<MonthDaySetIndex, E>
+where
+    I: StreamIsPartial + Stream + Compare<char>,
+    I::Token: AsChar + Clone,
+    E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
+{
+    let (sign, a, b) =
+        (sign, digit::<I, E, 10>, opt(digit::<I, E, 10>)).parse_next(input)?;
+
+    let index = match b {
+        Some(b) => a * 10 + b,
+        None => a,
+    };
+
+    match MonthDay::from_index(index) {
+        Some(day) => Ok(MonthDaySetIndex::from_signed_month_day(sign, day)),
+        None => Err(E::from_external_error(
+            input,
+            CalendarParseError::InvalidMonthDayIndex(index),
+        )),
+    }
+}
+
+/// Parses a [`WeekNoSetIndex`].
+pub fn week_num<I, E>(input: &mut I) -> Result<WeekNoSetIndex, E>
+where
+    I: StreamIsPartial + Stream + Compare<char>,
+    I::Token: AsChar + Clone,
+    E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
+{
+    (sign, iso_week_index)
+        .map(|(sign, week)| WeekNoSetIndex::from_signed_week(sign, week))
+        .parse_next(input)
+}
+
 #[cfg(test)]
 mod tests {
+    use crate::model::primitive::{IsoWeek, Sign};
+
     use super::*;
 
     #[test]
@@ -253,5 +300,92 @@ mod tests {
         );
 
         assert!(interval::<_, ()>.parse_peek("0").is_err());
+    }
+
+    #[test]
+    fn week_num_parser() {
+        assert_eq!(
+            week_num::<_, ()>.parse_peek("+1"),
+            Ok((
+                "",
+                WeekNoSetIndex::from_signed_week(Sign::Positive, IsoWeek::W1)
+            ))
+        );
+
+        assert_eq!(
+            week_num::<_, ()>.parse_peek("+01"),
+            Ok((
+                "",
+                WeekNoSetIndex::from_signed_week(Sign::Positive, IsoWeek::W1)
+            ))
+        );
+
+        assert_eq!(
+            week_num::<_, ()>.parse_peek("+31"),
+            Ok((
+                "",
+                WeekNoSetIndex::from_signed_week(Sign::Positive, IsoWeek::W31)
+            ))
+        );
+
+        assert_eq!(
+            week_num::<_, ()>.parse_peek("-2"),
+            Ok((
+                "",
+                WeekNoSetIndex::from_signed_week(Sign::Negative, IsoWeek::W2)
+            ))
+        );
+
+        assert_eq!(
+            week_num::<_, ()>.parse_peek("-02"),
+            Ok((
+                "",
+                WeekNoSetIndex::from_signed_week(Sign::Negative, IsoWeek::W2)
+            ))
+        );
+
+        assert_eq!(
+            week_num::<_, ()>.parse_peek("-50"),
+            Ok((
+                "",
+                WeekNoSetIndex::from_signed_week(Sign::Negative, IsoWeek::W50)
+            ))
+        );
+    }
+
+    #[test]
+    fn month_day_num_parser() {
+        assert_eq!(
+            month_day_num::<_, ()>.parse_peek("+1"),
+            Ok((
+                "",
+                MonthDaySetIndex::from_signed_month_day(
+                    Sign::Positive,
+                    MonthDay::D1
+                )
+            ))
+        );
+
+        assert_eq!(
+            month_day_num::<_, ()>.parse_peek("+01"),
+            Ok((
+                "",
+                MonthDaySetIndex::from_signed_month_day(
+                    Sign::Positive,
+                    MonthDay::D1
+                )
+            ))
+        );
+
+        assert_eq!(
+            month_day_num::<_, ()>.parse_peek("-16"),
+            Ok((
+                "",
+                MonthDaySetIndex::from_signed_month_day(
+                    Sign::Negative,
+                    MonthDay::D16
+                )
+            ))
+        );
     }
 }

@@ -2,6 +2,8 @@
 
 use std::num::NonZero;
 
+use winnow::stream::Accumulate;
+
 use super::primitive::{DateTime, DateTimeOrDate, IsoWeek, Sign, Utc, Weekday};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -75,7 +77,16 @@ pub struct MinuteSet(NonZero<u64>);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HourSet(NonZero<u32>);
 
-/// A bitset of values from 1 through 12.
+/// A bitset of values from 1 through 12. The most significant bit is always set
+/// to guarantee that the entire set is never zero.
+///
+/// ```text
+///  1          12
+///  |          |   
+/// 0xxxxxxxxxxxx001 (0-15)
+/// |              |
+/// lsb           msb
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MonthSet(NonZero<u16>);
 
@@ -95,6 +106,16 @@ pub struct MonthDaySet(NonZero<u64>);
 /// A valid index into a [`MonthDaySet`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct MonthDaySetIndex(NonZero<u8>);
+
+impl Accumulate<MonthDaySetIndex> for MonthDaySet {
+    fn initial(_capacity: Option<usize>) -> Self {
+        Self::EMPTY
+    }
+
+    fn accumulate(&mut self, index: MonthDaySetIndex) {
+        self.set(index)
+    }
+}
 
 impl MonthDaySet {
     pub(crate) const EMPTY: Self = Self(NonZero::new(1 << 63).unwrap());
@@ -149,6 +170,16 @@ pub struct WeekNoSet(NonZero<u128>);
 /// A valid index into a [`WeekNoSet`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct WeekNoSetIndex(NonZero<u8>);
+
+impl Accumulate<WeekNoSetIndex> for WeekNoSet {
+    fn initial(_capacity: Option<usize>) -> Self {
+        Self::EMPTY
+    }
+
+    fn accumulate(&mut self, index: WeekNoSetIndex) {
+        self.set(index)
+    }
+}
 
 impl WeekNoSet {
     pub(crate) const EMPTY: Self = Self(NonZero::new(1 << 127).unwrap());
@@ -221,6 +252,15 @@ pub enum MonthDay {
     D29,
     D30,
     D31,
+}
+
+impl MonthDay {
+    pub const fn from_index(index: u8) -> Option<Self> {
+        match index {
+            1..=31 => Some(unsafe { std::mem::transmute::<u8, Self>(index) }),
+            _ => None,
+        }
+    }
 }
 
 /// A variant in the `recur-rule-part` grammar rule.

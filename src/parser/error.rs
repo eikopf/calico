@@ -27,8 +27,10 @@ pub enum CalendarParseError<S> {
     /// Received the interval 0 in a recurrence rule, which must be a
     /// positive integer.
     ZeroInterval,
-    /// Expected an ISO week index, got a value outside the range `0..=53`.
+    /// Expected an ISO week index, got a value outside the range `1..=53`.
     InvalidIsoWeekIndex(u8),
+    /// Expected a month day index, got a value outside the range `1..=31`.
+    InvalidMonthDayIndex(u8),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
