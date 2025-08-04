@@ -24,6 +24,11 @@ pub enum CalendarParseError<S> {
     DtParam(DtParamError<S>),
     RDateParam(RDateParamError<S>),
     TriggerParam(TriggerParamError<S>),
+    /// Received the interval 0 in a recurrence rule, which must be a
+    /// positive integer.
+    ZeroInterval,
+    /// Expected an ISO week index, got a value outside the range `0..=53`.
+    InvalidIsoWeekIndex(u8),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
