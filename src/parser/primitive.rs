@@ -15,12 +15,12 @@ use winnow::{
 
 use crate::model::primitive::{
     AlarmAction, BinaryText, CalAddress, CalendarUserType, ClassValue,
-    CompletionPercentage, Date, DateTime, DisplayType, Duration, DurationKind,
-    DurationTime, Encoding, FeatureType, Float, FormatType, FreeBusyType, Geo,
-    GeoComponent, Integer, Language, Method, ParticipationRole,
-    ParticipationStatus, Period, Priority, RawTime, RelationshipType, Sign,
-    Status, Text, Time, TimeFormat, TimeTransparency, TriggerRelation, TzId,
-    Uid, Uri, Utc, UtcOffset, ValueType,
+    CompletionPercentage, Date, DateTime, DateTimeOrDate, DisplayType,
+    Duration, DurationKind, DurationTime, Encoding, FeatureType, Float,
+    FormatType, FreeBusyType, Geo, GeoComponent, Integer, Language, Method,
+    ParticipationRole, ParticipationStatus, Period, Priority, RawTime,
+    RelationshipType, Sign, Status, Text, Time, TimeFormat, TimeTransparency,
+    TriggerRelation, TzId, Uid, Uri, Utc, UtcOffset, ValueType,
 };
 
 use super::error::{
@@ -711,6 +711,23 @@ where
     )
     .map(|(sign, kind)| Duration { sign, kind })
     .parse_next(input)
+}
+
+/// Parses a [`DateTimeOrDate<TimeFormat>`].
+pub fn datetime_or_date<I, E>(
+    input: &mut I,
+) -> Result<DateTimeOrDate<TimeFormat>, E>
+where
+    I: StreamIsPartial + Stream + Compare<char>,
+    <I as Stream>::Token: AsChar + Clone,
+    E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
+{
+    let (date, time) = (date, opt(preceded('T', time))).parse_next(input)?;
+
+    Ok(match time {
+        Some(time) => DateTimeOrDate::DateTime(DateTime { date, time }),
+        None => DateTimeOrDate::Date(date),
+    })
 }
 
 /// Parses a datetime of the form `YYYYMMDDThhmmss`, with an optional time
@@ -1654,6 +1671,21 @@ mod tests {
                     },
                 }
             )),
+        );
+    }
+
+    #[test]
+    fn datetime_or_date_parser() {
+        assert!(
+            datetime_or_date::<_, ()>
+                .parse_peek("19850714")
+                .is_ok_and(|(_, d)| d.is_date())
+        );
+
+        assert!(
+            datetime_or_date::<_, ()>
+                .parse_peek("19850714T234040")
+                .is_ok_and(|(_, d)| d.is_date_time())
         );
     }
 

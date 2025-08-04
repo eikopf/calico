@@ -74,6 +74,24 @@ pub enum DateTimeOrDate<F = TimeFormat> {
     Date(Date),
 }
 
+impl<F> DateTimeOrDate<F> {
+    /// Returns `true` if the date time or date is [`Date`].
+    ///
+    /// [`Date`]: DateTimeOrDate::Date
+    #[must_use]
+    pub fn is_date(&self) -> bool {
+        matches!(self, Self::Date(..))
+    }
+
+    /// Returns `true` if the date time or date is [`DateTime`].
+    ///
+    /// [`DateTime`]: DateTimeOrDate::DateTime
+    #[must_use]
+    pub fn is_date_time(&self) -> bool {
+        matches!(self, Self::DateTime(..))
+    }
+}
+
 /// The product of a [`Date`] and a [`Time`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DateTime<F = TimeFormat> {
