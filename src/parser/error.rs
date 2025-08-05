@@ -35,6 +35,10 @@ pub enum CalendarParseError<S> {
     InvalidMonthNumber(u8),
     /// Expected an hour index, got a value outside the range `0..=23`.
     InvalidHourIndex(u8),
+    /// Expected a minute index, got a value outside the range `0..=59`.
+    InvalidMinuteIndex(u8),
+    /// Expected a second index, got a value outside the range `0..=60`.
+    InvalidSecondIndex(u8),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

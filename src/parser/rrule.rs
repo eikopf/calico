@@ -8,14 +8,16 @@ use winnow::{
     combinator::{alt, opt, separated, terminated},
     error::{FromExternalError, ParserError},
     stream::{AsBStr, AsChar, Compare, Stream, StreamIsPartial},
+    token::any,
 };
 
 use crate::{
     model::{
-        primitive::Month,
+        primitive::{Month, Weekday},
         rrule::{
-            Frequency, Hour, Interval, MonthDay, MonthDaySetIndex,
-            MonthSetIndex, Part, PartName, RecurrenceRule, WeekNoSetIndex,
+            Frequency, Hour, Interval, Minute, MonthDay, MonthDaySetIndex,
+            MonthSetIndex, Part, PartName, RecurrenceRule, Second,
+            WeekNoSetIndex,
         },
     },
     parser::primitive::{digit, iso_week_index, lz_dec_uint, sign},
@@ -62,8 +64,14 @@ where
             let interval = interval.parse_next(input)?;
             Part::Interval(interval)
         }
-        PartName::BySecond => todo!(),
-        PartName::ByMinute => todo!(),
+        PartName::BySecond => {
+            let set = separated(1.., second, ',').parse_next(input)?;
+            Part::BySecond(set)
+        }
+        PartName::ByMinute => {
+            let set = separated(1.., minute, ',').parse_next(input)?;
+            Part::ByMinute(set)
+        }
         PartName::ByHour => {
             let set = separated(1.., hour, ',').parse_next(input)?;
             Part::ByHour(set)
@@ -83,7 +91,10 @@ where
             Part::ByMonth(set)
         }
         PartName::BySetPos => todo!(),
-        PartName::WkSt => todo!(),
+        PartName::WkSt => {
+            let day = weekday.parse_next(input)?;
+            Part::WkSt(day)
+        }
     })
 }
 
@@ -212,7 +223,7 @@ where
 /// Parses an [`Hour`].
 pub fn hour<I, E>(input: &mut I) -> Result<Hour, E>
 where
-    I: StreamIsPartial + Stream + Compare<char>,
+    I: StreamIsPartial + Stream,
     I::Token: AsChar + Clone,
     E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
@@ -230,6 +241,75 @@ where
             input,
             CalendarParseError::InvalidHourIndex(index),
         )),
+    }
+}
+
+/// Parses a [`Minute`].
+pub fn minute<I, E>(input: &mut I) -> Result<Minute, E>
+where
+    I: StreamIsPartial + Stream,
+    I::Token: AsChar + Clone,
+    E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
+{
+    let (a, b) =
+        (digit::<I, E, 10>, opt(digit::<I, E, 10>)).parse_next(input)?;
+
+    let index = match b {
+        Some(b) => 10 * a + b,
+        None => a,
+    };
+
+    match Minute::from_index(index) {
+        Some(minute) => Ok(minute),
+        None => Err(E::from_external_error(
+            input,
+            CalendarParseError::InvalidMinuteIndex(index),
+        )),
+    }
+}
+
+/// Parses a [`Second`].
+pub fn second<I, E>(input: &mut I) -> Result<Second, E>
+where
+    I: StreamIsPartial + Stream,
+    I::Token: AsChar + Clone,
+    E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
+{
+    let (a, b) =
+        (digit::<I, E, 10>, opt(digit::<I, E, 10>)).parse_next(input)?;
+
+    let index = match b {
+        Some(b) => 10 * a + b,
+        None => a,
+    };
+
+    match Second::from_index(index) {
+        Some(second) => Ok(second),
+        None => Err(E::from_external_error(
+            input,
+            CalendarParseError::InvalidSecondIndex(index),
+        )),
+    }
+}
+
+/// Parses a [`Weekday`].
+pub fn weekday<I, E>(input: &mut I) -> Result<Weekday, E>
+where
+    I: StreamIsPartial + Stream,
+    I::Token: AsChar + Clone,
+    E: ParserError<I>,
+{
+    match (any.map(AsChar::as_char), any.map(AsChar::as_char))
+        .parse_next(input)?
+    {
+        ('m' | 'M', 'o' | 'O') => Ok(Weekday::Monday),
+        ('t' | 'T', 'u' | 'U') => Ok(Weekday::Tuesday),
+        ('w' | 'W', 'e' | 'E') => Ok(Weekday::Wednesday),
+        ('t' | 'T', 'h' | 'H') => Ok(Weekday::Thursday),
+        ('f' | 'F', 'r' | 'R') => Ok(Weekday::Friday),
+        ('s' | 'S', 'a' | 'A') => Ok(Weekday::Saturday),
+        ('s' | 'S', 'u' | 'U') => Ok(Weekday::Sunday),
+        _ => Err(E::from_input(input)),
     }
 }
 
@@ -493,5 +573,67 @@ mod tests {
         assert_eq!(hour::<_, ()>.parse_peek("04"), Ok(("", Hour::H4)));
 
         assert!(hour::<_, ()>.parse_peek("24").is_err());
+    }
+
+    #[test]
+    fn minute_parser() {
+        assert_eq!(minute::<_, ()>.parse_peek("0"), Ok(("", Minute::M0)));
+        assert_eq!(minute::<_, ()>.parse_peek("00"), Ok(("", Minute::M0)));
+        assert_eq!(minute::<_, ()>.parse_peek("1"), Ok(("", Minute::M1)));
+        assert_eq!(minute::<_, ()>.parse_peek("01"), Ok(("", Minute::M1)));
+        assert_eq!(minute::<_, ()>.parse_peek("10"), Ok(("", Minute::M10)));
+        // ...
+        assert_eq!(minute::<_, ()>.parse_peek("59"), Ok(("", Minute::M59)));
+        assert_eq!(minute::<_, ()>.parse_peek("60"), Err(()));
+    }
+
+    #[test]
+    fn second_parser() {
+        assert_eq!(second::<_, ()>.parse_peek("0"), Ok(("", Second::S0)));
+        assert_eq!(second::<_, ()>.parse_peek("00"), Ok(("", Second::S0)));
+        assert_eq!(second::<_, ()>.parse_peek("1"), Ok(("", Second::S1)));
+        assert_eq!(second::<_, ()>.parse_peek("01"), Ok(("", Second::S1)));
+        assert_eq!(second::<_, ()>.parse_peek("10"), Ok(("", Second::S10)));
+        // ...
+        assert_eq!(second::<_, ()>.parse_peek("60"), Ok(("", Second::S60)));
+        assert_eq!(second::<_, ()>.parse_peek("61"), Err(()));
+    }
+
+    #[test]
+    fn weekday_parser() {
+        assert_eq!(
+            weekday::<_, ()>.parse_peek("SU"),
+            Ok(("", Weekday::Sunday))
+        );
+
+        assert_eq!(
+            weekday::<_, ()>.parse_peek("mO"),
+            Ok(("", Weekday::Monday))
+        );
+
+        assert_eq!(
+            weekday::<_, ()>.parse_peek("Tu"),
+            Ok(("", Weekday::Tuesday))
+        );
+
+        assert_eq!(
+            weekday::<_, ()>.parse_peek("we"),
+            Ok(("", Weekday::Wednesday))
+        );
+
+        assert_eq!(
+            weekday::<_, ()>.parse_peek("TH"),
+            Ok(("", Weekday::Thursday))
+        );
+
+        assert_eq!(
+            weekday::<_, ()>.parse_peek("fR"),
+            Ok(("", Weekday::Friday))
+        );
+
+        assert_eq!(
+            weekday::<_, ()>.parse_peek("sa"),
+            Ok(("", Weekday::Saturday))
+        );
     }
 }

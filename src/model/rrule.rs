@@ -68,12 +68,252 @@ pub struct WeekdayRule {
 }
 
 /// A bitset of values from 0 through 60.
+///
+/// ```text
+/// 0                                                          60
+/// |                                                           |
+/// xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx001 (0-63)
+///                                                                |
+///                                                               msb
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SecondSet(NonZero<u64>);
 
+impl Accumulate<Second> for SecondSet {
+    fn initial(_capacity: Option<usize>) -> Self {
+        Self::EMPTY
+    }
+
+    fn accumulate(&mut self, second: Second) {
+        self.set(second)
+    }
+}
+
+impl SecondSet {
+    pub(crate) const EMPTY: Self = Self(NonZero::new(1 << 63).unwrap());
+
+    pub const fn get(&self, second: Second) -> bool {
+        let mask = 1 << (second as u8);
+        (self.0.get() & mask) != 0
+    }
+
+    pub const fn set(&mut self, second: Second) {
+        let mask = 1 << (second as u8);
+        let updated = self.0.get() | mask;
+
+        // SAFETY: bitwise OR cannot reduce the number of set bits
+        *self = Self(unsafe { NonZero::new_unchecked(updated) })
+    }
+}
+
+impl Default for SecondSet {
+    fn default() -> Self {
+        Self::EMPTY
+    }
+}
+
+/// A second (ℤ mod 61), ranging from S0 through S60.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u8)]
+pub enum Second {
+    S0,
+    S1,
+    S2,
+    S3,
+    S4,
+    S5,
+    S6,
+    S7,
+    S8,
+    S9,
+    S10,
+    S11,
+    S12,
+    S13,
+    S14,
+    S15,
+    S16,
+    S17,
+    S18,
+    S19,
+    S20,
+    S21,
+    S22,
+    S23,
+    S24,
+    S25,
+    S26,
+    S27,
+    S28,
+    S29,
+    S30,
+    S31,
+    S32,
+    S33,
+    S34,
+    S35,
+    S36,
+    S37,
+    S38,
+    S39,
+    S40,
+    S41,
+    S42,
+    S43,
+    S44,
+    S45,
+    S46,
+    S47,
+    S48,
+    S49,
+    S50,
+    S51,
+    S52,
+    S53,
+    S54,
+    S55,
+    S56,
+    S57,
+    S58,
+    S59,
+    S60,
+}
+
+impl Second {
+    pub const fn from_index(index: u8) -> Option<Self> {
+        match index {
+            0..=60 => {
+                // SAFETY: all values in the range 0..=60 are discriminants
+                // of Self
+                Some(unsafe { std::mem::transmute::<u8, Self>(index) })
+            }
+            _ => None,
+        }
+    }
+}
+
 /// A bitset of values from 0 through 59.
+///
+/// ```text
+/// 0                                                         59
+/// |                                                          |
+/// xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx0001 (0-63)
+///                                                                |
+///                                                               msb
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MinuteSet(NonZero<u64>);
+
+impl Accumulate<Minute> for MinuteSet {
+    fn initial(_capacity: Option<usize>) -> Self {
+        Self::EMPTY
+    }
+
+    fn accumulate(&mut self, minute: Minute) {
+        self.set(minute)
+    }
+}
+
+impl MinuteSet {
+    pub(crate) const EMPTY: Self = Self(NonZero::new(1 << 63).unwrap());
+
+    pub const fn get(&self, minute: Minute) -> bool {
+        let mask = 1 << (minute as u8);
+        (self.0.get() & mask) != 0
+    }
+
+    pub const fn set(&mut self, minute: Minute) {
+        let mask = 1 << (minute as u8);
+        let updated = self.0.get() | mask;
+
+        // SAFETY: bitwise OR cannot reduce the number of set bits
+        *self = Self(unsafe { NonZero::new_unchecked(updated) })
+    }
+}
+
+impl Default for MinuteSet {
+    fn default() -> Self {
+        Self::EMPTY
+    }
+}
+
+/// A minute (ℤ mod 60), ranging from M0 through M59.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u8)]
+pub enum Minute {
+    M0,
+    M1,
+    M2,
+    M3,
+    M4,
+    M5,
+    M6,
+    M7,
+    M8,
+    M9,
+    M10,
+    M11,
+    M12,
+    M13,
+    M14,
+    M15,
+    M16,
+    M17,
+    M18,
+    M19,
+    M20,
+    M21,
+    M22,
+    M23,
+    M24,
+    M25,
+    M26,
+    M27,
+    M28,
+    M29,
+    M30,
+    M31,
+    M32,
+    M33,
+    M34,
+    M35,
+    M36,
+    M37,
+    M38,
+    M39,
+    M40,
+    M41,
+    M42,
+    M43,
+    M44,
+    M45,
+    M46,
+    M47,
+    M48,
+    M49,
+    M50,
+    M51,
+    M52,
+    M53,
+    M54,
+    M55,
+    M56,
+    M57,
+    M58,
+    M59,
+}
+
+impl Minute {
+    pub const fn from_index(index: u8) -> Option<Self> {
+        match index {
+            0..=59 => {
+                // SAFETY: the range of discriminants of Self is 0..=59
+                Some(unsafe { std::mem::transmute::<u8, Self>(index) })
+            }
+            _ => None,
+        }
+    }
+}
 
 /// A bitset of values from 0 through 23.
 ///
@@ -450,6 +690,56 @@ pub(crate) enum PartName {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn second_set_empty() {
+        let empty = SecondSet::default();
+        let bitstring = format!("{:b}", empty.0);
+        assert_eq!(bitstring.len(), 64);
+
+        let mut chars = bitstring.chars();
+        assert_eq!(chars.next(), Some('1'));
+
+        for char in chars {
+            assert_eq!(char, '0');
+        }
+    }
+
+    #[test]
+    fn second_from_index() {
+        for i in 0..=60 {
+            assert!(Second::from_index(i).is_some());
+        }
+
+        for i in 61..=255 {
+            assert!(Second::from_index(i).is_none());
+        }
+    }
+
+    #[test]
+    fn minute_set_empty() {
+        let empty = MinuteSet::default();
+        let bitstring = format!("{:b}", empty.0);
+        assert_eq!(bitstring.len(), 64);
+
+        let mut chars = bitstring.chars();
+        assert_eq!(chars.next(), Some('1'));
+
+        for char in chars {
+            assert_eq!(char, '0');
+        }
+    }
+
+    #[test]
+    fn minute_from_index() {
+        for i in 0..=59 {
+            assert!(Minute::from_index(i).is_some());
+        }
+
+        for i in 60..=255 {
+            assert!(Minute::from_index(i).is_none());
+        }
+    }
 
     #[test]
     fn hour_set_empty() {
