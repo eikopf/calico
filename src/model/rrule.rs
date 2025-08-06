@@ -1,12 +1,18 @@
 //! Model types for recurrence rules.
 
-use std::num::NonZero;
+use std::{collections::BTreeSet, num::NonZero};
 
+use weekday_num_set::WeekdayNumSet;
 use winnow::stream::Accumulate;
 
 use super::primitive::{
     DateTime, DateTimeOrDate, IsoWeek, Month, Sign, Utc, Weekday,
 };
+
+// TODO: implement another mixed representation set module for
+// year_day_num
+
+pub mod weekday_num_set;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecurrenceRule {
@@ -56,15 +62,61 @@ pub struct ByRules {
     pub by_week_no: Option<WeekNoSet>,
 
     // boxed vectors
-    pub by_day: Option<Box<[WeekdayRule]>>,
+    pub by_day: Option<Box<[WeekdayNum]>>,
     pub by_year_day: Option<Box<[NonZero<i16>]>>,
     pub by_set_pos: Option<Box<[NonZero<i16>]>>,
 }
 
+/// A signed year of the day, i.e. the range -366..=366 not including 0.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct YearDayNum(NonZero<i16>);
+
+impl YearDayNum {
+    pub const fn from_signed_index(sign: Sign, index: u16) -> Option<Self> {
+        match index {
+            1..=366 => {
+                let value = (index as i16) * (sign as i16);
+
+                // SAFETY: index is certainly non-zero, and sign is ±1; hence
+                // their product cannot be zero (nor can it overflow to zero).
+                Some(Self(unsafe { NonZero::new_unchecked(value) }))
+            }
+            _ => None,
+        }
+    }
+}
+
+/// A value corresponding to the `weekdaynum` grammar rule.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct WeekdayRule {
+pub struct WeekdayNum {
+    pub ordinal: Option<(Sign, IsoWeek)>,
     pub weekday: Weekday,
-    pub ordinal: Option<i8>,
+}
+
+impl PartialOrd for WeekdayNum {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for WeekdayNum {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // the product of (sign as i16) with (week as i16) is a number in
+        // the range from -53 to +53 (not including zero), so i16::MIN is
+        // certainly less than the entire range
+
+        let lhs = self
+            .ordinal
+            .map(|(sign, week)| (sign as i16) * (week as i16))
+            .unwrap_or(i16::MIN);
+
+        let rhs = other
+            .ordinal
+            .map(|(sign, week)| (sign as i16) * (week as i16))
+            .unwrap_or(i16::MIN);
+
+        (lhs, self.weekday).cmp(&(rhs, other.weekday))
+    }
 }
 
 /// A bitset of values from 0 through 60.
@@ -638,12 +690,12 @@ pub(crate) enum Part {
     BySecond(SecondSet),
     ByMinute(MinuteSet),
     ByHour(HourSet),
-    ByDay(Option<Box<[WeekdayRule]>>),
+    ByDay(WeekdayNumSet),
     ByMonthDay(MonthDaySet),
-    ByYearDay(Option<Box<[NonZero<i16>]>>),
+    ByYearDay(BTreeSet<YearDayNum>),
     ByWeekNo(WeekNoSet),
     ByMonth(MonthSet),
-    BySetPos(Option<Box<[NonZero<i16>]>>),
+    BySetPos(BTreeSet<YearDayNum>),
     WkSt(Weekday),
 }
 
@@ -973,5 +1025,84 @@ mod tests {
         for i in [i1, i2, i3] {
             assert!(week_no_set.get(i));
         }
+    }
+
+    #[test]
+    fn weekday_num_ord_impl() {
+        let none_monday = WeekdayNum {
+            ordinal: None,
+            weekday: Weekday::Monday,
+        };
+
+        let none_tuesday = WeekdayNum {
+            ordinal: None,
+            weekday: Weekday::Tuesday,
+        };
+
+        let none_friday = WeekdayNum {
+            ordinal: None,
+            weekday: Weekday::Friday,
+        };
+
+        assert!(none_monday < none_tuesday);
+        assert!(none_monday < none_friday);
+        assert!(none_tuesday < none_friday);
+
+        let sub_53_monday = WeekdayNum {
+            ordinal: Some((Sign::Negative, IsoWeek::W53)),
+            weekday: Weekday::Monday,
+        };
+
+        let sub_50_monday = WeekdayNum {
+            ordinal: Some((Sign::Negative, IsoWeek::W50)),
+            weekday: Weekday::Monday,
+        };
+
+        let sub_53_wednesday = WeekdayNum {
+            ordinal: Some((Sign::Negative, IsoWeek::W53)),
+            weekday: Weekday::Wednesday,
+        };
+
+        let sub_50_thursday = WeekdayNum {
+            ordinal: Some((Sign::Negative, IsoWeek::W50)),
+            weekday: Weekday::Thursday,
+        };
+
+        assert!(none_monday < sub_53_wednesday);
+        assert!(none_tuesday < sub_53_wednesday);
+        assert!(none_friday < sub_53_wednesday);
+
+        assert!(sub_53_monday < sub_53_wednesday);
+        assert!(sub_53_monday < sub_50_monday);
+        assert!(sub_53_wednesday < sub_50_monday);
+        assert!(sub_53_wednesday < sub_50_thursday);
+        assert!(sub_50_monday < sub_50_thursday);
+
+        let pos_53_monday = WeekdayNum {
+            ordinal: Some((Sign::Positive, IsoWeek::W53)),
+            weekday: Weekday::Monday,
+        };
+
+        let pos_50_monday = WeekdayNum {
+            ordinal: Some((Sign::Positive, IsoWeek::W50)),
+            weekday: Weekday::Monday,
+        };
+
+        let pos_53_wednesday = WeekdayNum {
+            ordinal: Some((Sign::Positive, IsoWeek::W53)),
+            weekday: Weekday::Wednesday,
+        };
+
+        let pos_50_thursday = WeekdayNum {
+            ordinal: Some((Sign::Positive, IsoWeek::W50)),
+            weekday: Weekday::Thursday,
+        };
+
+        assert!(sub_53_monday < pos_53_monday);
+        assert!(sub_50_monday < pos_50_monday);
+        assert!(sub_50_thursday < pos_50_thursday);
+
+        assert!(pos_50_thursday < pos_53_wednesday);
+        assert!(pos_53_monday < pos_53_wednesday);
     }
 }

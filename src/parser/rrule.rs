@@ -1,6 +1,6 @@
 //! Parsers for recurrence rules.
 
-use std::num::NonZeroU64;
+use std::{collections::BTreeSet, num::NonZeroU64};
 
 use winnow::{
     Parser,
@@ -17,7 +17,7 @@ use crate::{
         rrule::{
             Frequency, Hour, Interval, Minute, MonthDay, MonthDaySetIndex,
             MonthSetIndex, Part, PartName, RecurrenceRule, Second,
-            WeekNoSetIndex,
+            WeekNoSetIndex, WeekdayNum, YearDayNum,
         },
     },
     parser::primitive::{digit, iso_week_index, lz_dec_uint, sign},
@@ -76,7 +76,11 @@ where
             let set = separated(1.., hour, ',').parse_next(input)?;
             Part::ByHour(set)
         }
-        PartName::ByDay => todo!(),
+        PartName::ByDay => {
+            let weekday_nums =
+                separated(1.., weekday_num, ',').parse_next(input)?;
+            Part::ByDay(weekday_nums)
+        }
         PartName::ByMonthDay => {
             let set = separated(1.., month_day_num, ',').parse_next(input)?;
             Part::ByMonthDay(set)
@@ -167,8 +171,8 @@ where
     I::Token: AsChar + Clone,
     E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
-    let (sign, a, b) =
-        (sign, digit::<I, E, 10>, opt(digit::<I, E, 10>)).parse_next(input)?;
+    let (sign, a, b) = (opt(sign), digit::<I, E, 10>, opt(digit::<I, E, 10>))
+        .parse_next(input)?;
 
     let index = match b {
         Some(b) => a * 10 + b,
@@ -176,12 +180,56 @@ where
     };
 
     match MonthDay::from_index(index) {
-        Some(day) => Ok(MonthDaySetIndex::from_signed_month_day(sign, day)),
+        Some(day) => Ok(MonthDaySetIndex::from_signed_month_day(
+            sign.unwrap_or_default(),
+            day,
+        )),
         None => Err(E::from_external_error(
             input,
             CalendarParseError::InvalidMonthDayIndex(index),
         )),
     }
+}
+
+/// Parses a [`YearDayNum`].
+pub fn year_day_num<I, E>(input: &mut I) -> Result<YearDayNum, E>
+where
+    I: StreamIsPartial + Stream + Compare<char>,
+    I::Token: AsChar + Clone,
+    E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
+{
+    let (sign, a, b) = (
+        opt(sign),
+        digit::<I, E, 10>,
+        opt((digit::<I, E, 10>, opt(digit::<I, E, 10>))),
+    )
+        .parse_next(input)?;
+
+    let index = match b {
+        None => a as u16,
+        Some((b, None)) => 10 * (a as u16) + (b as u16),
+        Some((b, Some(c))) => 100 * (a as u16) + 10 * (b as u16) + (c as u16),
+    };
+
+    match YearDayNum::from_signed_index(sign.unwrap_or_default(), index) {
+        Some(year_day_num) => Ok(year_day_num),
+        None => todo!(),
+    }
+}
+
+/// Parses a [`WeekdayNum`].
+pub fn weekday_num<I, E>(input: &mut I) -> Result<WeekdayNum, E>
+where
+    I: StreamIsPartial + Stream + Compare<char>,
+    I::Token: AsChar + Clone,
+    E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
+{
+    let (ordinal, weekday) =
+        (opt((opt(sign), iso_week_index)), weekday).parse_next(input)?;
+
+    let ordinal = ordinal.map(|(sign, week)| (sign.unwrap_or_default(), week));
+
+    Ok(WeekdayNum { ordinal, weekday })
 }
 
 /// Parses a [`WeekNoSetIndex`].
@@ -191,8 +239,10 @@ where
     I::Token: AsChar + Clone,
     E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
-    (sign, iso_week_index)
-        .map(|(sign, week)| WeekNoSetIndex::from_signed_week(sign, week))
+    (opt(sign), iso_week_index)
+        .map(|(sign, week)| {
+            WeekNoSetIndex::from_signed_week(sign.unwrap_or_default(), week)
+        })
         .parse_next(input)
 }
 
@@ -450,7 +500,7 @@ mod tests {
         );
 
         assert_eq!(
-            week_num::<_, ()>.parse_peek("+01"),
+            week_num::<_, ()>.parse_peek("01"),
             Ok((
                 "",
                 WeekNoSetIndex::from_signed_week(Sign::Positive, IsoWeek::W1)
@@ -635,5 +685,13 @@ mod tests {
             weekday::<_, ()>.parse_peek("sa"),
             Ok(("", Weekday::Saturday))
         );
+    }
+
+    #[test]
+    fn weekday_num_parser() {
+        assert!(weekday_num::<_, ()>.parse_peek("MO").is_ok());
+        assert!(weekday_num::<_, ()>.parse_peek("12tu").is_ok());
+        assert!(weekday_num::<_, ()>.parse_peek("+43Fr").is_ok());
+        assert!(weekday_num::<_, ()>.parse_peek("-07SA").is_ok());
     }
 }

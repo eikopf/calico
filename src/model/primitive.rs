@@ -136,7 +136,7 @@ pub enum TimeFormat {
 }
 
 /// One of the seven weekdays.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Weekday {
     Monday,
     Tuesday,
@@ -145,6 +145,21 @@ pub enum Weekday {
     Friday,
     Saturday,
     Sunday,
+}
+
+impl Weekday {
+    pub const fn from_index(index: u8) -> Option<Self> {
+        match index {
+            0 => Some(Self::Monday),
+            1 => Some(Self::Tuesday),
+            2 => Some(Self::Wednesday),
+            3 => Some(Self::Thursday),
+            4 => Some(Self::Friday),
+            5 => Some(Self::Saturday),
+            6 => Some(Self::Sunday),
+            _ => None,
+        }
+    }
 }
 
 /// The possible values of the ENCODING parameter.
@@ -441,7 +456,7 @@ pub enum RDate<F = TimeFormat> {
     Period(Period),
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(i8)]
 pub enum Sign {
     #[default]
@@ -806,5 +821,10 @@ mod tests {
         //...
         assert_eq!(IsoWeek::from_index(254), None);
         assert_eq!(IsoWeek::from_index(255), None);
+    }
+
+    #[test]
+    fn sign_ord_impl() {
+        assert!(Sign::Negative < Sign::Positive);
     }
 }
