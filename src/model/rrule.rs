@@ -2,6 +2,7 @@
 
 use std::{collections::BTreeSet, num::NonZero};
 
+use strum::{EnumDiscriminants, FromRepr};
 use weekday_num_set::WeekdayNumSet;
 use winnow::stream::Accumulate;
 
@@ -165,7 +166,7 @@ impl Default for SecondSet {
 }
 
 /// A second (ℤ mod 61), ranging from S0 through S60.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, FromRepr)]
 #[repr(u8)]
 pub enum Second {
     S0,
@@ -231,19 +232,6 @@ pub enum Second {
     S60,
 }
 
-impl Second {
-    pub const fn from_index(index: u8) -> Option<Self> {
-        match index {
-            0..=60 => {
-                // SAFETY: all values in the range 0..=60 are discriminants
-                // of Self
-                Some(unsafe { std::mem::transmute::<u8, Self>(index) })
-            }
-            _ => None,
-        }
-    }
-}
-
 /// A bitset of values from 0 through 59.
 ///
 /// ```text
@@ -290,7 +278,7 @@ impl Default for MinuteSet {
 }
 
 /// A minute (ℤ mod 60), ranging from M0 through M59.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, FromRepr)]
 #[repr(u8)]
 pub enum Minute {
     M0,
@@ -355,18 +343,6 @@ pub enum Minute {
     M59,
 }
 
-impl Minute {
-    pub const fn from_index(index: u8) -> Option<Self> {
-        match index {
-            0..=59 => {
-                // SAFETY: the range of discriminants of Self is 0..=59
-                Some(unsafe { std::mem::transmute::<u8, Self>(index) })
-            }
-            _ => None,
-        }
-    }
-}
-
 /// A bitset of values from 0 through 23.
 ///
 /// ```text
@@ -413,7 +389,7 @@ impl Default for HourSet {
 }
 
 /// An hour of the day, ranging from H0 through H23.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, FromRepr)]
 #[repr(u8)]
 pub enum Hour {
     H0,
@@ -440,15 +416,6 @@ pub enum Hour {
     H21,
     H22,
     H23,
-}
-
-impl Hour {
-    pub const fn from_index(index: u8) -> Option<Self> {
-        match index {
-            0..=23 => Some(unsafe { std::mem::transmute::<u8, Self>(index) }),
-            _ => None,
-        }
-    }
 }
 
 /// A bitset of values from 1 through 12. The most significant bit is always set
@@ -635,7 +602,7 @@ impl Default for WeekNoSet {
 }
 
 /// A particular day in a month, ranging from D1 to D31.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, FromRepr)]
 #[repr(u8)]
 pub enum MonthDay {
     D1 = 1,
@@ -671,18 +638,10 @@ pub enum MonthDay {
     D31,
 }
 
-impl MonthDay {
-    pub const fn from_index(index: u8) -> Option<Self> {
-        match index {
-            1..=31 => Some(unsafe { std::mem::transmute::<u8, Self>(index) }),
-            _ => None,
-        }
-    }
-}
-
 /// A variant in the `recur-rule-part` grammar rule.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum Part {
+#[derive(Debug, Clone, PartialEq, Eq, EnumDiscriminants)]
+#[strum_discriminants(name(PartName))]
+pub enum Part {
     Freq(Frequency),
     Until(DateTimeOrDate),
     Count(u64),
@@ -697,46 +656,6 @@ pub(crate) enum Part {
     ByMonth(MonthSet),
     BySetPos(BTreeSet<YearDayNum>),
     WkSt(Weekday),
-}
-
-impl Part {
-    pub const fn name(&self) -> PartName {
-        match self {
-            Part::Freq(_) => PartName::Freq,
-            Part::Until(_) => PartName::Freq,
-            Part::Count(_) => PartName::Count,
-            Part::Interval(_) => PartName::Interval,
-            Part::BySecond(_) => PartName::BySecond,
-            Part::ByMinute(_) => PartName::ByMinute,
-            Part::ByHour(_) => PartName::ByHour,
-            Part::ByDay(_) => PartName::ByDay,
-            Part::ByMonthDay(_) => PartName::ByMonthDay,
-            Part::ByYearDay(_) => PartName::ByYearDay,
-            Part::ByWeekNo(_) => PartName::ByWeekNo,
-            Part::ByMonth(_) => PartName::ByMonth,
-            Part::BySetPos(_) => PartName::BySetPos,
-            Part::WkSt(_) => PartName::WkSt,
-        }
-    }
-}
-
-/// The name of a variant in the `recur-rule-part` grammar rule.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum PartName {
-    Freq,
-    Until,
-    Count,
-    Interval,
-    BySecond,
-    ByMinute,
-    ByHour,
-    ByDay,
-    ByMonthDay,
-    ByYearDay,
-    ByWeekNo,
-    ByMonth,
-    BySetPos,
-    WkSt,
 }
 
 #[cfg(test)]
@@ -760,11 +679,11 @@ mod tests {
     #[test]
     fn second_from_index() {
         for i in 0..=60 {
-            assert!(Second::from_index(i).is_some());
+            assert!(Second::from_repr(i).is_some());
         }
 
         for i in 61..=255 {
-            assert!(Second::from_index(i).is_none());
+            assert!(Second::from_repr(i).is_none());
         }
     }
 
@@ -785,11 +704,11 @@ mod tests {
     #[test]
     fn minute_from_index() {
         for i in 0..=59 {
-            assert!(Minute::from_index(i).is_some());
+            assert!(Minute::from_repr(i).is_some());
         }
 
         for i in 60..=255 {
-            assert!(Minute::from_index(i).is_none());
+            assert!(Minute::from_repr(i).is_none());
         }
     }
 

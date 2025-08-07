@@ -1,6 +1,6 @@
 //! Parsers for recurrence rules.
 
-use std::{collections::BTreeSet, num::NonZeroU64};
+use std::num::NonZero;
 
 use winnow::{
     Parser,
@@ -155,7 +155,7 @@ where
 {
     let value: u64 = lz_dec_uint.parse_next(input)?;
 
-    match NonZeroU64::new(value) {
+    match NonZero::new(value) {
         Some(interval) => Ok(Interval(interval)),
         None => Err(E::from_external_error(
             input,
@@ -179,7 +179,7 @@ where
         None => a,
     };
 
-    match MonthDay::from_index(index) {
+    match MonthDay::from_repr(index) {
         Some(day) => Ok(MonthDaySetIndex::from_signed_month_day(
             sign.unwrap_or_default(),
             day,
@@ -285,7 +285,7 @@ where
         None => a,
     };
 
-    match Hour::from_index(index) {
+    match Hour::from_repr(index) {
         Some(hour) => Ok(hour),
         None => Err(E::from_external_error(
             input,
@@ -309,7 +309,7 @@ where
         None => a,
     };
 
-    match Minute::from_index(index) {
+    match Minute::from_repr(index) {
         Some(minute) => Ok(minute),
         None => Err(E::from_external_error(
             input,
@@ -333,7 +333,7 @@ where
         None => a,
     };
 
-    match Second::from_index(index) {
+    match Second::from_repr(index) {
         Some(second) => Ok(second),
         None => Err(E::from_external_error(
             input,
@@ -483,7 +483,7 @@ mod tests {
     fn interval_parser() {
         assert_eq!(
             interval::<_, ()>.parse_peek("1"),
-            Ok(("", Interval(NonZeroU64::MIN)))
+            Ok(("", Interval(std::num::NonZeroU64::MIN)))
         );
 
         assert!(interval::<_, ()>.parse_peek("0").is_err());
