@@ -373,8 +373,6 @@ where
 mod tests {
     use std::collections::BTreeSet;
 
-    use strum::IntoEnumIterator;
-
     use crate::model::{
         primitive::{IsoWeek, Sign},
         rrule::{HourSet, MinuteSet, MonthSet, weekday_num_set::WeekdayNumSet},

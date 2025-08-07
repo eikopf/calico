@@ -2,7 +2,6 @@
 
 use std::{collections::BTreeSet, num::NonZero};
 
-use strum::{EnumDiscriminants, FromRepr};
 use weekday_num_set::WeekdayNumSet;
 use winnow::stream::Accumulate;
 
@@ -166,7 +165,7 @@ impl Default for SecondSet {
 }
 
 /// A second (ℤ mod 61), ranging from S0 through S60.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, FromRepr)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
 pub enum Second {
     S0,
@@ -232,6 +231,19 @@ pub enum Second {
     S60,
 }
 
+impl Second {
+    pub const fn from_repr(repr: u8) -> Option<Self> {
+        match repr {
+            0..=60 => {
+                // SAFETY: the valid discriminants of Self are exactly the
+                // values of the range 0..=60.
+                Some(unsafe { std::mem::transmute::<u8, Self>(repr) })
+            }
+            _ => None,
+        }
+    }
+}
+
 /// A bitset of values from 0 through 59.
 ///
 /// ```text
@@ -278,7 +290,7 @@ impl Default for MinuteSet {
 }
 
 /// A minute (ℤ mod 60), ranging from M0 through M59.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, FromRepr)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
 pub enum Minute {
     M0,
@@ -343,6 +355,19 @@ pub enum Minute {
     M59,
 }
 
+impl Minute {
+    pub const fn from_repr(repr: u8) -> Option<Self> {
+        match repr {
+            0..=59 => {
+                // SAFETY: the discriminants of Self are exactly the values
+                // in the range 0..=59.
+                Some(unsafe { std::mem::transmute::<u8, Self>(repr) })
+            }
+            _ => None,
+        }
+    }
+}
+
 /// A bitset of values from 0 through 23.
 ///
 /// ```text
@@ -389,7 +414,7 @@ impl Default for HourSet {
 }
 
 /// An hour of the day, ranging from H0 through H23.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, FromRepr)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
 pub enum Hour {
     H0,
@@ -416,6 +441,19 @@ pub enum Hour {
     H21,
     H22,
     H23,
+}
+
+impl Hour {
+    pub const fn from_repr(repr: u8) -> Option<Self> {
+        match repr {
+            0..=23 => {
+                // SAFETY: the discriminants of Self are exactly the values
+                // in the range 0..=23.
+                Some(unsafe { std::mem::transmute::<u8, Self>(repr) })
+            }
+            _ => None,
+        }
+    }
 }
 
 /// A bitset of values from 1 through 12. The most significant bit is always set
@@ -592,7 +630,7 @@ impl Default for WeekNoSet {
 }
 
 /// A particular day in a month, ranging from D1 to D31.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, FromRepr)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
 pub enum MonthDay {
     D1 = 1,
@@ -628,9 +666,60 @@ pub enum MonthDay {
     D31,
 }
 
+impl MonthDay {
+    pub const fn from_repr(repr: u8) -> Option<Self> {
+        match repr {
+            1..=31 => {
+                // SAFETY: the discriminants of Self are exactly the values
+                // of the range 1..=31.
+                Some(unsafe { std::mem::transmute::<u8, Self>(repr) })
+            }
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PartName {
+    Freq,
+    Until,
+    Count,
+    Interval,
+    BySecond,
+    ByMinute,
+    ByHour,
+    ByDay,
+    ByMonthDay,
+    ByYearDay,
+    ByWeekNo,
+    ByMonth,
+    BySetPos,
+    WkSt,
+}
+
+impl From<&Part> for PartName {
+    fn from(value: &Part) -> Self {
+        match value {
+            Part::Freq(_) => Self::Freq,
+            Part::Until(_) => Self::Until,
+            Part::Count(_) => Self::Count,
+            Part::Interval(_) => Self::Interval,
+            Part::BySecond(_) => Self::BySecond,
+            Part::ByMinute(_) => Self::ByMinute,
+            Part::ByHour(_) => Self::ByHour,
+            Part::ByDay(_) => Self::ByDay,
+            Part::ByMonthDay(_) => Self::ByMonthDay,
+            Part::ByYearDay(_) => Self::ByYearDay,
+            Part::ByWeekNo(_) => Self::ByWeekNo,
+            Part::ByMonth(_) => Self::ByMonth,
+            Part::BySetPos(_) => Self::BySetPos,
+            Part::WkSt(_) => Self::WkSt,
+        }
+    }
+}
+
 /// A variant in the `recur-rule-part` grammar rule.
-#[derive(Debug, Clone, PartialEq, Eq, EnumDiscriminants)]
-#[strum_discriminants(name(PartName))]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Part {
     Freq(Frequency),
     Until(DateTimeOrDate),

@@ -17,7 +17,6 @@
 use std::num::NonZero;
 
 use chrono::NaiveDate;
-use strum::{EnumIter, FromRepr};
 
 /// The INTEGER type as defined in RFC 5545 §3.3.8.
 pub type Integer = i32;
@@ -137,9 +136,7 @@ pub enum TimeFormat {
 }
 
 /// One of the seven weekdays.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, EnumIter, FromRepr,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
 pub enum Weekday {
     Monday,
@@ -149,6 +146,33 @@ pub enum Weekday {
     Friday,
     Saturday,
     Sunday,
+}
+
+impl Weekday {
+    pub const fn from_repr(repr: u8) -> Option<Self> {
+        match repr {
+            0..=6 => {
+                // SAFETY: the valid discriminants of Self are exactly the
+                // values of the range 0..=6.
+                Some(unsafe { std::mem::transmute::<u8, Self>(repr) })
+            }
+            _ => None,
+        }
+    }
+
+    pub fn iter() -> impl ExactSizeIterator<Item = Self> {
+        const VARIANTS: [Weekday; 7] = [
+            Weekday::Monday,
+            Weekday::Tuesday,
+            Weekday::Wednesday,
+            Weekday::Thursday,
+            Weekday::Friday,
+            Weekday::Saturday,
+            Weekday::Sunday,
+        ];
+
+        VARIANTS.iter().copied()
+    }
 }
 
 /// The possible values of the ENCODING parameter.
