@@ -17,6 +17,7 @@
 use std::num::NonZero;
 
 use chrono::NaiveDate;
+use strum::{EnumIter, FromRepr};
 
 /// The INTEGER type as defined in RFC 5545 §3.3.8.
 pub type Integer = i32;
@@ -136,7 +137,10 @@ pub enum TimeFormat {
 }
 
 /// One of the seven weekdays.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, EnumIter, FromRepr,
+)]
+#[repr(u8)]
 pub enum Weekday {
     Monday,
     Tuesday,
@@ -145,21 +149,6 @@ pub enum Weekday {
     Friday,
     Saturday,
     Sunday,
-}
-
-impl Weekday {
-    pub const fn from_index(index: u8) -> Option<Self> {
-        match index {
-            0 => Some(Self::Monday),
-            1 => Some(Self::Tuesday),
-            2 => Some(Self::Wednesday),
-            3 => Some(Self::Thursday),
-            4 => Some(Self::Friday),
-            5 => Some(Self::Saturday),
-            6 => Some(Self::Sunday),
-            _ => None,
-        }
-    }
 }
 
 /// The possible values of the ENCODING parameter.

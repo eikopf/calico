@@ -184,7 +184,7 @@ pub(crate) const fn index_to_weekday_num(
         _ => return None,
     };
 
-    let Some(weekday) = Weekday::from_index(day) else {
+    let Some(weekday) = Weekday::from_repr(day) else {
         return None;
     };
 

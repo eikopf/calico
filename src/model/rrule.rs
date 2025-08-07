@@ -431,16 +431,12 @@ pub enum Hour {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MonthSet(NonZero<u16>);
 
-/// A valid index into a [`MonthSet`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct MonthSetIndex(NonZero<u8>);
-
-impl Accumulate<MonthSetIndex> for MonthSet {
+impl Accumulate<Month> for MonthSet {
     fn initial(_capacity: Option<usize>) -> Self {
         Self::EMPTY
     }
 
-    fn accumulate(&mut self, index: MonthSetIndex) {
+    fn accumulate(&mut self, index: Month) {
         self.set(index)
     }
 }
@@ -448,13 +444,13 @@ impl Accumulate<MonthSetIndex> for MonthSet {
 impl MonthSet {
     pub(crate) const EMPTY: Self = Self(NonZero::new(1 << 15).unwrap());
 
-    pub const fn get(&self, index: MonthSetIndex) -> bool {
-        let mask = 1 << index.0.get();
+    pub const fn get(&self, index: Month) -> bool {
+        let mask = 1 << index.number().get();
         (self.0.get() & mask) != 0
     }
 
-    pub const fn set(&mut self, index: MonthSetIndex) {
-        let mask = 1 << index.0.get();
+    pub const fn set(&mut self, index: Month) {
+        let mask = 1 << index.number().get();
         let updated = self.0.get() | mask;
 
         // SAFETY: bitwise OR cannot reduce the number of set bits
@@ -465,12 +461,6 @@ impl MonthSet {
 impl Default for MonthSet {
     fn default() -> Self {
         Self::EMPTY
-    }
-}
-
-impl From<Month> for MonthSetIndex {
-    fn from(value: Month) -> Self {
-        Self(value.number())
     }
 }
 
@@ -764,29 +754,13 @@ mod tests {
     }
 
     #[test]
-    fn month_set_index_from_month() {
-        assert_eq!(MonthSetIndex::from(Month::Jan).0.get(), 1);
-        assert_eq!(MonthSetIndex::from(Month::Feb).0.get(), 2);
-        assert_eq!(MonthSetIndex::from(Month::Mar).0.get(), 3);
-        assert_eq!(MonthSetIndex::from(Month::Apr).0.get(), 4);
-        assert_eq!(MonthSetIndex::from(Month::May).0.get(), 5);
-        assert_eq!(MonthSetIndex::from(Month::Jun).0.get(), 6);
-        assert_eq!(MonthSetIndex::from(Month::Jul).0.get(), 7);
-        assert_eq!(MonthSetIndex::from(Month::Aug).0.get(), 8);
-        assert_eq!(MonthSetIndex::from(Month::Sep).0.get(), 9);
-        assert_eq!(MonthSetIndex::from(Month::Oct).0.get(), 10);
-        assert_eq!(MonthSetIndex::from(Month::Nov).0.get(), 11);
-        assert_eq!(MonthSetIndex::from(Month::Dec).0.get(), 12);
-    }
-
-    #[test]
     fn month_set_bit_twiddling() {
         let mut month_set = MonthSet::default();
 
-        let i1 = MonthSetIndex::from(Month::Jan);
-        let i2 = MonthSetIndex::from(Month::Apr);
-        let i3 = MonthSetIndex::from(Month::Aug);
-        let i4 = MonthSetIndex::from(Month::Sep);
+        let i1 = Month::Jan;
+        let i2 = Month::Apr;
+        let i3 = Month::Aug;
+        let i4 = Month::Sep;
 
         for i in [i1, i2, i3, i4] {
             assert!(!month_set.get(i));

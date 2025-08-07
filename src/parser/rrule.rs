@@ -16,8 +16,8 @@ use crate::{
         primitive::{Month, Weekday},
         rrule::{
             Frequency, Hour, Interval, Minute, MonthDay, MonthDaySetIndex,
-            MonthSetIndex, Part, PartName, RecurrenceRule, Second,
-            WeekNoSetIndex, WeekdayNum, YearDayNum,
+            Part, PartName, RecurrenceRule, Second, WeekNoSetIndex, WeekdayNum,
+            YearDayNum,
         },
     },
     parser::primitive::{digit, iso_week_index, lz_dec_uint, sign},
@@ -85,7 +85,10 @@ where
             let set = separated(1.., month_day_num, ',').parse_next(input)?;
             Part::ByMonthDay(set)
         }
-        PartName::ByYearDay => todo!(),
+        PartName::ByYearDay => {
+            let set = separated(1.., year_day_num, ',').parse_next(input)?;
+            Part::ByYearDay(set)
+        }
         PartName::ByWeekNo => {
             let set = separated(1.., week_num, ',').parse_next(input)?;
             Part::ByWeekNo(set)
@@ -94,7 +97,10 @@ where
             let set = separated(1.., month_num, ',').parse_next(input)?;
             Part::ByMonth(set)
         }
-        PartName::BySetPos => todo!(),
+        PartName::BySetPos => {
+            let set = separated(1.., year_day_num, ',').parse_next(input)?;
+            Part::BySetPos(set)
+        }
         PartName::WkSt => {
             let day = weekday.parse_next(input)?;
             Part::WkSt(day)
@@ -247,7 +253,7 @@ where
 }
 
 /// Parses a [`MonthSetIndex`].
-pub fn month_num<I, E>(input: &mut I) -> Result<MonthSetIndex, E>
+pub fn month_num<I, E>(input: &mut I) -> Result<Month, E>
 where
     I: StreamIsPartial + Stream + Compare<char>,
     I::Token: AsChar + Clone,
@@ -262,7 +268,7 @@ where
     };
 
     match Month::from_number(value) {
-        Some(month) => Ok(month.into()),
+        Some(month) => Ok(month),
         None => Err(E::from_external_error(
             input,
             CalendarParseError::InvalidMonthNumber(value),
@@ -365,9 +371,87 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::model::primitive::{IsoWeek, Sign};
+    use std::collections::BTreeSet;
+
+    use strum::IntoEnumIterator;
+
+    use crate::model::{
+        primitive::{IsoWeek, Sign},
+        rrule::{HourSet, MinuteSet, MonthSet, weekday_num_set::WeekdayNumSet},
+    };
 
     use super::*;
+
+    #[test]
+    fn part_parser_rfc_5545_page_45() -> Result<(), ()> {
+        // input is from RFC 5545, page 45
+        let input =
+            "FREQ=YEARLY;INTERVAL=2;BYMONTH=1;BYDAY=SU;BYHOUR=8,9;BYMINUTE=30";
+        let (tail, parts): (_, Vec<_>) =
+            separated(1.., part, ';').parse_peek(input)?;
+        assert!(tail.is_empty());
+
+        let mut month_set = MonthSet::default();
+        month_set.set(Month::Jan);
+
+        let mut by_day_set = WeekdayNumSet::default();
+        by_day_set.insert(WeekdayNum {
+            ordinal: None,
+            weekday: Weekday::Sunday,
+        });
+
+        let mut hour_set = HourSet::default();
+        hour_set.set(Hour::H8);
+        hour_set.set(Hour::H9);
+
+        let mut minute_set = MinuteSet::default();
+        minute_set.set(Minute::M30);
+
+        let expected_parts = vec![
+            Part::Freq(Frequency::Yearly),
+            Part::Interval(Interval(NonZero::new(2).ok_or(())?)),
+            Part::ByMonth(month_set),
+            Part::ByDay(by_day_set),
+            Part::ByHour(hour_set),
+            Part::ByMinute(minute_set),
+        ];
+
+        assert_eq!(parts, expected_parts);
+        Ok(())
+    }
+
+    #[test]
+    fn part_parser_rfc_5545_page_43() -> Result<(), ()> {
+        // input is from RFC 5545, page 43
+        let input = "FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1";
+        let (tail, parts): (_, Vec<_>) =
+            separated(1.., part, ';').parse_peek(input)?;
+
+        assert!(tail.is_empty());
+
+        let mut by_day_set = WeekdayNumSet::default();
+
+        for weekday in Weekday::iter().take(5) {
+            by_day_set.insert(WeekdayNum {
+                ordinal: None,
+                weekday,
+            });
+        }
+
+        let mut by_set_pos_set = BTreeSet::default();
+        let _ = by_set_pos_set.insert(
+            YearDayNum::from_signed_index(Sign::Negative, 1).ok_or(())?,
+        );
+
+        let expected_parts = vec![
+            Part::Freq(Frequency::Monthly),
+            Part::ByDay(by_day_set),
+            Part::BySetPos(by_set_pos_set),
+        ];
+
+        assert_eq!(parts, expected_parts);
+        Ok(())
+    }
 
     #[test]
     fn part_name_parser() {
@@ -578,37 +662,13 @@ mod tests {
 
     #[test]
     fn month_num_parser() {
-        assert_eq!(
-            month_num::<_, ()>.parse_peek("1"),
-            Ok(("", Month::Jan.into()))
-        );
-
-        assert_eq!(
-            month_num::<_, ()>.parse_peek("2"),
-            Ok(("", Month::Feb.into()))
-        );
-
-        assert_eq!(
-            month_num::<_, ()>.parse_peek("3"),
-            Ok(("", Month::Mar.into()))
-        );
-
-        assert_eq!(
-            month_num::<_, ()>.parse_peek("4"),
-            Ok(("", Month::Apr.into()))
-        );
-
+        assert_eq!(month_num::<_, ()>.parse_peek("1"), Ok(("", Month::Jan)));
+        assert_eq!(month_num::<_, ()>.parse_peek("2"), Ok(("", Month::Feb)));
+        assert_eq!(month_num::<_, ()>.parse_peek("3"), Ok(("", Month::Mar)));
+        assert_eq!(month_num::<_, ()>.parse_peek("4"), Ok(("", Month::Apr)));
         // ...
-
-        assert_eq!(
-            month_num::<_, ()>.parse_peek("11"),
-            Ok(("", Month::Nov.into()))
-        );
-
-        assert_eq!(
-            month_num::<_, ()>.parse_peek("12"),
-            Ok(("", Month::Dec.into()))
-        );
+        assert_eq!(month_num::<_, ()>.parse_peek("11"), Ok(("", Month::Nov)));
+        assert_eq!(month_num::<_, ()>.parse_peek("12"), Ok(("", Month::Dec)));
 
         assert!(month_num::<_, ()>.parse_peek("13").is_err());
         assert!(month_num::<_, ()>.parse_peek("14").is_err());
