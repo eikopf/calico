@@ -3,7 +3,7 @@
 use winnow::{
     Parser,
     ascii::Caseless,
-    combinator::{alt, fail, preceded, repeat, separated},
+    combinator::{alt, fail, opt, preceded, repeat, separated},
     error::{FromExternalError, ParserError},
     stream::{AsBStr, AsChar, Compare, SliceLen, Stream, StreamIsPartial},
     token::none_of,
@@ -19,9 +19,9 @@ use crate::{
             AlarmAction, AttachValue, CalAddress, ClassValue,
             CompletionPercentage, DateTime, DateTimeOrDate, Duration, Encoding,
             FormatType, FreeBusyType, Geo, ImageData, Integer, Language,
-            Method, Period, Priority, RDate, RelationshipType, Status, Text,
-            ThisAndFuture, TimeTransparency, TriggerRelation, TzId, Uid, Uri,
-            Utc, UtcOffset, Value, ValueType,
+            Method, Period, Priority, RDate, RelationshipType, RequestStatus,
+            Status, Text, ThisAndFuture, TimeTransparency, TriggerRelation,
+            TzId, Uid, Uri, Utc, UtcOffset, Value, ValueType,
         },
         property::{
             AttachParams, AttendeeParams, ConfParams, DtParams, FBTypeParams,
@@ -39,8 +39,8 @@ use crate::{
         primitive::{
             alarm_action, cal_address, class_value, completion_percentage,
             datetime_utc, duration, float, geo, gregorian, iana_token, integer,
-            method, period, priority, status, text, time_transparency, tz_id,
-            uid, utc_offset, v2_0, x_name,
+            method, period, priority, status, status_code, text,
+            time_transparency, tz_id, uid, utc_offset, v2_0, x_name,
         },
         rrule::rrule,
     },
@@ -140,8 +140,7 @@ pub enum KnownProp<S> {
     LastModified(DateTime<Utc>),
     Sequence(Integer),
     // MISCELLANEOUS COMPONENT PROPERTIES
-    // TODO: the value of this property has a more precise grammar (page 143)
-    RequestStatus(Text<S>, LangParams<S>),
+    RequestStatus(RequestStatus<S>, LangParams<S>),
     // RFC 7986 PROPERTIES
     Name(Text<S>, TextParams<S>),
     RefreshInterval(Duration),
@@ -1797,8 +1796,21 @@ where
             )?;
 
             let _ = ':'.parse_next(input)?;
+            let code = status_code.parse_next(input)?;
+            let description = preceded(';', text).parse_next(input)?;
+            let exception_data = opt(preceded(';', text)).parse_next(input)?;
 
-            todo!()
+            let params = LangParams { language };
+            let status = RequestStatus {
+                code,
+                description,
+                exception_data,
+            };
+
+            (
+                Prop::Known(KnownProp::RequestStatus(status, params)),
+                unknown_params,
+            )
         }
         PropName::Rfc7986(name) => todo!(),
         PropName::Iana(name) => {
@@ -3395,6 +3407,81 @@ mod tests {
         };
 
         assert_eq!(uid, Uid("19960401T080045Z-4000F192713-0052@example.com"));
+    }
+
+    #[test]
+    fn rfc_5545_example_request_status_property_1() {
+        let input = "REQUEST-STATUS:2.0;Success";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+
+        let Prop::Known(KnownProp::RequestStatus(status, params)) = prop else {
+            panic!()
+        };
+
+        assert!(params.language.is_none());
+        assert_eq!(
+            status,
+            RequestStatus {
+                code: (2, 0).into(),
+                description: Text("Success"),
+                exception_data: None,
+            }
+        );
+    }
+
+    #[test]
+    fn rfc_5545_example_request_status_property_2() {
+        let input =
+            "REQUEST-STATUS:3.1;Invalid property value;DTSTART:96-Apr-01";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+
+        let Prop::Known(KnownProp::RequestStatus(status, params)) = prop else {
+            panic!()
+        };
+
+        assert!(params.language.is_none());
+        assert_eq!(
+            status,
+            RequestStatus {
+                code: (3, 1).into(),
+                description: Text("Invalid property value"),
+                exception_data: Some(Text("DTSTART:96-Apr-01")),
+            }
+        );
+    }
+
+    // NOTE: skipped the third example
+
+    #[test]
+    fn rfc_5545_example_request_status_property_4() {
+        let input = "REQUEST-STATUS:4.1;Event conflict.  Date-time is busy.";
+        let (tail, (prop, unknown_params)) =
+            property::<_, ()>.parse_peek(input).unwrap();
+
+        assert!(tail.is_empty());
+        assert!(unknown_params.is_empty());
+
+        let Prop::Known(KnownProp::RequestStatus(status, params)) = prop else {
+            panic!()
+        };
+
+        assert!(params.language.is_none());
+        assert_eq!(
+            status,
+            RequestStatus {
+                code: (4, 1).into(),
+                description: Text("Event conflict.  Date-time is busy."),
+                exception_data: None,
+            }
+        );
     }
 
     #[test]

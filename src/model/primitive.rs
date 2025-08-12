@@ -757,6 +757,34 @@ impl Month {
     }
 }
 
+/// A value of the REQUEST-STATUS property (RFC 5545 §3.8.8.3).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RequestStatus<S> {
+    pub code: RequestStatusCode,
+    pub description: Text<S>,
+    pub exception_data: Option<Text<S>>,
+}
+
+/// A status code for the REQUEST-STATUS property (RFC 5545 §3.8.8.3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct RequestStatusCode<T = u8>(
+    pub(crate) T,
+    pub(crate) T,
+    pub(crate) Option<T>,
+);
+
+impl<T> From<(T, T)> for RequestStatusCode<T> {
+    fn from((a, b): (T, T)) -> Self {
+        Self(a, b, None)
+    }
+}
+
+impl<T> From<(T, T, T)> for RequestStatusCode<T> {
+    fn from((a, b, c): (T, T, T)) -> Self {
+        Self(a, b, Some(c))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

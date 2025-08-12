@@ -19,8 +19,9 @@ use crate::model::primitive::{
     Duration, DurationKind, DurationTime, Encoding, FeatureType, Float,
     FormatType, FreeBusyType, Geo, GeoComponent, Integer, IsoWeek, Language,
     Method, ParticipationRole, ParticipationStatus, Period, Priority, RawTime,
-    RelationshipType, Sign, Status, Text, Time, TimeFormat, TimeTransparency,
-    TriggerRelation, TzId, Uid, Uri, Utc, UtcOffset, ValueType,
+    RelationshipType, RequestStatusCode, Sign, Status, Text, Time, TimeFormat,
+    TimeTransparency, TriggerRelation, TzId, Uid, Uri, Utc, UtcOffset,
+    ValueType,
 };
 
 use super::error::{
@@ -28,6 +29,25 @@ use super::error::{
     InvalidDurationTimeError, InvalidGeoError, InvalidIntegerError,
     InvalidPriorityError, InvalidRawTimeError, InvalidUtcOffsetError,
 };
+
+/// Parses a [`RequestStatusCode`].
+pub fn status_code<I, E>(input: &mut I) -> Result<RequestStatusCode, E>
+where
+    I: StreamIsPartial + Stream + Compare<char>,
+    <I as Stream>::Slice: AsBStr,
+    <I as Stream>::Token: AsChar + Clone,
+    E: ParserError<I>,
+{
+    let (a, _, b, c) = (
+        lz_dec_uint::<I, u8, E>,
+        '.',
+        lz_dec_uint::<I, u8, E>,
+        opt(preceded('.', lz_dec_uint::<I, u8, E>)),
+    )
+        .parse_next(input)?;
+
+    Ok(RequestStatusCode(a, b, c))
+}
 
 /// Parses an [`AlarmAction`].
 pub fn alarm_action<I, E>(input: &mut I) -> Result<AlarmAction<I::Slice>, E>
@@ -1280,6 +1300,19 @@ mod tests {
     use crate::parser::escaped::{AsEscaped, Escaped};
 
     use super::*;
+
+    #[test]
+    fn status_code_parser() {
+        assert_eq!(
+            status_code::<_, ()>.parse_peek("3.1"),
+            Ok(("", (3, 1).into())),
+        );
+
+        assert_eq!(
+            status_code::<_, ()>.parse_peek("3.1.12"),
+            Ok(("", (3, 1, 12).into())),
+        );
+    }
 
     #[test]
     fn alarm_action_parser() {
