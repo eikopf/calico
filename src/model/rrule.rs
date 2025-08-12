@@ -41,7 +41,7 @@ impl Default for Interval {
 
 /// The frequency of a recurrence rule.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Frequency {
+pub enum Freq {
     Secondly,
     Minutely,
     Hourly,
@@ -51,7 +51,7 @@ pub enum Frequency {
     Yearly,
 }
 
-impl From<&FreqByRules> for Frequency {
+impl From<&FreqByRules> for Freq {
     fn from(value: &FreqByRules) -> Self {
         match value {
             FreqByRules::Secondly(_) => Self::Secondly,
@@ -818,41 +818,33 @@ pub enum ByRuleBehavior {
 impl ByRuleName {
     /// Returns the [`ByRuleBehavior`] of `self` with the given [`Frequency`],
     /// as described in the table from RFC 5545 page 44.
-    pub const fn behavior_with(
-        &self,
-        freq: Frequency,
-    ) -> Option<ByRuleBehavior> {
+    pub const fn behavior_with(&self, freq: Freq) -> Option<ByRuleBehavior> {
         match (*self, freq) {
-            (Self::ByMonth, Frequency::Yearly) => Some(ByRuleBehavior::Expand),
-            (Self::ByWeekNo, Frequency::Yearly) => Some(ByRuleBehavior::Expand),
+            (Self::ByMonth, Freq::Yearly) => Some(ByRuleBehavior::Expand),
+            (Self::ByWeekNo, Freq::Yearly) => Some(ByRuleBehavior::Expand),
             (Self::ByWeekNo, _) => None,
             (
                 Self::ByYearDay,
-                Frequency::Secondly | Frequency::Minutely | Frequency::Hourly,
+                Freq::Secondly | Freq::Minutely | Freq::Hourly,
             ) => Some(ByRuleBehavior::Limit),
-            (Self::ByYearDay, Frequency::Yearly) => {
-                Some(ByRuleBehavior::Expand)
-            }
+            (Self::ByYearDay, Freq::Yearly) => Some(ByRuleBehavior::Expand),
             (Self::ByYearDay, _) => None,
-            (Self::ByMonthDay, Frequency::Weekly) => None,
-            (Self::ByMonthDay, Frequency::Monthly | Frequency::Yearly) => {
+            (Self::ByMonthDay, Freq::Weekly) => None,
+            (Self::ByMonthDay, Freq::Monthly | Freq::Yearly) => {
                 Some(ByRuleBehavior::Expand)
             }
-            (Self::ByDay, Frequency::Weekly) => Some(ByRuleBehavior::Expand),
-            (Self::ByDay, Frequency::Monthly) => Some(ByRuleBehavior::Note1),
-            (Self::ByDay, Frequency::Yearly) => Some(ByRuleBehavior::Note2),
-            (
-                Self::ByHour,
-                Frequency::Secondly | Frequency::Minutely | Frequency::Hourly,
-            ) => Some(ByRuleBehavior::Limit),
+            (Self::ByDay, Freq::Weekly) => Some(ByRuleBehavior::Expand),
+            (Self::ByDay, Freq::Monthly) => Some(ByRuleBehavior::Note1),
+            (Self::ByDay, Freq::Yearly) => Some(ByRuleBehavior::Note2),
+            (Self::ByHour, Freq::Secondly | Freq::Minutely | Freq::Hourly) => {
+                Some(ByRuleBehavior::Limit)
+            }
             (Self::ByHour, _) => Some(ByRuleBehavior::Expand),
-            (Self::ByMinute, Frequency::Secondly | Frequency::Minutely) => {
+            (Self::ByMinute, Freq::Secondly | Freq::Minutely) => {
                 Some(ByRuleBehavior::Limit)
             }
             (Self::ByMinute, _) => Some(ByRuleBehavior::Expand),
-            (Self::BySecond, Frequency::Secondly) => {
-                Some(ByRuleBehavior::Limit)
-            }
+            (Self::BySecond, Freq::Secondly) => Some(ByRuleBehavior::Limit),
             (Self::BySecond, _) => Some(ByRuleBehavior::Expand),
             _ => Some(ByRuleBehavior::Limit),
         }
@@ -862,7 +854,7 @@ impl ByRuleName {
 /// A variant in the `recur-rule-part` grammar rule.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Part {
-    Freq(Frequency),
+    Freq(Freq),
     Until(DateTimeOrDate),
     Count(u64),
     Interval(Interval),
@@ -1232,13 +1224,13 @@ mod tests {
     #[test]
     fn behavior_with_table() {
         let freqs = [
-            Frequency::Secondly,
-            Frequency::Minutely,
-            Frequency::Hourly,
-            Frequency::Daily,
-            Frequency::Weekly,
-            Frequency::Monthly,
-            Frequency::Yearly,
+            Freq::Secondly,
+            Freq::Minutely,
+            Freq::Hourly,
+            Freq::Daily,
+            Freq::Weekly,
+            Freq::Monthly,
+            Freq::Yearly,
         ];
 
         let by_rules = [

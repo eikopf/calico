@@ -15,8 +15,8 @@ use crate::{
     model::{
         primitive::{Month, Weekday},
         rrule::{
-            Frequency, Hour, Interval, Minute, MonthDay, MonthDaySetIndex,
-            Part, PartName, RecurrenceRule, Second, WeekNoSetIndex, WeekdayNum,
+            Freq, Hour, Interval, Minute, MonthDay, MonthDaySetIndex, Part,
+            PartName, RecurrenceRule, Second, WeekNoSetIndex, WeekdayNum,
             YearDayNum,
         },
     },
@@ -134,19 +134,19 @@ where
 }
 
 /// Parses a [`Frequency`].
-pub fn frequency<I, E>(input: &mut I) -> Result<Frequency, E>
+pub fn frequency<I, E>(input: &mut I) -> Result<Freq, E>
 where
     I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
     E: ParserError<I>,
 {
     alt((
-        Caseless("MINUTELY").value(Frequency::Minutely),
-        Caseless("SECONDLY").value(Frequency::Secondly),
-        Caseless("MONTHLY").value(Frequency::Monthly),
-        Caseless("HOURLY").value(Frequency::Hourly),
-        Caseless("WEEKLY").value(Frequency::Weekly),
-        Caseless("YEARLY").value(Frequency::Yearly),
-        Caseless("DAILY").value(Frequency::Daily),
+        Caseless("MINUTELY").value(Freq::Minutely),
+        Caseless("SECONDLY").value(Freq::Secondly),
+        Caseless("MONTHLY").value(Freq::Monthly),
+        Caseless("HOURLY").value(Freq::Hourly),
+        Caseless("WEEKLY").value(Freq::Weekly),
+        Caseless("YEARLY").value(Freq::Yearly),
+        Caseless("DAILY").value(Freq::Daily),
     ))
     .parse_next(input)
 }
@@ -406,7 +406,7 @@ mod tests {
         minute_set.set(Minute::M30);
 
         let expected_parts = vec![
-            Part::Freq(Frequency::Yearly),
+            Part::Freq(Freq::Yearly),
             Part::Interval(Interval(NonZero::new(2).ok_or(())?)),
             Part::ByMonth(month_set),
             Part::ByDay(by_day_set),
@@ -442,7 +442,7 @@ mod tests {
         );
 
         let expected_parts = vec![
-            Part::Freq(Frequency::Monthly),
+            Part::Freq(Freq::Monthly),
             Part::ByDay(by_day_set),
             Part::BySetPos(by_set_pos_set),
         ];
@@ -525,37 +525,37 @@ mod tests {
     fn frequency_parser() {
         assert_eq!(
             frequency::<_, ()>.parse_peek("SECONDLY"),
-            Ok(("", Frequency::Secondly))
+            Ok(("", Freq::Secondly))
         );
 
         assert_eq!(
             frequency::<_, ()>.parse_peek("minutely"),
-            Ok(("", Frequency::Minutely))
+            Ok(("", Freq::Minutely))
         );
 
         assert_eq!(
             frequency::<_, ()>.parse_peek("Hourly"),
-            Ok(("", Frequency::Hourly))
+            Ok(("", Freq::Hourly))
         );
 
         assert_eq!(
             frequency::<_, ()>.parse_peek("dAILy"),
-            Ok(("", Frequency::Daily))
+            Ok(("", Freq::Daily))
         );
 
         assert_eq!(
             frequency::<_, ()>.parse_peek("Weekly"),
-            Ok(("", Frequency::Weekly))
+            Ok(("", Freq::Weekly))
         );
 
         assert_eq!(
             frequency::<_, ()>.parse_peek("monthly"),
-            Ok(("", Frequency::Monthly))
+            Ok(("", Freq::Monthly))
         );
 
         assert_eq!(
             frequency::<_, ()>.parse_peek("YEARLY"),
-            Ok(("", Frequency::Yearly))
+            Ok(("", Freq::Yearly))
         );
 
         assert!(frequency::<_, ()>.parse_peek("anything else").is_err());
