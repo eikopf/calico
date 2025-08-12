@@ -2169,9 +2169,71 @@ mod tests {
 
     use super::*;
     use chrono::NaiveDate;
-    use winnow::Parser;
+    use winnow::{Parser, ascii::crlf, combinator::terminated};
 
     // PROPERTY PARSING TESTS
+
+    #[test]
+    fn rfc_5545_section_4_example_1() {
+        let input =
+            include_bytes!("../../examples/rfc5545-section-4-example-1.ics")
+                .as_escaped();
+
+        let (tail, props) = repeat(1.., terminated(property::<_, ()>, crlf))
+            .map(Vec::into_boxed_slice)
+            .parse_peek(input)
+            .unwrap();
+
+        assert!(tail.is_empty());
+        assert_eq!(props.len(), 15);
+
+        let mut iter = props.into_iter().map(|(prop, _)| prop);
+        let _ = iter.next(); // skip the first line, it's not a real property
+
+        assert_eq!(
+            iter.next(),
+            Some(Prop::Known(KnownProp::ProdId(Text(
+                "-//xyz Corp//NONSGML PDA Calendar Version 1.0//EN"
+                    .as_escaped()
+            )))),
+        );
+
+        assert_eq!(iter.next(), Some(Prop::Known(KnownProp::Version)));
+
+        let _ = iter.next(); // next line is also not a real property
+
+        assert_eq!(
+            iter.next(),
+            Some(Prop::Known(KnownProp::DtStamp(DateTime {
+                date: Date(NaiveDate::from_ymd_opt(1996, 7, 4).unwrap()),
+                time: Time {
+                    raw: RawTime {
+                        hours: 12,
+                        minutes: 0,
+                        seconds: 0,
+                    },
+                    format: Utc,
+                }
+            })))
+        );
+
+        assert_eq!(
+            iter.next(),
+            Some(Prop::Known(KnownProp::Uid(Uid(
+                "uid1@example.com".as_escaped()
+            )))),
+        );
+
+        assert_eq!(
+            iter.next(),
+            Some(Prop::Known(KnownProp::Organizer(
+                CalAddress("mailto:jsmith@example.com".as_escaped(),),
+                OrganizerParams::default()
+            ))),
+        );
+
+        // omitted tests for remaining properties...
+    }
 
     #[test]
     fn rfc_5545_example_calendar_scale_property() {
