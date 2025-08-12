@@ -16,11 +16,11 @@ pub mod weekday_num_set;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecurrenceRule {
-    pub freq: Frequency,
+    pub freq: FreqByRules,
+    pub core_by_rules: CoreByRules,
     pub interval: Option<Interval>,
     pub termination: Option<Termination>,
     pub week_start: Option<Weekday>,
-    pub by_rules: ByRules,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,20 +51,61 @@ pub enum Frequency {
     Yearly,
 }
 
+impl From<&FreqByRules> for Frequency {
+    fn from(value: &FreqByRules) -> Self {
+        match value {
+            FreqByRules::Secondly(_) => Self::Secondly,
+            FreqByRules::Minutely(_) => Self::Minutely,
+            FreqByRules::Hourly(_) => Self::Hourly,
+            FreqByRules::Daily(_) => Self::Daily,
+            FreqByRules::Weekly => Self::Weekly,
+            FreqByRules::Monthly(_) => Self::Monthly,
+            FreqByRules::Yearly(_) => Self::Yearly,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ByRules {
-    // bitsets
+pub enum FreqByRules {
+    Secondly(ByPeriodDayRules),
+    Minutely(ByPeriodDayRules),
+    Hourly(ByPeriodDayRules),
+    Daily(ByMonthDayRule),
+    Weekly,
+    Monthly(ByMonthDayRule),
+    Yearly(YearlyByRules),
+}
+
+/// The BYxxx rules which are permitted for any [`Frequency`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CoreByRules {
     pub by_second: Option<SecondSet>,
     pub by_minute: Option<MinuteSet>,
     pub by_hour: Option<HourSet>,
-    pub by_month_day: Option<MonthDaySet>,
     pub by_month: Option<MonthSet>,
-    pub by_week_no: Option<WeekNoSet>,
-
-    // boxed vectors
     pub by_day: Option<Box<[WeekdayNum]>>,
-    pub by_year_day: Option<Box<[NonZero<i16>]>>,
     pub by_set_pos: Option<Box<[NonZero<i16>]>>,
+}
+
+/// The BYYEARDAY and BYMONTHDAY rules.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ByPeriodDayRules {
+    pub by_month_day: Option<MonthDaySet>,
+    pub by_year_day: Option<Box<[NonZero<i16>]>>,
+}
+
+/// The BYMONTHDAY rule.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ByMonthDayRule {
+    pub by_month_day: Option<MonthDaySet>,
+}
+
+/// The BYWEEKNO, BYYEARDAY, and BYMONTHDAY rules.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct YearlyByRules {
+    pub by_month_day: Option<MonthDaySet>,
+    pub by_year_day: Option<Box<[NonZero<i16>]>>,
+    pub by_week_no: Option<WeekNoSet>,
 }
 
 /// A signed year of the day, i.e. the range -366..=366 not including 0.
@@ -718,6 +759,106 @@ impl From<&Part> for PartName {
     }
 }
 
+impl From<ByRuleName> for PartName {
+    fn from(value: ByRuleName) -> Self {
+        match value {
+            ByRuleName::BySecond => Self::BySecond,
+            ByRuleName::ByMinute => Self::ByMinute,
+            ByRuleName::ByHour => Self::ByHour,
+            ByRuleName::ByDay => Self::ByDay,
+            ByRuleName::ByMonthDay => Self::ByMonthDay,
+            ByRuleName::ByYearDay => Self::ByYearDay,
+            ByRuleName::ByWeekNo => Self::ByWeekNo,
+            ByRuleName::ByMonth => Self::ByMonth,
+            ByRuleName::BySetPos => Self::BySetPos,
+        }
+    }
+}
+
+impl PartName {
+    pub const fn as_by_rule(&self) -> Option<ByRuleName> {
+        match self {
+            PartName::BySecond => Some(ByRuleName::BySecond),
+            PartName::ByMinute => Some(ByRuleName::ByMinute),
+            PartName::ByHour => Some(ByRuleName::ByHour),
+            PartName::ByDay => Some(ByRuleName::ByDay),
+            PartName::ByMonthDay => Some(ByRuleName::ByMonthDay),
+            PartName::ByYearDay => Some(ByRuleName::ByYearDay),
+            PartName::ByWeekNo => Some(ByRuleName::ByWeekNo),
+            PartName::ByMonth => Some(ByRuleName::ByMonth),
+            PartName::BySetPos => Some(ByRuleName::BySetPos),
+            _ => None,
+        }
+    }
+}
+
+/// The names of the BYxxx parts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ByRuleName {
+    BySecond,
+    ByMinute,
+    ByHour,
+    ByDay,
+    ByMonthDay,
+    ByYearDay,
+    ByWeekNo,
+    ByMonth,
+    BySetPos,
+}
+
+/// The values in the table on page 43 of RFC 5545.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ByRuleBehavior {
+    Limit,
+    Expand,
+    Note1,
+    Note2,
+}
+
+impl ByRuleName {
+    /// Returns the [`ByRuleBehavior`] of `self` with the given [`Frequency`],
+    /// as described in the table from RFC 5545 page 44.
+    pub const fn behavior_with(
+        &self,
+        freq: Frequency,
+    ) -> Option<ByRuleBehavior> {
+        match (*self, freq) {
+            (Self::ByMonth, Frequency::Yearly) => Some(ByRuleBehavior::Expand),
+            (Self::ByWeekNo, Frequency::Yearly) => Some(ByRuleBehavior::Expand),
+            (Self::ByWeekNo, _) => None,
+            (
+                Self::ByYearDay,
+                Frequency::Secondly | Frequency::Minutely | Frequency::Hourly,
+            ) => Some(ByRuleBehavior::Limit),
+            (Self::ByYearDay, Frequency::Yearly) => {
+                Some(ByRuleBehavior::Expand)
+            }
+            (Self::ByYearDay, _) => None,
+            (Self::ByMonthDay, Frequency::Weekly) => None,
+            (Self::ByMonthDay, Frequency::Monthly | Frequency::Yearly) => {
+                Some(ByRuleBehavior::Expand)
+            }
+            (Self::ByDay, Frequency::Weekly) => Some(ByRuleBehavior::Expand),
+            (Self::ByDay, Frequency::Monthly) => Some(ByRuleBehavior::Note1),
+            (Self::ByDay, Frequency::Yearly) => Some(ByRuleBehavior::Note2),
+            (
+                Self::ByHour,
+                Frequency::Secondly | Frequency::Minutely | Frequency::Hourly,
+            ) => Some(ByRuleBehavior::Limit),
+            (Self::ByHour, _) => Some(ByRuleBehavior::Expand),
+            (Self::ByMinute, Frequency::Secondly | Frequency::Minutely) => {
+                Some(ByRuleBehavior::Limit)
+            }
+            (Self::ByMinute, _) => Some(ByRuleBehavior::Expand),
+            (Self::BySecond, Frequency::Secondly) => {
+                Some(ByRuleBehavior::Limit)
+            }
+            (Self::BySecond, _) => Some(ByRuleBehavior::Expand),
+            _ => Some(ByRuleBehavior::Limit),
+        }
+    }
+}
+
 /// A variant in the `recur-rule-part` grammar rule.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Part {
@@ -1086,5 +1227,60 @@ mod tests {
 
         assert!(pos_50_thursday < pos_53_wednesday);
         assert!(pos_53_monday < pos_53_wednesday);
+    }
+
+    #[test]
+    fn behavior_with_table() {
+        let freqs = [
+            Frequency::Secondly,
+            Frequency::Minutely,
+            Frequency::Hourly,
+            Frequency::Daily,
+            Frequency::Weekly,
+            Frequency::Monthly,
+            Frequency::Yearly,
+        ];
+
+        let by_rules = [
+            ByRuleName::ByMonth,
+            ByRuleName::ByWeekNo,
+            ByRuleName::ByYearDay,
+            ByRuleName::ByMonthDay,
+            ByRuleName::ByDay,
+            ByRuleName::ByHour,
+            ByRuleName::ByMinute,
+            ByRuleName::BySecond,
+            ByRuleName::BySetPos,
+        ];
+
+        #[allow(non_snake_case)]
+        let Limit = Some(ByRuleBehavior::Limit);
+        #[allow(non_snake_case)]
+        let Expand = Some(ByRuleBehavior::Expand);
+        #[allow(non_snake_case)]
+        let Note1 = Some(ByRuleBehavior::Note1);
+        #[allow(non_snake_case)]
+        let Note2 = Some(ByRuleBehavior::Note2);
+
+        // corresponds to the table from RFC 5545 (page 44).
+        let table = [
+            [Limit, Limit, Limit, Limit, Limit, Limit, Expand],
+            [None, None, None, None, None, None, Expand],
+            [Limit, Limit, Limit, None, None, None, Expand],
+            [Limit, Limit, Limit, Limit, None, Expand, Expand],
+            [Limit, Limit, Limit, Limit, Expand, Note1, Note2],
+            [Limit, Limit, Limit, Expand, Expand, Expand, Expand],
+            [Limit, Limit, Expand, Expand, Expand, Expand, Expand],
+            [Limit, Expand, Expand, Expand, Expand, Expand, Expand],
+            [Limit, Limit, Limit, Limit, Limit, Limit, Limit],
+        ];
+
+        for (i, &rule) in by_rules.iter().enumerate() {
+            for (j, &freq) in freqs.iter().enumerate() {
+                let expected = table[i][j];
+                let got = rule.behavior_with(freq);
+                assert_eq!(got, expected);
+            }
+        }
     }
 }
