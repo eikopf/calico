@@ -734,6 +734,25 @@ impl Month {
             _ => None,
         }
     }
+
+    pub fn iter() -> impl ExactSizeIterator<Item = Self> {
+        [
+            Self::Jan,
+            Self::Feb,
+            Self::Mar,
+            Self::Apr,
+            Self::May,
+            Self::Jun,
+            Self::Jul,
+            Self::Aug,
+            Self::Sep,
+            Self::Oct,
+            Self::Nov,
+            Self::Dec,
+        ]
+        .iter()
+        .copied()
+    }
 }
 
 #[cfg(test)]

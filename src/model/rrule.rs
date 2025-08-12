@@ -1,6 +1,6 @@
 //! Model types for recurrence rules.
 
-use std::{collections::BTreeSet, num::NonZero};
+use std::{collections::BTreeSet, fmt::Debug, num::NonZero};
 
 use weekday_num_set::WeekdayNumSet;
 use winnow::stream::Accumulate;
@@ -12,12 +12,18 @@ use super::primitive::{DateTimeOrDate, IsoWeek, Month, Sign, Weekday};
 
 pub mod weekday_num_set;
 
+/// A recurrence rule (RFC 5545 §3.3.10).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RRule {
+    /// The [`Freq`] value together with the BYxxx rules it allows.
     pub freq: FreqByRules,
+    /// The BYxxx rules which do not depend on the [`Freq`] value.
     pub core_by_rules: CoreByRules,
+    /// The INTERVAL part.
     pub interval: Option<Interval>,
+    /// The COUNT or UNTIL part.
     pub termination: Option<Termination>,
+    /// The WKST part.
     pub week_start: Option<Weekday>,
 }
 
@@ -75,7 +81,7 @@ pub enum FreqByRules {
 }
 
 /// The BYxxx rules which are permitted for any [`Freq`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct CoreByRules {
     pub by_second: Option<SecondSet>,
     pub by_minute: Option<MinuteSet>,
@@ -99,7 +105,7 @@ pub struct ByMonthDayRule {
 }
 
 /// The BYWEEKNO, BYYEARDAY, and BYMONTHDAY rules.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct YearlyByRules {
     pub by_month_day: Option<MonthDaySet>,
     pub by_year_day: Option<BTreeSet<YearDayNum>>,
@@ -126,10 +132,38 @@ impl YearDayNum {
 }
 
 /// A value corresponding to the `weekdaynum` grammar rule.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct WeekdayNum {
     pub ordinal: Option<(Sign, IsoWeek)>,
     pub weekday: Weekday,
+}
+
+impl Debug for WeekdayNum {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some((sign, week)) = self.ordinal {
+            match sign {
+                Sign::Positive => write!(f, "+"),
+                Sign::Negative => write!(f, "-"),
+            }?;
+
+            let w = week as u8;
+            write!(f, "{w:02}")?;
+        }
+
+        write!(
+            f,
+            "{}",
+            match self.weekday {
+                Weekday::Monday => "MO",
+                Weekday::Tuesday => "TU",
+                Weekday::Wednesday => "WE",
+                Weekday::Thursday => "TH",
+                Weekday::Friday => "FR",
+                Weekday::Saturday => "SA",
+                Weekday::Sunday => "SU",
+            }
+        )
+    }
 }
 
 impl PartialOrd for WeekdayNum {
@@ -167,8 +201,22 @@ impl Ord for WeekdayNum {
 ///                                                                |
 ///                                                               msb
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct SecondSet(NonZero<u64>);
+
+impl Debug for SecondSet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut set = BTreeSet::new();
+
+        for second in Second::iter() {
+            if self.get(second) {
+                set.insert(second);
+            }
+        }
+
+        write!(f, "{set:#?}")
+    }
+}
 
 impl Accumulate<Second> for SecondSet {
     fn initial(_capacity: Option<usize>) -> Self {
@@ -204,7 +252,7 @@ impl Default for SecondSet {
 }
 
 /// A second (ℤ mod 61), ranging from S0 through S60.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
 pub enum Second {
     S0,
@@ -270,6 +318,13 @@ pub enum Second {
     S60,
 }
 
+impl Debug for Second {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = *self as u8;
+        write!(f, "{s:02}")
+    }
+}
+
 impl Second {
     pub const fn from_repr(repr: u8) -> Option<Self> {
         match repr {
@@ -280,6 +335,14 @@ impl Second {
             }
             _ => None,
         }
+    }
+
+    pub fn iter() -> impl ExactSizeIterator<Item = Self> {
+        (0..=60u8).map(|s| {
+            // SAFETY: the range 0..=60u8 is exactly the range of valid Second
+            // discriminants.
+            unsafe { Self::from_repr(s).unwrap_unchecked() }
+        })
     }
 }
 
@@ -292,8 +355,22 @@ impl Second {
 ///                                                                |
 ///                                                               msb
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct MinuteSet(NonZero<u64>);
+
+impl Debug for MinuteSet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut set = BTreeSet::new();
+
+        for minute in Minute::iter() {
+            if self.get(minute) {
+                set.insert(minute);
+            }
+        }
+
+        write!(f, "{set:#?}")
+    }
+}
 
 impl Accumulate<Minute> for MinuteSet {
     fn initial(_capacity: Option<usize>) -> Self {
@@ -329,7 +406,7 @@ impl Default for MinuteSet {
 }
 
 /// A minute (ℤ mod 60), ranging from M0 through M59.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
 pub enum Minute {
     M0,
@@ -394,6 +471,13 @@ pub enum Minute {
     M59,
 }
 
+impl Debug for Minute {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let m = *self as u8;
+        write!(f, "{m:02}")
+    }
+}
+
 impl Minute {
     pub const fn from_repr(repr: u8) -> Option<Self> {
         match repr {
@@ -404,6 +488,14 @@ impl Minute {
             }
             _ => None,
         }
+    }
+
+    pub fn iter() -> impl ExactSizeIterator<Item = Self> {
+        (0..=59u8).map(|m| {
+            // SAFETY: 0..=59u8 is exactly the range of valid discriminants
+            // for Minute.
+            unsafe { Self::from_repr(m).unwrap_unchecked() }
+        })
     }
 }
 
@@ -416,8 +508,22 @@ impl Minute {
 ///                                |
 ///                               msb
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct HourSet(NonZero<u32>);
+
+impl Debug for HourSet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut set = BTreeSet::new();
+
+        for hour in Hour::iter() {
+            if self.get(hour) {
+                set.insert(hour);
+            }
+        }
+
+        write!(f, "{set:#?}")
+    }
+}
 
 impl Accumulate<Hour> for HourSet {
     fn initial(_capacity: Option<usize>) -> Self {
@@ -453,7 +559,7 @@ impl Default for HourSet {
 }
 
 /// An hour of the day, ranging from H0 through H23.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
 pub enum Hour {
     H0,
@@ -482,6 +588,13 @@ pub enum Hour {
     H23,
 }
 
+impl Debug for Hour {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let h = *self as u8;
+        write!(f, "{h:02}")
+    }
+}
+
 impl Hour {
     pub const fn from_repr(repr: u8) -> Option<Self> {
         match repr {
@@ -492,6 +605,14 @@ impl Hour {
             }
             _ => None,
         }
+    }
+
+    pub fn iter() -> impl ExactSizeIterator<Item = Self> {
+        (0..=23u8).map(|h| {
+            // SAFETY: 0..=23u8 is exactly the range of valid discriminants
+            // of Hour.
+            unsafe { Self::from_repr(h).unwrap_unchecked() }
+        })
     }
 }
 
@@ -505,8 +626,22 @@ impl Hour {
 /// |              |
 /// lsb           msb
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct MonthSet(NonZero<u16>);
+
+impl Debug for MonthSet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut set = BTreeSet::new();
+
+        for month in Month::iter() {
+            if self.get(month) {
+                set.insert(month);
+            }
+        }
+
+        write!(f, "{set:#?}")
+    }
+}
 
 impl Accumulate<Month> for MonthSet {
     fn initial(_capacity: Option<usize>) -> Self {

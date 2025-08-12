@@ -744,9 +744,60 @@ mod tests {
     fn rrule_parser_rfc_5545_page_43() {
         // input is from RFC 5545, page 43
         let input = "FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1";
-        let res = rrule::<_, ()>.parse_peek(input);
+        let (tail, rule) = rrule::<_, ()>.parse_peek(input).unwrap();
+        assert!(tail.is_empty());
 
-        // TODO: expand this test
+        let RRule {
+            freq,
+            core_by_rules,
+            interval,
+            termination,
+            week_start,
+        } = rule;
+
+        assert_eq!(
+            freq,
+            FreqByRules::Monthly(ByMonthDayRule { by_month_day: None })
+        );
+
+        let mut weekday_num_set = WeekdayNumSet::default();
+        weekday_num_set.insert(WeekdayNum {
+            ordinal: None,
+            weekday: Weekday::Monday,
+        });
+        weekday_num_set.insert(WeekdayNum {
+            ordinal: None,
+            weekday: Weekday::Tuesday,
+        });
+        weekday_num_set.insert(WeekdayNum {
+            ordinal: None,
+            weekday: Weekday::Wednesday,
+        });
+        weekday_num_set.insert(WeekdayNum {
+            ordinal: None,
+            weekday: Weekday::Thursday,
+        });
+        weekday_num_set.insert(WeekdayNum {
+            ordinal: None,
+            weekday: Weekday::Friday,
+        });
+
+        let mut year_day_num_set = BTreeSet::new();
+        year_day_num_set
+            .insert(YearDayNum::from_signed_index(Sign::Negative, 1).unwrap());
+
+        assert_eq!(
+            core_by_rules,
+            CoreByRules {
+                by_day: Some(weekday_num_set),
+                by_set_pos: Some(year_day_num_set),
+                ..Default::default()
+            }
+        );
+
+        assert!(interval.is_none());
+        assert!(termination.is_none());
+        assert!(week_start.is_none());
     }
 
     #[test]
@@ -754,9 +805,49 @@ mod tests {
         // input is from RFC 5545, page 45
         let input =
             "FREQ=YEARLY;INTERVAL=2;BYMONTH=1;BYDAY=SU;BYHOUR=8,9;BYMINUTE=30";
-        let res = rrule::<_, ()>.parse_peek(input);
+        let (tail, rule) = rrule::<_, ()>.parse_peek(input).unwrap();
+        assert!(tail.is_empty());
 
-        // TODO: expand this test
+        let RRule {
+            freq,
+            core_by_rules,
+            interval,
+            termination,
+            week_start,
+        } = rule;
+
+        assert_eq!(freq, FreqByRules::Yearly(YearlyByRules::default()),);
+
+        let mut minute_set = MinuteSet::default();
+        minute_set.set(Minute::M30);
+
+        let mut hour_set = HourSet::default();
+        hour_set.set(Hour::H8);
+        hour_set.set(Hour::H9);
+
+        let mut month_set = MonthSet::default();
+        month_set.set(Month::Jan);
+
+        let mut day_set = WeekdayNumSet::default();
+        day_set.insert(WeekdayNum {
+            ordinal: None,
+            weekday: Weekday::Sunday,
+        });
+
+        assert_eq!(
+            core_by_rules,
+            CoreByRules {
+                by_minute: Some(minute_set),
+                by_hour: Some(hour_set),
+                by_month: Some(month_set),
+                by_day: Some(day_set),
+                ..Default::default()
+            }
+        );
+
+        assert_eq!(interval, Some(Interval(2.try_into().unwrap())));
+        assert!(termination.is_none());
+        assert!(week_start.is_none());
     }
 
     #[test]
