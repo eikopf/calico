@@ -3,6 +3,7 @@
 use crate::model::{
     parameter::{KnownParam, StaticParamName},
     primitive::{GeoComponent, Integer, Sign, ValueType},
+    rrule,
 };
 
 use super::property::PropName;
@@ -39,6 +40,17 @@ pub enum CalendarParseError<S> {
     InvalidMinuteIndex(u8),
     /// Expected a second index, got a value outside the range `0..=60`.
     InvalidSecondIndex(u8),
+    /// Received a part in a recurrence rule more than once.
+    DuplicateRRulePart(rrule::PartName),
+    /// Both the COUNT and UNTIL parts occurred in the same RRULE.
+    CountAndUntilInRRule,
+    /// The FREQ part did not occur in an RRULE.
+    MissingFreqPart,
+    /// A BYxxx rule occurred that was inadmissible for the current FREQ value.
+    UnexpectedByRule {
+        freq: rrule::Freq,
+        by_rule: rrule::ByRuleName,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

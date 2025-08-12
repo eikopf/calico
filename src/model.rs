@@ -24,7 +24,7 @@ use primitive::{
     Uri, Utc, UtcOffset,
 };
 use property::{ConfProp, ImageProp, Prop, SeqLangProp, TextProp};
-use rrule::RecurrenceRule;
+use rrule::RRule;
 use std::collections::HashMap;
 
 pub mod css;
@@ -129,7 +129,7 @@ pub struct SchedulingProperties {
 /// Recurrence properties.
 #[derive(Debug, Clone, Default)]
 pub struct RecurrenceProperties {
-    pub recurrence_rule: Option<RecurrenceRule>,
+    pub recurrence_rule: Option<RRule>,
     pub recurrence_dates: Vec<DateTimeOrDate>,
     pub exception_dates: Vec<DateTimeOrDate>,
     pub recurrence_id: Option<RecurrenceId>,
@@ -252,7 +252,7 @@ pub struct TimeZoneRule {
     pub tzoffsetfrom: UtcOffset,
     pub tzoffsetto: UtcOffset,
     pub tzname: Option<Text<Box<str>>>,
-    pub recurrence_rule: Option<RecurrenceRule>,
+    pub recurrence_rule: Option<RRule>,
     pub recurrence_dates: Vec<DateTime<Utc>>,
     pub comments: Vec<Text<Box<str>>>,
     pub x_properties: HashMap<String, XProperty>,
@@ -319,7 +319,7 @@ pub enum Property {
     // Recurrence properties
     ExDate(Vec<DateTimeOrDate>),
     RDate(Vec<RDate>),
-    RRule(RecurrenceRule),
+    RRule(RRule),
 
     // Alarm properties
     Action(AlarmAction<Box<str>>),
@@ -381,7 +381,7 @@ pub enum PropertyValueType {
     Float(f64),
     Integer(i64),
     Period(Period),
-    Recur(RecurrenceRule),
+    Recur(RRule),
     Text(String),
     Time(Time),
     Uri(String),

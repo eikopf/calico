@@ -5,9 +5,7 @@ use std::{collections::BTreeSet, num::NonZero};
 use weekday_num_set::WeekdayNumSet;
 use winnow::stream::Accumulate;
 
-use super::primitive::{
-    DateTime, DateTimeOrDate, IsoWeek, Month, Sign, Utc, Weekday,
-};
+use super::primitive::{DateTimeOrDate, IsoWeek, Month, Sign, Weekday};
 
 // TODO: implement another mixed representation set module for
 // year_day_num
@@ -15,7 +13,7 @@ use super::primitive::{
 pub mod weekday_num_set;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RecurrenceRule {
+pub struct RRule {
     pub freq: FreqByRules,
     pub core_by_rules: CoreByRules,
     pub interval: Option<Interval>,
@@ -26,7 +24,7 @@ pub struct RecurrenceRule {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Termination {
     Count(u64),
-    Until(DateTime<Utc>),
+    Until(DateTimeOrDate),
 }
 
 /// The value of the INTERVAL rule part.
@@ -76,22 +74,22 @@ pub enum FreqByRules {
     Yearly(YearlyByRules),
 }
 
-/// The BYxxx rules which are permitted for any [`Frequency`].
+/// The BYxxx rules which are permitted for any [`Freq`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CoreByRules {
     pub by_second: Option<SecondSet>,
     pub by_minute: Option<MinuteSet>,
     pub by_hour: Option<HourSet>,
     pub by_month: Option<MonthSet>,
-    pub by_day: Option<Box<[WeekdayNum]>>,
-    pub by_set_pos: Option<Box<[NonZero<i16>]>>,
+    pub by_day: Option<WeekdayNumSet>,
+    pub by_set_pos: Option<BTreeSet<YearDayNum>>,
 }
 
 /// The BYYEARDAY and BYMONTHDAY rules.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ByPeriodDayRules {
     pub by_month_day: Option<MonthDaySet>,
-    pub by_year_day: Option<Box<[NonZero<i16>]>>,
+    pub by_year_day: Option<BTreeSet<YearDayNum>>,
 }
 
 /// The BYMONTHDAY rule.
@@ -104,7 +102,7 @@ pub struct ByMonthDayRule {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct YearlyByRules {
     pub by_month_day: Option<MonthDaySet>,
-    pub by_year_day: Option<Box<[NonZero<i16>]>>,
+    pub by_year_day: Option<BTreeSet<YearDayNum>>,
     pub by_week_no: Option<WeekNoSet>,
 }
 
@@ -816,7 +814,7 @@ pub enum ByRuleBehavior {
 }
 
 impl ByRuleName {
-    /// Returns the [`ByRuleBehavior`] of `self` with the given [`Frequency`],
+    /// Returns the [`ByRuleBehavior`] of `self` with the given [`Freq`],
     /// as described in the table from RFC 5545 page 44.
     pub const fn behavior_with(&self, freq: Freq) -> Option<ByRuleBehavior> {
         match (*self, freq) {

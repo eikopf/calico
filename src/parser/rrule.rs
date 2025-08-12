@@ -1,11 +1,11 @@
 //! Parsers for recurrence rules.
 
-use std::num::NonZero;
+use std::{collections::BTreeSet, num::NonZero};
 
 use winnow::{
     Parser,
     ascii::Caseless,
-    combinator::{alt, opt, separated, terminated},
+    combinator::{alt, opt, preceded, separated, terminated},
     error::{FromExternalError, ParserError},
     stream::{AsBStr, AsChar, Compare, Stream, StreamIsPartial},
     token::any,
@@ -15,9 +15,12 @@ use crate::{
     model::{
         primitive::{Month, Weekday},
         rrule::{
-            Freq, Hour, Interval, Minute, MonthDay, MonthDaySetIndex, Part,
-            PartName, RecurrenceRule, Second, WeekNoSetIndex, WeekdayNum,
-            YearDayNum,
+            ByMonthDayRule, ByPeriodDayRules, ByRuleName, CoreByRules, Freq,
+            FreqByRules, Hour, HourSet, Interval, Minute, MinuteSet, MonthDay,
+            MonthDaySet, MonthDaySetIndex, MonthSet, Part, PartName, RRule,
+            Second, SecondSet, Termination, WeekNoSet, WeekNoSetIndex,
+            WeekdayNum, YearDayNum, YearlyByRules,
+            weekday_num_set::WeekdayNumSet,
         },
     },
     parser::primitive::{digit, iso_week_index, lz_dec_uint, sign},
@@ -25,13 +28,370 @@ use crate::{
 
 use super::{error::CalendarParseError, primitive::datetime_or_date};
 
-/// Parses a [`RecurrenceRule`].
-pub fn rrule<I, E>(input: &mut I) -> Result<RecurrenceRule, E>
+/// Parses an [`RRule`].
+pub fn rrule<I, E>(input: &mut I) -> Result<RRule, E>
 where
-    I: StreamIsPartial + Stream,
-    E: ParserError<I>,
+    I: StreamIsPartial
+        + Stream
+        + Compare<Caseless<&'static str>>
+        + Compare<char>,
+    I::Slice: AsBStr,
+    I::Token: AsChar + Clone,
+    E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
-    todo!()
+    #[derive(Default)]
+    struct State {
+        // BYxxx rules
+        by_month: Option<MonthSet>,
+        by_week_no: Option<WeekNoSet>,
+        by_year_day: Option<BTreeSet<YearDayNum>>,
+        by_month_day: Option<MonthDaySet>,
+        by_day: Option<WeekdayNumSet>,
+        by_hour: Option<HourSet>,
+        by_minute: Option<MinuteSet>,
+        by_second: Option<SecondSet>,
+        by_set_pos: Option<BTreeSet<YearDayNum>>,
+        // other elements
+        freq: Option<Freq>,
+        interval: Option<Interval>,
+        termination: Option<Termination>,
+        week_start: Option<Weekday>,
+    }
+
+    impl State {
+        fn try_accept<I, E>(&mut self, input: &I, part: Part) -> Result<(), E>
+        where
+            I: Stream,
+            E: ParserError<I>
+                + FromExternalError<I, CalendarParseError<I::Slice>>,
+        {
+            let part_name = PartName::from(&part);
+
+            match part {
+                Part::Freq(freq) => match self.freq {
+                    Some(_) => Err(E::from_external_error(
+                        input,
+                        CalendarParseError::DuplicateRRulePart(part_name),
+                    )),
+                    None => {
+                        self.freq = Some(freq);
+                        Ok(())
+                    }
+                },
+                Part::Until(dt_or_date) => match self.termination {
+                    Some(Termination::Count(_)) => Err(E::from_external_error(
+                        input,
+                        CalendarParseError::CountAndUntilInRRule,
+                    )),
+                    Some(Termination::Until(_)) => Err(E::from_external_error(
+                        input,
+                        CalendarParseError::DuplicateRRulePart(part_name),
+                    )),
+                    None => {
+                        self.termination = Some(Termination::Until(dt_or_date));
+                        Ok(())
+                    }
+                },
+                Part::Count(count) => match self.termination {
+                    Some(Termination::Until(_)) => Err(E::from_external_error(
+                        input,
+                        CalendarParseError::CountAndUntilInRRule,
+                    )),
+                    Some(Termination::Count(_)) => Err(E::from_external_error(
+                        input,
+                        CalendarParseError::DuplicateRRulePart(part_name),
+                    )),
+                    None => {
+                        self.termination = Some(Termination::Count(count));
+                        Ok(())
+                    }
+                },
+                Part::Interval(interval) => match self.interval {
+                    Some(_) => Err(E::from_external_error(
+                        input,
+                        CalendarParseError::DuplicateRRulePart(part_name),
+                    )),
+                    None => {
+                        self.interval = Some(interval);
+                        Ok(())
+                    }
+                },
+                Part::BySecond(set) => match self.by_second {
+                    Some(_) => Err(E::from_external_error(
+                        input,
+                        CalendarParseError::DuplicateRRulePart(part_name),
+                    )),
+                    None => {
+                        self.by_second = Some(set);
+                        Ok(())
+                    }
+                },
+                Part::ByMinute(set) => match self.by_minute {
+                    Some(_) => Err(E::from_external_error(
+                        input,
+                        CalendarParseError::DuplicateRRulePart(part_name),
+                    )),
+                    None => {
+                        self.by_minute = Some(set);
+                        Ok(())
+                    }
+                },
+                Part::ByHour(set) => match self.by_hour {
+                    Some(_) => Err(E::from_external_error(
+                        input,
+                        CalendarParseError::DuplicateRRulePart(part_name),
+                    )),
+                    None => {
+                        self.by_hour = Some(set);
+                        Ok(())
+                    }
+                },
+                Part::ByDay(set) => match self.by_day {
+                    Some(_) => Err(E::from_external_error(
+                        input,
+                        CalendarParseError::DuplicateRRulePart(part_name),
+                    )),
+                    None => {
+                        self.by_day = Some(set);
+                        Ok(())
+                    }
+                },
+                Part::ByMonthDay(set) => match self.by_month_day {
+                    Some(_) => Err(E::from_external_error(
+                        input,
+                        CalendarParseError::DuplicateRRulePart(part_name),
+                    )),
+                    None => {
+                        self.by_month_day = Some(set);
+                        Ok(())
+                    }
+                },
+                Part::ByYearDay(set) => match self.by_year_day {
+                    Some(_) => Err(E::from_external_error(
+                        input,
+                        CalendarParseError::DuplicateRRulePart(part_name),
+                    )),
+                    None => {
+                        self.by_year_day = Some(set);
+                        Ok(())
+                    }
+                },
+                Part::ByWeekNo(set) => match self.by_week_no {
+                    Some(_) => Err(E::from_external_error(
+                        input,
+                        CalendarParseError::DuplicateRRulePart(part_name),
+                    )),
+                    None => {
+                        self.by_week_no = Some(set);
+                        Ok(())
+                    }
+                },
+                Part::ByMonth(set) => match self.by_month {
+                    Some(_) => Err(E::from_external_error(
+                        input,
+                        CalendarParseError::DuplicateRRulePart(part_name),
+                    )),
+                    None => {
+                        self.by_month = Some(set);
+                        Ok(())
+                    }
+                },
+                Part::BySetPos(set) => match self.by_set_pos {
+                    Some(_) => Err(E::from_external_error(
+                        input,
+                        CalendarParseError::DuplicateRRulePart(part_name),
+                    )),
+                    None => {
+                        self.by_set_pos = Some(set);
+                        Ok(())
+                    }
+                },
+                Part::WkSt(weekday) => match self.week_start {
+                    Some(_) => Err(E::from_external_error(
+                        input,
+                        CalendarParseError::DuplicateRRulePart(part_name),
+                    )),
+                    None => {
+                        self.week_start = Some(weekday);
+                        Ok(())
+                    }
+                },
+            }
+        }
+
+        fn finalize<I, E>(self, input: &I) -> Result<RRule, E>
+        where
+            I: Stream,
+            E: ParserError<I>
+                + FromExternalError<I, CalendarParseError<I::Slice>>,
+        {
+            let State {
+                by_month,
+                by_week_no,
+                by_year_day,
+                by_month_day,
+                by_day,
+                by_hour,
+                by_minute,
+                by_second,
+                by_set_pos,
+                freq,
+                interval,
+                termination,
+                week_start,
+            } = self;
+
+            // collect the BYxxx rules that are always admissible
+            let core_by_rules = CoreByRules {
+                by_second,
+                by_minute,
+                by_hour,
+                by_month,
+                by_day,
+                by_set_pos,
+            };
+
+            // decide if the values of by_week_no, by_month_day, and by_year_day
+            // are admissible for the given value of freq
+            let freq: FreqByRules = match freq {
+                None => Err(E::from_external_error(
+                    input,
+                    CalendarParseError::MissingFreqPart,
+                )),
+                Some(freq @ Freq::Secondly) => match by_week_no {
+                    Some(_) => Err(E::from_external_error(
+                        input,
+                        CalendarParseError::UnexpectedByRule {
+                            freq,
+                            by_rule: ByRuleName::ByWeekNo,
+                        },
+                    )),
+                    None => Ok(FreqByRules::Secondly(ByPeriodDayRules {
+                        by_month_day,
+                        by_year_day,
+                    })),
+                },
+                Some(freq @ Freq::Minutely) => match by_week_no {
+                    Some(_) => Err(E::from_external_error(
+                        input,
+                        CalendarParseError::UnexpectedByRule {
+                            freq,
+                            by_rule: ByRuleName::ByWeekNo,
+                        },
+                    )),
+                    None => Ok(FreqByRules::Minutely(ByPeriodDayRules {
+                        by_month_day,
+                        by_year_day,
+                    })),
+                },
+                Some(freq @ Freq::Hourly) => match by_week_no {
+                    Some(_) => Err(E::from_external_error(
+                        input,
+                        CalendarParseError::UnexpectedByRule {
+                            freq,
+                            by_rule: ByRuleName::ByWeekNo,
+                        },
+                    )),
+                    None => Ok(FreqByRules::Hourly(ByPeriodDayRules {
+                        by_month_day,
+                        by_year_day,
+                    })),
+                },
+                Some(freq @ Freq::Daily) => match (by_week_no, by_year_day) {
+                    (None, None) => {
+                        Ok(FreqByRules::Daily(ByMonthDayRule { by_month_day }))
+                    }
+                    (Some(_), _) => Err(E::from_external_error(
+                        input,
+                        CalendarParseError::UnexpectedByRule {
+                            freq,
+                            by_rule: ByRuleName::ByWeekNo,
+                        },
+                    )),
+                    (_, Some(_)) => Err(E::from_external_error(
+                        input,
+                        CalendarParseError::UnexpectedByRule {
+                            freq,
+                            by_rule: ByRuleName::ByYearDay,
+                        },
+                    )),
+                },
+                Some(freq @ Freq::Weekly) => {
+                    match (by_week_no, by_year_day, by_month_day) {
+                        (None, None, None) => Ok(FreqByRules::Weekly),
+                        (Some(_), _, _) => Err(E::from_external_error(
+                            input,
+                            CalendarParseError::UnexpectedByRule {
+                                freq,
+                                by_rule: ByRuleName::ByWeekNo,
+                            },
+                        )),
+                        (_, Some(_), _) => Err(E::from_external_error(
+                            input,
+                            CalendarParseError::UnexpectedByRule {
+                                freq,
+                                by_rule: ByRuleName::ByYearDay,
+                            },
+                        )),
+                        (_, _, Some(_)) => Err(E::from_external_error(
+                            input,
+                            CalendarParseError::UnexpectedByRule {
+                                freq,
+                                by_rule: ByRuleName::ByMonthDay,
+                            },
+                        )),
+                    }
+                }
+                Some(freq @ Freq::Monthly) => match (by_week_no, by_year_day) {
+                    (None, None) => Ok(FreqByRules::Monthly(ByMonthDayRule {
+                        by_month_day,
+                    })),
+                    (Some(_), _) => Err(E::from_external_error(
+                        input,
+                        CalendarParseError::UnexpectedByRule {
+                            freq,
+                            by_rule: ByRuleName::ByWeekNo,
+                        },
+                    )),
+                    (_, Some(_)) => Err(E::from_external_error(
+                        input,
+                        CalendarParseError::UnexpectedByRule {
+                            freq,
+                            by_rule: ByRuleName::ByYearDay,
+                        },
+                    )),
+                },
+                Some(Freq::Yearly) => Ok(FreqByRules::Yearly(YearlyByRules {
+                    by_month_day,
+                    by_year_day,
+                    by_week_no,
+                })),
+            }?;
+
+            Ok(RRule {
+                freq,
+                core_by_rules,
+                interval,
+                termination,
+                week_start,
+            })
+        }
+    }
+
+    // try to parse the first part
+    let first = part.parse_next(input)?;
+
+    // initialize state and accept the first part
+    let mut state = State::default();
+    let () = state.try_accept(input, first)?;
+
+    // iterate over the remaining parts and try to accept them
+    while let Ok(part) = preceded(';', part::<I, E>).parse_next(input) {
+        let () = state.try_accept(input, part)?;
+    }
+
+    // finalize into an RRule
+    state.finalize(input)
 }
 
 /// Parses a [`Part`].
@@ -133,7 +493,7 @@ where
     .parse_next(input)
 }
 
-/// Parses a [`Frequency`].
+/// Parses a [`Freq`].
 pub fn frequency<I, E>(input: &mut I) -> Result<Freq, E>
 where
     I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
@@ -252,7 +612,7 @@ where
         .parse_next(input)
 }
 
-/// Parses a [`MonthSetIndex`].
+/// Parses a [`Month`].
 pub fn month_num<I, E>(input: &mut I) -> Result<Month, E>
 where
     I: StreamIsPartial + Stream + Compare<char>,
@@ -379,6 +739,25 @@ mod tests {
     };
 
     use super::*;
+
+    #[test]
+    fn rrule_parser_rfc_5545_page_43() {
+        // input is from RFC 5545, page 43
+        let input = "FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1";
+        let res = rrule::<_, ()>.parse_peek(input);
+
+        // TODO: expand this test
+    }
+
+    #[test]
+    fn rrule_parser_rfc_5545_page_45() {
+        // input is from RFC 5545, page 45
+        let input =
+            "FREQ=YEARLY;INTERVAL=2;BYMONTH=1;BYDAY=SU;BYHOUR=8,9;BYMINUTE=30";
+        let res = rrule::<_, ()>.parse_peek(input);
+
+        // TODO: expand this test
+    }
 
     #[test]
     fn part_parser_rfc_5545_page_45() -> Result<(), ()> {
