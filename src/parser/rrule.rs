@@ -35,7 +35,7 @@ where
 }
 
 /// Parses a [`Part`].
-pub(crate) fn part<I, E>(input: &mut I) -> Result<Part, E>
+pub fn part<I, E>(input: &mut I) -> Result<Part, E>
 where
     I: StreamIsPartial
         + Stream
@@ -109,7 +109,7 @@ where
 }
 
 /// Parses a [`PartName`].
-pub(crate) fn part_name<I, E>(input: &mut I) -> Result<PartName, E>
+pub fn part_name<I, E>(input: &mut I) -> Result<PartName, E>
 where
     I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
     E: ParserError<I>,
