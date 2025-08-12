@@ -28,6 +28,7 @@ use crate::{
             ImageParams, LangParams, OrganizerParams, RecurrenceIdParams,
             RelTypeParams, TextParams, TriggerParams,
         },
+        rrule::RRule,
     },
     parser::{
         error::{
@@ -41,6 +42,7 @@ use crate::{
             method, period, priority, status, text, time_transparency, tz_id,
             uid, utc_offset, v2_0, x_name,
         },
+        rrule::rrule,
     },
 };
 
@@ -62,6 +64,7 @@ pub enum Prop<S> {
 }
 
 impl<S> Prop<S> {
+    #[allow(clippy::result_large_err)]
     pub fn try_into_known(self) -> Result<KnownProp<S>, Self> {
         if let Self::Known(v) = self {
             Ok(v)
@@ -70,6 +73,7 @@ impl<S> Prop<S> {
         }
     }
 
+    #[allow(clippy::result_large_err)]
     pub fn try_into_unknown(self) -> Result<UnknownProp<S>, Self> {
         if let Self::Unknown(v) = self {
             Ok(v)
@@ -124,8 +128,7 @@ pub enum KnownProp<S> {
     // RECURRENCE COMPONENT PROPERTIES
     ExDate(DateTimeOrDate, DtParams<S>),
     RDate(Box<[RDate]>, DtParams<S>),
-    // TODO: finish recurrence rule model
-    RRule(()),
+    RRule(RRule),
     // ALARM COMPONENT PROPERTIES
     Action(AlarmAction<S>),
     Repeat(Integer),
@@ -201,7 +204,7 @@ where
         ValueType::Float => float.map(Value::Float).parse_next(input),
         ValueType::Integer => integer.map(Value::Integer).parse_next(input),
         ValueType::Period => period.map(Value::Period).parse_next(input),
-        ValueType::Recur => todo!(),
+        ValueType::Recur => rrule.map(Value::Recur).parse_next(input),
         ValueType::Text => text.map(Value::Text).parse_next(input),
         ValueType::Time => time.map(Value::Time).parse_next(input),
         ValueType::Uri => uri::<_, _, false>.map(Value::Uri).parse_next(input),
@@ -1613,8 +1616,9 @@ where
             let ((), unknown_params) =
                 sm_parse_next(StateMachine::new((), step), input)?;
             let _ = ':'.parse_next(input)?;
+            let value = rrule.parse_next(input)?;
 
-            todo!()
+            (Prop::Known(KnownProp::RRule(value)), unknown_params)
         }
         PropName::Rfc5545(prop @ Rfc5545PropName::Action) => {
             let step = trivial_step(PropName::Rfc5545(prop));

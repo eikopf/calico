@@ -18,6 +18,8 @@ use std::num::NonZero;
 
 use chrono::NaiveDate;
 
+use super::rrule::RRule;
+
 /// The INTEGER type as defined in RFC 5545 §3.3.8.
 pub type Integer = i32;
 
@@ -384,7 +386,7 @@ pub enum Value<S> {
     Float(Float<S>),
     Integer(i32),
     Period(Period),
-    Recur(()),
+    Recur(RRule),
     Text(S),
     Time(Time),
     Uri(Uri<S>),

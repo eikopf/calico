@@ -161,6 +161,7 @@ pub(crate) const fn weekday_num_to_index(weekday_num: WeekdayNum) -> (u8, u8) {
     (byte, day)
 }
 
+#[allow(dead_code)]
 /// Inverse of [`weekday_num_to_index`].
 pub(crate) const fn index_to_weekday_num(
     (byte_index, day): (u8, u8),
