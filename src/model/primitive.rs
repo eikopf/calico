@@ -78,6 +78,14 @@ pub enum DateTimeOrDate<F = TimeFormat> {
     Date(Date),
 }
 
+/// A homogeneous sequence of either datetimes or dates. Used primarily as the
+/// value type for the EXDATE property.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DateTimeOrDateSeq<F = TimeFormat> {
+    DateTime(Box<[DateTime<F>]>),
+    Date(Box<[Date]>),
+}
+
 impl<F> DateTimeOrDate<F> {
     /// Returns `true` if the date time or date is [`Date`].
     ///
@@ -469,6 +477,14 @@ pub enum RDate<F = TimeFormat> {
     DateTime(DateTime<F>),
     Date(Date),
     Period(Period),
+}
+
+/// A homogeneous sequence of [`RDate`] values.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RDateSeq<F = TimeFormat> {
+    DateTime(Box<[DateTime<F>]>),
+    Date(Box<[Date]>),
+    Period(Box<[Period]>),
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]

@@ -256,12 +256,12 @@ where
     }
 
     if ESCAPED {
-        repeat::<_, _, (), _, _>(1.., alt((text_escape, uri_character.void())))
+        repeat::<_, _, (), _, _>(0.., alt((text_escape, uri_character.void())))
             .take()
             .map(Uri)
             .parse_next(input)
     } else {
-        repeat::<_, _, (), _, _>(1.., uri_character)
+        repeat::<_, _, (), _, _>(0.., uri_character)
             .take()
             .map(Uri)
             .parse_next(input)

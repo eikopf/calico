@@ -21,6 +21,7 @@ pub enum CalendarParseError<S> {
     /// A parameter with a multiplicity less than 2 occurred more than once.
     DuplicateParam(StaticParamName),
     Unexpected(UnexpectedKnownParamError<S>),
+    UnexpectedValueType,
     AttachParam(AttachParamError<S>),
     DtParam(DtParamError<S>),
     RDateParam(RDateParamError<S>),

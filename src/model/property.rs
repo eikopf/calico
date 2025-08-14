@@ -54,6 +54,7 @@ pub struct AttendeeParams<S> {
     pub sent_by: Option<Uri<S>>,
     pub common_name: Option<ParamValue<S>>,
     pub directory_entry_reference: Option<Uri<S>>,
+    pub email: Option<ParamValue<S>>,
 }
 
 impl<S> Default for AttendeeParams<S> {
@@ -70,6 +71,7 @@ impl<S> Default for AttendeeParams<S> {
             sent_by: Default::default(),
             common_name: Default::default(),
             directory_entry_reference: Default::default(),
+            email: Default::default(),
         }
     }
 }
@@ -81,6 +83,7 @@ pub struct OrganizerParams<S> {
     pub sent_by: Option<Uri<S>>,
     pub common_name: Option<ParamValue<S>>,
     pub directory_entry_reference: Option<Uri<S>>,
+    pub email: Option<ParamValue<S>>,
 }
 
 impl<S> Default for OrganizerParams<S> {
@@ -90,6 +93,7 @@ impl<S> Default for OrganizerParams<S> {
             sent_by: Default::default(),
             common_name: Default::default(),
             directory_entry_reference: Default::default(),
+            email: Default::default(),
         }
     }
 }
