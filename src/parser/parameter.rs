@@ -359,7 +359,7 @@ where
         I::Token: AsChar + Clone,
         E: ParserError<I>,
     {
-        repeat(1.., none_of((..' ', '"', ',', ':', ';', '\u{007F}')))
+        repeat(0.., none_of((..' ', '"', ',', ':', ';', '\u{007F}')))
             .map(|()| ())
             .take()
             .parse_next(input)
@@ -373,7 +373,7 @@ where
     {
         delimited(
             '"',
-            repeat(1.., none_of((..' ', '"', '\u{007F}')))
+            repeat(0.., none_of((..' ', '"', '\u{007F}')))
                 .map(|()| ())
                 .take(),
             '"',
