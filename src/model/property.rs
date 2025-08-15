@@ -158,10 +158,30 @@ pub struct ImageParams<S> {
     pub alternate_representation: Option<Uri<S>>,
 }
 
+impl<S> Default for ImageParams<S> {
+    fn default() -> Self {
+        Self {
+            format_type: Default::default(),
+            display: Default::default(),
+            alternate_representation: Default::default(),
+        }
+    }
+}
+
 /// The parameters associated with the CONFERENCE property.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfParams<S> {
-    pub feature_type: Vec<FeatureType<S>>,
-    pub label: Option<S>,
+    pub feature_type: Option<FeatureType<S>>,
+    pub label: Option<ParamValue<S>>,
     pub language: Option<Language<S>>,
+}
+
+impl<S> Default for ConfParams<S> {
+    fn default() -> Self {
+        Self {
+            feature_type: Default::default(),
+            label: Default::default(),
+            language: Default::default(),
+        }
+    }
 }

@@ -37,7 +37,7 @@ use crate::{
         },
         parameter::parameter,
         primitive::{
-            alarm_action, ascii_lower, cal_address, class_value,
+            alarm_action, ascii_lower, cal_address, class_value, color,
             completion_percentage, datetime_utc, duration, float, geo,
             gregorian, iana_token, integer, method, period, priority, status,
             status_code, text, time_transparency, tz_id, uid, utc_offset, v2_0,
@@ -548,6 +548,13 @@ where
         }
     }
 
+    #[derive(Default, PartialEq, Eq)]
+    enum UriOrBinary {
+        #[default]
+        Uri,
+        Binary,
+    }
+
     #[allow(clippy::type_complexity)]
     fn parse_property<I, E, T, S, V>(
         input: &mut I,
@@ -741,13 +748,6 @@ where
                         },
                     )),
                 }
-            }
-
-            #[derive(Default, PartialEq, Eq)]
-            enum UriOrBinary {
-                #[default]
-                Uri,
-                Binary,
             }
 
             let (
@@ -1746,7 +1746,198 @@ where
 
             (Prop::Known(KnownProp::Source(value)), unknown_params)
         }
-        PropName::Rfc7986(name) => todo!(),
+        PropName::Rfc7986(prop @ Rfc7986PropName::Color) => {
+            let (value, (), (), unknown_params) = parse_property(
+                input,
+                trivial_step(PropName::Rfc7986(prop)),
+                only::<I>(ValueType::Text),
+                color,
+            )?;
+
+            (Prop::Known(KnownProp::Color(value)), unknown_params)
+        }
+        PropName::Rfc7986(Rfc7986PropName::Image) => {
+            struct State<S> {
+                params: ImageParams<S>,
+                encoding_found: bool,
+            }
+
+            impl<S> Default for State<S> {
+                fn default() -> Self {
+                    Self {
+                        params: Default::default(),
+                        encoding_found: Default::default(),
+                    }
+                }
+            }
+
+            fn step<S>(
+                param: KnownParam<S>,
+                state: &mut State<S>,
+            ) -> Result<(), CalendarParseError<S>> {
+                let name = param.name();
+
+                match param {
+                    KnownParam::FormatType(format_type) => {
+                        match state.params.format_type {
+                            Some(_) => {
+                                Err(CalendarParseError::DuplicateParam(name))
+                            }
+                            None => {
+                                state.params.format_type = Some(format_type);
+                                Ok(())
+                            }
+                        }
+                    }
+                    KnownParam::AltRep(alternate_representation) => {
+                        match state.params.alternate_representation {
+                            Some(_) => {
+                                Err(CalendarParseError::DuplicateParam(name))
+                            }
+                            None => {
+                                state.params.alternate_representation =
+                                    Some(alternate_representation);
+                                Ok(())
+                            }
+                        }
+                    }
+                    KnownParam::Display(display) => {
+                        match state.params.display {
+                            Some(_) => {
+                                Err(CalendarParseError::DuplicateParam(name))
+                            }
+                            None => {
+                                state.params.display = Some(display);
+                                Ok(())
+                            }
+                        }
+                    }
+                    KnownParam::Encoding(Encoding::Base64) => match state
+                        .encoding_found
+                    {
+                        true => Err(CalendarParseError::DuplicateParam(name)),
+                        false => {
+                            state.encoding_found = true;
+                            Ok(())
+                        }
+                    },
+                    KnownParam::Encoding(Encoding::Bit8) => {
+                        Err(CalendarParseError::AttachParam(
+                            AttachParamError::Bit8Encoding,
+                        ))
+                    }
+                    unexpected_param => Err(CalendarParseError::Unexpected(
+                        UnexpectedKnownParamError {
+                            current_property: PropName::Rfc7986(
+                                Rfc7986PropName::Image,
+                            ),
+                            unexpected_param,
+                        },
+                    )),
+                }
+            }
+
+            let ((), value_type, state, unknown_params) = parse_property(
+                input,
+                step,
+                |v| match v {
+                    Some(ValueType::Uri) => Ok(UriOrBinary::Uri),
+                    Some(ValueType::Binary) => Ok(UriOrBinary::Binary),
+                    Some(_) | None => {
+                        Err(CalendarParseError::UnexpectedValueType)
+                    }
+                },
+                empty,
+            )?;
+
+            let value = match (state.encoding_found, value_type) {
+                (false, UriOrBinary::Uri) => {
+                    uri::<_, _, false>.map(ImageData::Uri).parse_next(input)
+                }
+                (true, UriOrBinary::Binary) => {
+                    binary.map(ImageData::Binary).parse_next(input)
+                }
+                (true, UriOrBinary::Uri) => Err(E::from_external_error(
+                    input,
+                    CalendarParseError::AttachParam(
+                        AttachParamError::EncodingOnUri,
+                    ),
+                )),
+                (false, UriOrBinary::Binary) => Err(E::from_external_error(
+                    input,
+                    CalendarParseError::AttachParam(
+                        AttachParamError::BinaryWithoutEncoding,
+                    ),
+                )),
+            }?;
+
+            (
+                Prop::Known(KnownProp::Image(value, state.params)),
+                unknown_params,
+            )
+        }
+        PropName::Rfc7986(Rfc7986PropName::Conference) => {
+            type State<S> = ConfParams<S>;
+
+            fn step<S>(
+                param: KnownParam<S>,
+                state: &mut State<S>,
+            ) -> Result<(), CalendarParseError<S>> {
+                let name = param.name();
+
+                match param {
+                    KnownParam::Feature(feature_type) => {
+                        match state.feature_type {
+                            Some(_) => {
+                                Err(CalendarParseError::DuplicateParam(name))
+                            }
+                            None => {
+                                state.feature_type = Some(feature_type);
+                                Ok(())
+                            }
+                        }
+                    }
+                    KnownParam::Language(language) => match state.language {
+                        Some(_) => {
+                            Err(CalendarParseError::DuplicateParam(name))
+                        }
+                        None => {
+                            state.language = Some(language);
+                            Ok(())
+                        }
+                    },
+                    KnownParam::Label(label) => match state.label {
+                        Some(_) => {
+                            Err(CalendarParseError::DuplicateParam(name))
+                        }
+                        None => {
+                            state.label = Some(label);
+                            Ok(())
+                        }
+                    },
+                    unexpected_param => Err(CalendarParseError::Unexpected(
+                        UnexpectedKnownParamError {
+                            current_property: PropName::Rfc7986(
+                                Rfc7986PropName::Conference,
+                            ),
+                            unexpected_param,
+                        },
+                    )),
+                }
+            }
+
+            let (value, (), params, unknown_params) = parse_property(
+                input,
+                step,
+                once::<I>(ValueType::Uri),
+                uri::<_, _, false>,
+            )?;
+
+            (
+                Prop::Known(KnownProp::Conference(value, params)),
+                unknown_params,
+            )
+        }
         PropName::Iana(name) => {
             let ((), value_type, params, unknown_params) = parse_property(
                 input,
