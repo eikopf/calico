@@ -3,7 +3,7 @@
 use winnow::{
     Parser,
     ascii::Caseless,
-    combinator::{alt, empty, fail, opt, preceded, repeat, separated},
+    combinator::{alt, empty, opt, preceded, repeat, separated},
     error::{FromExternalError, ParserError},
     stream::{AsBStr, AsChar, Compare, SliceLen, Stream, StreamIsPartial},
     token::none_of,
@@ -37,10 +37,11 @@ use crate::{
         },
         parameter::parameter,
         primitive::{
-            alarm_action, cal_address, class_value, completion_percentage,
-            datetime_utc, duration, float, geo, gregorian, iana_token, integer,
-            method, period, priority, status, status_code, text,
-            time_transparency, tz_id, uid, utc_offset, v2_0, x_name,
+            alarm_action, ascii_lower, cal_address, class_value,
+            completion_percentage, datetime_utc, duration, float, geo,
+            gregorian, iana_token, integer, method, period, priority, status,
+            status_code, text, time_transparency, tz_id, uid, utc_offset, v2_0,
+            x_name,
         },
         rrule::rrule,
     },
@@ -592,6 +593,25 @@ where
     {
         move |v| {
             if v.is_none_or(|v| v == value_type) {
+                Ok(())
+            } else {
+                Err(CalendarParseError::UnexpectedValueType)
+            }
+        }
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn once<I>(
+        value_type: ValueType<I::Slice>,
+    ) -> impl FnOnce(
+        Option<ValueType<I::Slice>>,
+    ) -> Result<(), CalendarParseError<I::Slice>>
+    where
+        I: Stream,
+        I::Slice: Eq,
+    {
+        move |v| {
+            if v.is_some_and(|v| v == value_type) {
                 Ok(())
             } else {
                 Err(CalendarParseError::UnexpectedValueType)
@@ -1690,6 +1710,42 @@ where
                 unknown_params,
             )
         }
+        PropName::Rfc7986(prop @ Rfc7986PropName::Name) => {
+            let (value, (), state, unknown_params) = parse_property(
+                input,
+                text_param_step(PropName::Rfc7986(prop)),
+                only::<I>(ValueType::Text),
+                text,
+            )?;
+
+            (
+                Prop::Known(KnownProp::Name(value, state.into_params())),
+                unknown_params,
+            )
+        }
+        PropName::Rfc7986(prop @ Rfc7986PropName::RefreshInterval) => {
+            let (value, (), (), unknown_params) = parse_property(
+                input,
+                trivial_step(PropName::Rfc7986(prop)),
+                once::<I>(ValueType::Duration),
+                duration,
+            )?;
+
+            (
+                Prop::Known(KnownProp::RefreshInterval(value)),
+                unknown_params,
+            )
+        }
+        PropName::Rfc7986(prop @ Rfc7986PropName::Source) => {
+            let (value, (), (), unknown_params) = parse_property(
+                input,
+                trivial_step(PropName::Rfc7986(prop)),
+                once::<I>(ValueType::Uri),
+                uri::<_, _, false>,
+            )?;
+
+            (Prop::Known(KnownProp::Source(value)), unknown_params)
+        }
         PropName::Rfc7986(name) => todo!(),
         PropName::Iana(name) => {
             let ((), value_type, params, unknown_params) = parse_property(
@@ -1749,156 +1805,178 @@ where
     E: ParserError<I>,
     PropName<I::Slice>: Clone,
 {
-    fn other<I, E>(input: &mut I) -> Result<PropName<I::Slice>, E>
+    use PropName::*;
+    use Rfc5545PropName as PN5545;
+    use Rfc7986PropName as PN7986;
+
+    let checkpoint = input.checkpoint();
+
+    let abandon = |input: &mut I| {
+        input.reset(&checkpoint);
+        alt((x_name.map(X), iana_token.map(Iana))).parse_next(input)
+    };
+
+    fn static_name<I>(input: &mut I) -> Result<PropName<I::Slice>, ()>
     where
-        I: StreamIsPartial + Stream + Compare<char>,
+        I: StreamIsPartial
+            + Stream
+            + Compare<Caseless<&'static str>>
+            + Compare<char>,
         I::Token: AsChar + Clone,
-        E: ParserError<I>,
+        PropName<I::Slice>: Clone,
     {
-        alt((x_name.map(PropName::X), iana_token.map(PropName::Iana)))
-            .parse_next(input)
+        macro_rules! tail {
+            ($s:literal, $c:expr) => {
+                Caseless($s).value($c).parse_next(input)
+            };
+        }
+
+        match ascii_lower.parse_next(input)? {
+            'a' => match ascii_lower.parse_next(input)? {
+                'c' => tail!("tion", Rfc5545(PN5545::Action)),
+                't' => {
+                    match preceded(Caseless("t"), ascii_lower)
+                        .parse_next(input)?
+                    {
+                        'a' => tail!("ch", Rfc5545(PN5545::Attachment)),
+                        'e' => tail!("ndee", Rfc5545(PN5545::Attendee)),
+                        _ => Err(()),
+                    }
+                }
+                _ => Err(()),
+            },
+            'c' => match ascii_lower.parse_next(input)? {
+                'a' => match ascii_lower.parse_next(input)? {
+                    'l' => tail!("scale", Rfc5545(PN5545::CalendarScale)),
+                    't' => tail!("egories", Rfc5545(PN5545::Categories)),
+                    _ => Err(()),
+                },
+                'l' => tail!("ass", Rfc5545(PN5545::Classification)),
+                'o' => match ascii_lower.parse_next(input)? {
+                    'l' => tail!("or", Rfc7986(PN7986::Color)),
+                    'm' => match ascii_lower.parse_next(input)? {
+                        'm' => tail!("ent", Rfc5545(PN5545::Comment)),
+                        'p' => {
+                            tail!("leted", Rfc5545(PN5545::DateTimeCompleted))
+                        }
+                        _ => Err(()),
+                    },
+                    'n' => match ascii_lower.parse_next(input)? {
+                        'f' => tail!("erence", Rfc7986(PN7986::Conference)),
+                        't' => tail!("act", Rfc5545(PN5545::Contact)),
+                        _ => Err(()),
+                    },
+                    _ => Err(()),
+                },
+                'r' => tail!("eated", Rfc5545(PN5545::DateTimeCreated)),
+                _ => Err(()),
+            },
+            'd' => match ascii_lower.parse_next(input)? {
+                'e' => tail!("scription", Rfc5545(PN5545::Description)),
+                't' => match ascii_lower.parse_next(input)? {
+                    'e' => tail!("nd", Rfc5545(PN5545::DateTimeEnd)),
+                    's' => match preceded(Caseless("ta"), ascii_lower)
+                        .parse_next(input)?
+                    {
+                        'm' => tail!("p", Rfc5545(PN5545::DateTimeStamp)),
+                        'r' => tail!("t", Rfc5545(PN5545::DateTimeStart)),
+                        _ => Err(()),
+                    },
+                    _ => Err(()),
+                },
+                'u' => match ascii_lower.parse_next(input)? {
+                    'e' => tail!("", Rfc5545(PN5545::DateTimeDue)),
+                    'r' => tail!("ation", Rfc5545(PN5545::Duration)),
+                    _ => Err(()),
+                },
+                _ => Err(()),
+            },
+            'e' => tail!("xdate", Rfc5545(PN5545::ExceptionDateTimes)),
+            'f' => tail!("reebusy", Rfc5545(PN5545::FreeBusyTime)),
+            'g' => tail!("eo", Rfc5545(PN5545::GeographicPosition)),
+            'i' => tail!("mage", Rfc7986(PN7986::Image)),
+            'l' => match ascii_lower.parse_next(input)? {
+                'a' => tail!("st-modified", Rfc5545(PN5545::LastModified)),
+                'o' => tail!("cation", Rfc5545(PN5545::Location)),
+                _ => Err(()),
+            },
+            'm' => tail!("ethod", Rfc5545(PN5545::Method)),
+            'n' => tail!("ame", Rfc7986(PN7986::Name)),
+            'o' => tail!("rganizer", Rfc5545(PN5545::Organizer)),
+            'p' => match ascii_lower.parse_next(input)? {
+                'e' => {
+                    tail!("rcent-complete", Rfc5545(PN5545::PercentComplete))
+                }
+                // PRIORITY | PRODID
+                'r' => match ascii_lower.parse_next(input)? {
+                    'i' => tail!("ority", Rfc5545(PN5545::Priority)),
+                    'o' => tail!("did", Rfc5545(PN5545::ProductIdentifier)),
+                    _ => Err(()),
+                },
+                _ => Err(()),
+            },
+            'r' => match ascii_lower.parse_next(input)? {
+                'e' => match ascii_lower.parse_next(input)? {
+                    'c' => tail!("urrence-id", Rfc5545(PN5545::RecurrenceId)),
+                    'f' => {
+                        tail!("resh-interval", Rfc7986(PN7986::RefreshInterval))
+                    }
+                    'l' => tail!("ated-to", Rfc5545(PN5545::RelatedTo)),
+                    'p' => tail!("eat", Rfc5545(PN5545::RepeatCount)),
+                    'q' => tail!("uest-status", Rfc5545(PN5545::RequestStatus)),
+                    's' => tail!("ources", Rfc5545(PN5545::Resources)),
+                    _ => Err(()),
+                },
+                'd' => tail!("ate", Rfc5545(PN5545::RecurrenceDateTimes)),
+                'r' => tail!("ule", Rfc5545(PN5545::RecurrenceRule)),
+                _ => Err(()),
+            },
+            's' => match ascii_lower.parse_next(input)? {
+                'e' => tail!("quence", Rfc5545(PN5545::SequenceNumber)),
+                'o' => tail!("urce", Rfc7986(PN7986::Source)),
+                't' => tail!("atus", Rfc5545(PN5545::Status)),
+                'u' => tail!("mmary", Rfc5545(PN5545::Summary)),
+                _ => Err(()),
+            },
+            't' => match ascii_lower.parse_next(input)? {
+                // TRIGGER | TRANSP
+                'r' => match ascii_lower.parse_next(input)? {
+                    'a' => tail!("nsp", Rfc5545(PN5545::TimeTransparency)),
+                    'i' => tail!("gger", Rfc5545(PN5545::Trigger)),
+                    _ => Err(()),
+                },
+                // TZOFFSETFROM | TZOFFSETTO | TZNAME | TZURL | TZID
+                'z' => match ascii_lower.parse_next(input)? {
+                    'i' => tail!("d", Rfc5545(PN5545::TimeZoneIdentifier)),
+                    'n' => tail!("ame", Rfc5545(PN5545::TimeZoneName)),
+                    // TZOFFSETFROM | TZOFFSETTO
+                    'o' => match preceded(Caseless("ffset"), ascii_lower)
+                        .parse_next(input)?
+                    {
+                        'f' => {
+                            tail!("rom", Rfc5545(PN5545::TimeZoneOffsetFrom))
+                        }
+                        't' => tail!("o", Rfc5545(PN5545::TimeZoneOffsetTo)),
+                        _ => Err(()),
+                    },
+                    'u' => tail!("rl", Rfc5545(PN5545::TimeZoneUrl)),
+                    _ => Err(()),
+                },
+                _ => Err(()),
+            },
+            'u' => match ascii_lower.parse_next(input)? {
+                'i' => tail!("d", Rfc5545(PN5545::UniqueIdentifier)),
+                'r' => tail!("l", Rfc5545(PN5545::UniformResourceLocator)),
+                _ => Err(()),
+            },
+            'v' => tail!("ersion", Rfc5545(PN5545::Version)),
+            _ => Err(()),
+        }
     }
 
-    macro_rules! keywords {
-        ($name:ident; $($kw:literal => $val:expr),*) => {
-            fn $name<I, E>(input: &mut I) -> Result<PropName<I::Slice>, E>
-            where
-                I: StreamIsPartial
-                    + Stream
-                    + Compare<Caseless<&'static str>>
-                    + Compare<char>,
-                I::Token: AsChar + Clone,
-                E: ParserError<I>,
-                PropName<I::Slice>: Clone,
-            {
-                alt(($(Caseless($kw).value($val),)* other)).parse_next(input)
-            }
-        };
-    }
-
-    keywords! {a_names;
-        "ATTENDEE" => PropName::Rfc5545(Rfc5545PropName::Attendee),
-        "ATTACH"   => PropName::Rfc5545(Rfc5545PropName::Attachment),
-        "ACTION"   => PropName::Rfc5545(Rfc5545PropName::Action)
-    }
-
-    keywords! {c_names;
-        "CONFERENCE" => PropName::Rfc7986(Rfc7986PropName::Conference),
-        "CATEGORIES" => PropName::Rfc5545(Rfc5545PropName::Categories),
-        "COMPLETED"  => PropName::Rfc5545(Rfc5545PropName::DateTimeCompleted),
-        "CALSCALE"   => PropName::Rfc5545(Rfc5545PropName::CalendarScale),
-        "CONTACT"    => PropName::Rfc5545(Rfc5545PropName::Contact),
-        "CREATED"    => PropName::Rfc5545(Rfc5545PropName::DateTimeCreated),
-        "COMMENT"    => PropName::Rfc5545(Rfc5545PropName::Comment),
-        "COLOR"      => PropName::Rfc7986(Rfc7986PropName::Color),
-        "CLASS"      => PropName::Rfc5545(Rfc5545PropName::Classification)
-    }
-
-    keywords! {d_names;
-        "DESCRIPTION" => PropName::Rfc5545(Rfc5545PropName::Description),
-        "DURATION"    => PropName::Rfc5545(Rfc5545PropName::Duration),
-        "DTSTART"     => PropName::Rfc5545(Rfc5545PropName::DateTimeStart),
-        "DTSTAMP"     => PropName::Rfc5545(Rfc5545PropName::DateTimeStamp),
-        "DTEND"       => PropName::Rfc5545(Rfc5545PropName::DateTimeEnd),
-        "DUE"         => PropName::Rfc5545(Rfc5545PropName::DateTimeDue)
-    }
-
-    keywords! {e_names;
-        "EXDATE" => PropName::Rfc5545(Rfc5545PropName::ExceptionDateTimes)
-    }
-
-    keywords! {f_names;
-        "FREEBUSY" => PropName::Rfc5545(Rfc5545PropName::FreeBusyTime)
-    }
-
-    keywords! {g_names;
-        "GEO" => PropName::Rfc5545(Rfc5545PropName::GeographicPosition)
-    }
-
-    keywords! {i_names;
-        "IMAGE" => PropName::Rfc7986(Rfc7986PropName::Image)
-    }
-
-    keywords! {l_names;
-        "LAST-MODIFIED" => PropName::Rfc5545(Rfc5545PropName::LastModified),
-        "LOCATION"      => PropName::Rfc5545(Rfc5545PropName::Location)
-    }
-
-    keywords! {m_names;
-        "METHOD" => PropName::Rfc5545(Rfc5545PropName::Method)
-    }
-
-    keywords! {n_names;
-        "NAME" => PropName::Rfc7986(Rfc7986PropName::Name)
-    }
-
-    keywords! {o_names;
-        "ORGANIZER" => PropName::Rfc5545(Rfc5545PropName::Organizer)
-    }
-
-    keywords! {p_names;
-        "PERCENT-COMPLETE" => PropName::Rfc5545(Rfc5545PropName::PercentComplete),
-        "PRIORITY"         => PropName::Rfc5545(Rfc5545PropName::Priority),
-        "PRODID"           => PropName::Rfc5545(Rfc5545PropName::ProductIdentifier)
-    }
-
-    keywords! {r_names;
-        "REFRESH-INTERVAL" => PropName::Rfc7986(Rfc7986PropName::RefreshInterval),
-        "REQUEST-STATUS"   => PropName::Rfc5545(Rfc5545PropName::RequestStatus),
-        "RECURRENCE-ID"    => PropName::Rfc5545(Rfc5545PropName::RecurrenceId),
-        "RELATED-TO"       => PropName::Rfc5545(Rfc5545PropName::RelatedTo),
-        "RESOURCES"        => PropName::Rfc5545(Rfc5545PropName::Resources),
-        "REPEAT"           => PropName::Rfc5545(Rfc5545PropName::RepeatCount),
-        "RDATE"            => PropName::Rfc5545(Rfc5545PropName::RecurrenceDateTimes),
-        "RRULE"            => PropName::Rfc5545(Rfc5545PropName::RecurrenceRule)
-    }
-
-    keywords! {s_names;
-        "SEQUENCE" => PropName::Rfc5545(Rfc5545PropName::SequenceNumber),
-        "SUMMARY"  => PropName::Rfc5545(Rfc5545PropName::Summary),
-        "STATUS"   => PropName::Rfc5545(Rfc5545PropName::Status),
-        "SOURCE"   => PropName::Rfc7986(Rfc7986PropName::Source)
-    }
-
-    keywords! {t_names;
-        "TZOFFSETFROM" => PropName::Rfc5545(Rfc5545PropName::TimeZoneOffsetFrom),
-        "TZOFFSETTO"   => PropName::Rfc5545(Rfc5545PropName::TimeZoneOffsetTo),
-        "TRIGGER"      => PropName::Rfc5545(Rfc5545PropName::Trigger),
-        "TZNAME"       => PropName::Rfc5545(Rfc5545PropName::TimeZoneName),
-        "TRANSP"       => PropName::Rfc5545(Rfc5545PropName::TimeTransparency),
-        "TZURL"        => PropName::Rfc5545(Rfc5545PropName::TimeZoneUrl),
-        "TZID"         => PropName::Rfc5545(Rfc5545PropName::TimeZoneIdentifier)
-    }
-
-    keywords! {u_names;
-        "URL" => PropName::Rfc5545(Rfc5545PropName::UniformResourceLocator),
-        "UID" => PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier)
-    }
-
-    keywords! {v_names;
-        "VERSION" => PropName::Rfc5545(Rfc5545PropName::Version)
-    }
-
-    match input.peek_token().map(AsChar::as_char) {
-        Some('A' | 'a') => a_names.parse_next(input),
-        Some('C' | 'c') => c_names.parse_next(input),
-        Some('D' | 'd') => d_names.parse_next(input),
-        Some('E' | 'e') => e_names.parse_next(input),
-        Some('F' | 'f') => f_names.parse_next(input),
-        Some('G' | 'g') => g_names.parse_next(input),
-        Some('I' | 'i') => i_names.parse_next(input),
-        Some('L' | 'l') => l_names.parse_next(input),
-        Some('M' | 'm') => m_names.parse_next(input),
-        Some('N' | 'n') => n_names.parse_next(input),
-        Some('O' | 'o') => o_names.parse_next(input),
-        Some('P' | 'p') => p_names.parse_next(input),
-        Some('R' | 'r') => r_names.parse_next(input),
-        Some('S' | 's') => s_names.parse_next(input),
-        Some('T' | 't') => t_names.parse_next(input),
-        Some('U' | 'u') => u_names.parse_next(input),
-        Some('V' | 'v') => v_names.parse_next(input),
-        Some(_) => other.parse_next(input),
-        None => fail.parse_next(input),
+    match static_name.parse_next(input) {
+        Ok(res) => Ok(res),
+        Err(()) => abandon(input),
     }
 }
 
