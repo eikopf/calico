@@ -16,9 +16,11 @@
 //! the `=` character.
 
 use winnow::{
-    ModalResult, Parser,
+    Parser,
     ascii::Caseless,
-    combinator::{alt, delimited, opt, repeat, separated, terminated},
+    combinator::{
+        alt, delimited, opt, preceded, repeat, separated, terminated,
+    },
     error::ParserError,
     stream::{AsChar, Compare, SliceLen, Stream, StreamIsPartial},
     token::none_of,
@@ -36,9 +38,10 @@ use crate::{
         },
     },
     parser::primitive::{
-        alarm_trigger_relationship, bool_caseless, feature_type, format_type,
-        free_busy_type, inline_encoding, language, participation_role,
-        participation_status, relationship_type, uri, value_type,
+        alarm_trigger_relationship, ascii_lower, bool_caseless, feature_type,
+        format_type, free_busy_type, inline_encoding, language,
+        participation_role, participation_status, relationship_type, uri,
+        value_type,
     },
 };
 
@@ -212,15 +215,6 @@ where
     }
 }
 
-/// Parses a [`StaticParamName`].
-pub fn static_param_name(input: &mut &str) -> ModalResult<StaticParamName> {
-    alt((
-        rfc5545_param_name.map(StaticParamName::Rfc5545),
-        rfc7986_param_name.map(StaticParamName::Rfc7986),
-    ))
-    .parse_next(input)
-}
-
 /// Parses a [`ParamName`].
 pub fn param_name<I, E>(input: &mut I) -> Result<ParamName<I::Slice>, E>
 where
@@ -231,65 +225,108 @@ where
     I::Token: AsChar + Clone,
     E: ParserError<I>,
 {
-    // NOTE: there's an obvious optimisation here where we go character by
-    // character until either it must be a known static name, or else it must
-    // be an unknown name (or an error). i think regex-automata could help with
-    // implementing this, but it's probably unnecessary until we have benchmarks
+    fn static_name<I>(input: &mut I) -> Result<StaticParamName, ()>
+    where
+        I: StreamIsPartial
+            + Stream
+            + Compare<Caseless<&'static str>>
+            + Compare<char>,
+        I::Token: AsChar + Clone,
+    {
+        use Rfc5545ParamName as PN5545;
+        use Rfc7986ParamName as PN7986;
+        use StaticParamName::*;
 
-    alt((
-        rfc5545_param_name.map(ParamName::Rfc5545),
-        rfc7986_param_name.map(ParamName::Rfc7986),
-        x_name.map(ParamName::X),
-        iana_token.map(ParamName::Iana),
-    ))
-    .parse_next(input)
-}
+        macro_rules! tail {
+            ($s:literal, $c:expr) => {
+                Caseless($s).value($c).parse_next(input)
+            };
+        }
 
-/// Parses an [`Rfc5545ParamName`].
-pub fn rfc5545_param_name<I, E>(input: &mut I) -> Result<Rfc5545ParamName, E>
-where
-    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
-    E: ParserError<I>,
-{
-    alt((
-        // RFC 5545
-        Caseless("ALTREP").value(Rfc5545ParamName::AlternateTextRepresentation),
-        Caseless("CN").value(Rfc5545ParamName::CommonName),
-        Caseless("CUTYPE").value(Rfc5545ParamName::CalendarUserType),
-        Caseless("DELEGATED-FROM").value(Rfc5545ParamName::Delegators),
-        Caseless("DELEGATED-TO").value(Rfc5545ParamName::Delegatees),
-        Caseless("DIR").value(Rfc5545ParamName::DirectoryEntryReference),
-        Caseless("ENCODING").value(Rfc5545ParamName::InlineEncoding),
-        Caseless("FMTTYPE").value(Rfc5545ParamName::FormatType),
-        Caseless("FBTYPE").value(Rfc5545ParamName::FreeBusyTimeType),
-        Caseless("LANGUAGE").value(Rfc5545ParamName::Language),
-        Caseless("MEMBER").value(Rfc5545ParamName::GroupOrListMembership),
-        Caseless("PARTSTAT").value(Rfc5545ParamName::ParticipationStatus),
-        Caseless("RANGE").value(Rfc5545ParamName::RecurrenceIdentifierRange),
-        Caseless("RELATED").value(Rfc5545ParamName::AlarmTriggerRelationship),
-        Caseless("RELTYPE").value(Rfc5545ParamName::RelationshipType),
-        Caseless("ROLE").value(Rfc5545ParamName::ParticipationRole),
-        Caseless("RSVP").value(Rfc5545ParamName::RsvpExpectation),
-        Caseless("SENT-BY").value(Rfc5545ParamName::SentBy),
-        Caseless("TZID").value(Rfc5545ParamName::TimeZoneIdentifier),
-        Caseless("VALUE").value(Rfc5545ParamName::ValueDataType),
-    ))
-    .parse_next(input)
-}
+        match ascii_lower.parse_next(input)? {
+            'a' => tail!("ltrep", Rfc5545(PN5545::AlternateTextRepresentation)),
+            // CN | CUTYPE
+            'c' => match ascii_lower.parse_next(input)? {
+                'n' => tail!("", Rfc5545(PN5545::CommonName)),
+                'u' => tail!("type", Rfc5545(PN5545::CalendarUserType)),
+                _ => Err(()),
+            },
+            // DELEGATED-FROM | DELEGATED-TO | DIR | DISPLAY
+            'd' => match ascii_lower.parse_next(input)? {
+                // DELEGATED-FROM | DELEGATED-TO
+                'e' => match preceded(Caseless("legated-"), ascii_lower)
+                    .parse_next(input)?
+                {
+                    'f' => tail!("rom", Rfc5545(PN5545::Delegators)),
+                    't' => tail!("o", Rfc5545(PN5545::Delegatees)),
+                    _ => Err(()),
+                },
+                // DIR | DISPLAY
+                'i' => match ascii_lower.parse_next(input)? {
+                    'r' => tail!("", Rfc5545(PN5545::DirectoryEntryReference)),
+                    's' => tail!("play", Rfc7986(PN7986::Display)),
+                    _ => Err(()),
+                },
+                _ => Err(()),
+            },
+            // ENCODING | EMAIL
+            'e' => match ascii_lower.parse_next(input)? {
+                'm' => tail!("ail", Rfc7986(PN7986::Email)),
+                'n' => tail!("coding", Rfc5545(PN5545::InlineEncoding)),
+                _ => Err(()),
+            },
+            // FMTTYPE | FBTYPE | FEATURE
+            'f' => match ascii_lower.parse_next(input)? {
+                'b' => tail!("type", Rfc5545(PN5545::FreeBusyTimeType)),
+                'e' => tail!("ature", Rfc7986(PN7986::Feature)),
+                'm' => tail!("ttype", Rfc5545(PN5545::FormatType)),
+                _ => Err(()),
+            },
+            // LABEL | LANGUAGE
+            'l' => {
+                match preceded(Caseless("a"), ascii_lower).parse_next(input)? {
+                    'b' => tail!("el", Rfc7986(PN7986::Label)),
+                    'n' => tail!("guage", Rfc5545(PN5545::Language)),
+                    _ => Err(()),
+                }
+            }
+            'm' => tail!("ember", Rfc5545(PN5545::GroupOrListMembership)),
+            'p' => tail!("artstat", Rfc5545(PN5545::ParticipationStatus)),
+            // RANGE | RELATED | RELTYPE | ROLE | RSVP
+            'r' => match ascii_lower.parse_next(input)? {
+                'a' => tail!("nge", Rfc5545(PN5545::RecurrenceIdentifierRange)),
+                // RELATED | RELTYPE
+                'e' => match preceded(Caseless("l"), ascii_lower)
+                    .parse_next(input)?
+                {
+                    'a' => {
+                        tail!("ted", Rfc5545(PN5545::AlarmTriggerRelationship))
+                    }
+                    't' => tail!("ype", Rfc5545(PN5545::RelationshipType)),
+                    _ => Err(()),
+                },
+                'o' => tail!("le", Rfc5545(PN5545::ParticipationRole)),
+                's' => tail!("vp", Rfc5545(PN5545::RsvpExpectation)),
+                _ => Err(()),
+            },
+            's' => tail!("ent-by", Rfc5545(PN5545::SentBy)),
+            't' => tail!("zid", Rfc5545(PN5545::TimeZoneIdentifier)),
+            'v' => tail!("alue", Rfc5545(PN5545::ValueDataType)),
+            _ => Err(()),
+        }
+    }
 
-/// Parses an [`Rfc7986ParamName`].
-pub fn rfc7986_param_name<I, E>(input: &mut I) -> Result<Rfc7986ParamName, E>
-where
-    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
-    E: ParserError<I>,
-{
-    alt((
-        Caseless("DISPLAY").value(Rfc7986ParamName::Display),
-        Caseless("EMAIL").value(Rfc7986ParamName::Email),
-        Caseless("FEATURE").value(Rfc7986ParamName::Feature),
-        Caseless("LABEL").value(Rfc7986ParamName::Label),
-    ))
-    .parse_next(input)
+    let checkpoint = input.checkpoint();
+
+    match static_name.parse_next(input) {
+        Ok(StaticParamName::Rfc5545(name)) => Ok(ParamName::Rfc5545(name)),
+        Ok(StaticParamName::Rfc7986(name)) => Ok(ParamName::Rfc7986(name)),
+        Err(()) => {
+            input.reset(&checkpoint);
+            alt((x_name.map(ParamName::X), iana_token.map(ParamName::Iana)))
+                .parse_next(input)
+        }
+    }
 }
 
 /// A parameter value string, which may either be [`Safe`] or [`Quoted`].
