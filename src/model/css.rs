@@ -1,7 +1,8 @@
 //! CSS3 color names.
 
 /// CSS3 colors as defined by [the W3C recommendation.](https://www.w3.org/TR/css-color-3/)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(u8)]
 pub enum Css3Color {
     AliceBlue,
     AntiqueWhite,
@@ -153,6 +154,16 @@ pub enum Css3Color {
 }
 
 impl Css3Color {
+    pub fn iter() -> impl ExactSizeIterator<Item = Self> {
+        let max = Self::YellowGreen as u8;
+
+        (0..=max).map(|i| {
+            // SAFETY: the range 0..=max is exactly the range of valid
+            // discriminants for Css3Color.
+            unsafe { std::mem::transmute::<u8, Self>(i) }
+        })
+    }
+
     /// Returns the CSS3 color keyword corresponding to `self`.
     pub const fn as_str(&self) -> &'static str {
         match self {

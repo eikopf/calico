@@ -5,7 +5,7 @@ use winnow::{
     Parser,
     ascii::{Caseless, digit0, digit1},
     combinator::{
-        alt, delimited, empty, opt, preceded, repeat, separated_pair,
+        alt, delimited, empty, fail, opt, preceded, repeat, separated_pair,
         terminated, trace,
     },
     error::{FromExternalError, ParserError},
@@ -13,15 +13,18 @@ use winnow::{
     token::{any, none_of, one_of, take_while},
 };
 
-use crate::model::primitive::{
-    AlarmAction, BinaryText, CalAddress, CalendarUserType, ClassValue,
-    CompletionPercentage, Date, DateTime, DateTimeOrDate, DisplayType,
-    Duration, DurationKind, DurationTime, Encoding, FeatureType, Float,
-    FormatType, FreeBusyType, Geo, GeoComponent, Integer, IsoWeek, Language,
-    Method, ParticipationRole, ParticipationStatus, Period, Priority, RawTime,
-    RelationshipType, RequestStatusCode, Sign, Status, Text, Time, TimeFormat,
-    TimeTransparency, TriggerRelation, TzId, Uid, Uri, Utc, UtcOffset,
-    ValueType,
+use crate::model::{
+    css::Css3Color,
+    primitive::{
+        AlarmAction, BinaryText, CalAddress, CalendarUserType, ClassValue,
+        CompletionPercentage, Date, DateTime, DateTimeOrDate, DisplayType,
+        Duration, DurationKind, DurationTime, Encoding, FeatureType, Float,
+        FormatType, FreeBusyType, Geo, GeoComponent, Integer, IsoWeek,
+        Language, Method, ParticipationRole, ParticipationStatus, Period,
+        Priority, RawTime, RelationshipType, RequestStatusCode, Sign, Status,
+        Text, Time, TimeFormat, TimeTransparency, TriggerRelation, TzId, Uid,
+        Uri, Utc, UtcOffset, ValueType,
+    },
 };
 
 use super::error::{
@@ -1257,6 +1260,347 @@ where
         .parse_next(input)
 }
 
+pub fn color<I, E>(input: &mut I) -> Result<Css3Color, E>
+where
+    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
+    I::Token: AsChar + Clone,
+    E: ParserError<I>,
+{
+    use Css3Color as C;
+
+    macro_rules! tail {
+        ($s:literal, $o:literal, $first:path, $second:path) => {{
+            let _ = Caseless($s).parse_next(input)?;
+            let end = opt(Caseless($o)).parse_next(input)?;
+
+            match end {
+                None => Ok($first),
+                Some(_) => Ok($second),
+            }
+        }};
+        ($s:literal, $c:path) => {
+            Caseless($s).value($c).parse_next(input)
+        };
+        ($c:path) => {
+            empty.value($c).parse_next(input)
+        };
+    }
+
+    let prefix = (ascii_lower, ascii_lower, ascii_lower)
+        .map(|(a, b, c)| [a, b, c])
+        .parse_next(input)?;
+
+    match prefix {
+        ['a', 'l', 'i'] => tail!("ceblue", C::AliceBlue),
+        ['a', 'n', 't'] => tail!("iquewhite", C::AntiqueWhite),
+        ['a', 'q', 'u'] => tail!("a", "marine", C::Aqua, C::Aquamarine),
+        ['a', 'z', 'u'] => tail!("re", C::Azure),
+        ['b', 'e', 'i'] => tail!("ge", C::Beige),
+        ['b', 'i', 's'] => tail!("que", C::Bisque),
+        // black | blanchedalmond
+        ['b', 'l', 'a'] => match ascii_lower.parse_next(input)? {
+            'c' => tail!("k", C::Black),
+            'n' => tail!("chedalmond", C::BlanchedAlmond),
+            _ => fail.parse_next(input),
+        },
+        ['b', 'l', 'u'] => tail!("e", "violet", C::Blue, C::BlueViolet),
+        ['b', 'r', 'o'] => tail!("wn", C::Brown),
+        ['b', 'u', 'r'] => tail!("lywood", C::BurlyWood),
+        ['c', 'a', 'd'] => tail!("etblue", C::CadetBlue),
+        ['c', 'h', 'a'] => tail!("rtreuse", C::Chartreuse),
+        ['c', 'h', 'o'] => tail!("colate", C::Chocolate),
+        // coral | cornflowerblue | cornsilk
+        ['c', 'o', 'r'] => match ascii_lower.parse_next(input)? {
+            'a' => tail!("l", C::Coral),
+            'n' => match ascii_lower.parse_next(input)? {
+                'f' => tail!("lowerblue", C::CornflowerBlue),
+                's' => tail!("ilk", C::Cornsilk),
+                _ => fail.parse_next(input),
+            },
+            _ => fail.parse_next(input),
+        },
+        ['c', 'r', 'i'] => tail!("mson", C::Crimson),
+        ['c', 'y', 'a'] => tail!("n", C::Cyan),
+        // dark* colors
+        ['d', 'a', 'r'] => {
+            match preceded(Caseless("k"), ascii_lower).parse_next(input)? {
+                'b' => tail!("lue", C::DarkBlue),
+                'c' => tail!("yan", C::DarkCyan),
+                // goldenrod | gray | grey | green
+                'g' => match ascii_lower.parse_next(input)? {
+                    'o' => tail!("ldenrod", C::DarkGoldenRod),
+                    // gray | grey | green
+                    'r' => match ascii_lower.parse_next(input)? {
+                        'a' => tail!("y", C::DarkGray),
+                        // grey | green
+                        'e' => match ascii_lower.parse_next(input)? {
+                            'y' => tail!(C::DarkGrey),
+                            'e' => tail!("n", C::DarkGreen),
+                            _ => fail.parse_next(input),
+                        },
+                        _ => fail.parse_next(input),
+                    },
+                    _ => fail.parse_next(input),
+                },
+                'k' => tail!("haki", C::DarkKhaki),
+                'm' => tail!("agenta", C::DarkMagenta),
+                // olivegreen | orange | orchid
+                'o' => match ascii_lower.parse_next(input)? {
+                    'l' => tail!("ivegreen", C::DarkOliveGreen),
+                    // orange | orchid
+                    'r' => match ascii_lower.parse_next(input)? {
+                        'a' => tail!("nge", C::DarkOrange),
+                        'c' => tail!("hid", C::DarkOrchid),
+                        _ => fail.parse_next(input),
+                    },
+                    _ => fail.parse_next(input),
+                },
+                'r' => tail!("ed", C::DarkRed),
+                // salmon | seagreen | slateblue | slategray | slategrey
+                's' => match ascii_lower.parse_next(input)? {
+                    'a' => tail!("lmon", C::DarkSalmon),
+                    'e' => tail!("agreen", C::DarkSeaGreen),
+                    // slateblue | slategray | slategrey
+                    'l' => match preceded(Caseless("ate"), ascii_lower)
+                        .parse_next(input)?
+                    {
+                        'b' => tail!("lue", C::DarkSlateBlue),
+                        // slategray | slategrey
+                        'g' => match preceded(Caseless("r"), ascii_lower)
+                            .parse_next(input)?
+                        {
+                            'a' => tail!("y", C::DarkSlateGray),
+                            'e' => tail!("y", C::DarkSlateGrey),
+                            _ => fail.parse_next(input),
+                        },
+                        _ => fail.parse_next(input),
+                    },
+                    _ => fail.parse_next(input),
+                },
+                't' => tail!("urquoise", C::DarkTurquoise),
+                'v' => tail!("iolet", C::DarkViolet),
+                _ => fail.parse_next(input),
+            }
+        }
+        // deeppink | deepskyblue
+        ['d', 'e', 'e'] => {
+            match preceded(Caseless("p"), ascii_lower).parse_next(input)? {
+                'p' => tail!("ink", C::DeepPink),
+                's' => tail!("kyblue", C::DeepSkyBlue),
+                _ => fail.parse_next(input),
+            }
+        }
+        // dimgray | dimgrey
+        ['d', 'i', 'm'] => {
+            match preceded(Caseless("gr"), ascii_lower).parse_next(input)? {
+                'a' => tail!("y", C::DimGray),
+                'e' => tail!("y", C::DimGrey),
+                _ => fail.parse_next(input),
+            }
+        }
+        ['d', 'o', 'd'] => tail!("gerblue", C::DodgerBlue),
+        ['f', 'i', 'r'] => tail!("ebrick", C::FireBrick),
+        ['f', 'l', 'o'] => tail!("ralwhite", C::FloralWhite),
+        ['f', 'o', 'r'] => tail!("estgreen", C::ForestGreen),
+        ['f', 'u', 'c'] => tail!("hsia", C::Fuchsia),
+        ['g', 'a', 'i'] => tail!("nsboro", C::Gainsboro),
+        ['g', 'h', 'o'] => tail!("stwhite", C::GhostWhite),
+        // gold | goldenrod
+        ['g', 'o', 'l'] => tail!("d", "enrod", C::Gold, C::GoldenRod),
+        ['g', 'r', 'a'] => tail!("y", C::Gray),
+        // grey | green | greenyellow
+        ['g', 'r', 'e'] => match ascii_lower.parse_next(input)? {
+            'y' => tail!(C::Grey),
+            'e' => tail!("n", "yellow", C::Green, C::GreenYellow),
+            _ => fail.parse_next(input),
+        },
+        ['h', 'o', 'n'] => tail!("eydew", C::HoneyDew),
+        ['h', 'o', 't'] => tail!("pink", C::HotPink),
+        // indianred | indigo
+        ['i', 'n', 'd'] => {
+            match preceded(Caseless("i"), ascii_lower).parse_next(input)? {
+                'a' => tail!("nred", C::IndianRed),
+                'g' => tail!("o", C::Indigo),
+                _ => fail.parse_next(input),
+            }
+        }
+        ['i', 'v', 'o'] => tail!("ry", C::Ivory),
+        ['k', 'h', 'a'] => tail!("ki", C::Khaki),
+        // lavender | lavenderblush
+        ['l', 'a', 'v'] => {
+            tail!("ender", "blush", C::Lavender, C::LavenderBlush)
+        }
+        ['l', 'a', 'w'] => tail!("ngreen", C::LawnGreen),
+        ['l', 'e', 'm'] => tail!("onchiffon", C::LemonChiffon),
+        // light* colors
+        ['l', 'i', 'g'] => {
+            match preceded(Caseless("ht"), ascii_lower).parse_next(input)? {
+                'b' => tail!("lue", C::LightBlue),
+                // coral | cyan
+                'c' => match ascii_lower.parse_next(input)? {
+                    'o' => tail!("ral", C::LightCoral),
+                    'y' => tail!("an", C::LightCyan),
+                    _ => fail.parse_next(input),
+                },
+                // goldenrodyellow | gray | grey | green
+                'g' => match ascii_lower.parse_next(input)? {
+                    'o' => tail!("ldenrodyellow", C::LightGoldenRodYellow),
+                    // gray | grey | green
+                    'r' => match ascii_lower.parse_next(input)? {
+                        'a' => tail!("y", C::LightGray),
+                        // grey | green
+                        'e' => match ascii_lower.parse_next(input)? {
+                            'e' => tail!("n", C::LightGreen),
+                            'y' => tail!(C::LightGrey),
+                            _ => fail.parse_next(input),
+                        },
+                        _ => fail.parse_next(input),
+                    },
+                    _ => fail.parse_next(input),
+                },
+                'p' => tail!("ink", C::LightPink),
+                // salmon | seagreen | skyblue | slategray | slategrey | steelblue
+                's' => match ascii_lower.parse_next(input)? {
+                    'a' => tail!("lmon", C::LightSalmon),
+                    'e' => tail!("agreen", C::LightSeaGreen),
+                    'k' => tail!("yblue", C::LightSkyBlue),
+                    // slategray | slategrey
+                    'l' => match preceded(Caseless("ategr"), ascii_lower)
+                        .parse_next(input)?
+                    {
+                        'a' => tail!("y", C::LightSlateGray),
+                        'e' => tail!("y", C::LightSlateGrey),
+                        _ => fail.parse_next(input),
+                    },
+                    't' => tail!("eelblue", C::LightSteelBlue),
+                    _ => fail.parse_next(input),
+                },
+                'y' => tail!("ellow", C::LightYellow),
+                _ => fail.parse_next(input),
+            }
+        }
+        // lime | limegreen
+        ['l', 'i', 'm'] => tail!("e", "green", C::Lime, C::LimeGreen),
+        ['l', 'i', 'n'] => tail!("en", C::Linen),
+        ['m', 'a', 'g'] => tail!("enta", C::Magenta),
+        ['m', 'a', 'r'] => tail!("oon", C::Maroon),
+        // medium* colors
+        ['m', 'e', 'd'] => {
+            match preceded(Caseless("ium"), ascii_lower).parse_next(input)? {
+                'a' => tail!("quamarine", C::MediumAquaMarine),
+                'b' => tail!("lue", C::MediumBlue),
+                'o' => tail!("rchid", C::MediumOrchid),
+                'p' => tail!("urple", C::MediumPurple),
+                // seagreen | slateblue | springgreen
+                's' => match ascii_lower.parse_next(input)? {
+                    'e' => tail!("agreen", C::MediumSeaGreen),
+                    'l' => tail!("ateblue", C::MediumSlateBlue),
+                    'p' => tail!("ringgreen", C::MediumSpringGreen),
+                    _ => fail.parse_next(input),
+                },
+                't' => tail!("urquoise", C::MediumTurquoise),
+                'v' => tail!("ioletred", C::MediumVioletRed),
+                _ => fail.parse_next(input),
+            }
+        }
+        ['m', 'i', 'd'] => tail!("nightblue", C::MidnightBlue),
+        ['m', 'i', 'n'] => tail!("tcream", C::MintCream),
+        ['m', 'i', 's'] => tail!("tyrose", C::MistyRose),
+        ['m', 'o', 'c'] => tail!("casin", C::Moccasin),
+        // navajowhite | navy
+        ['n', 'a', 'v'] => match ascii_lower.parse_next(input)? {
+            'a' => tail!("jowhite", C::NavajoWhite),
+            'y' => tail!(C::Navy),
+            _ => fail.parse_next(input),
+        },
+        ['o', 'l', 'd'] => tail!("lace", C::OldLace),
+        // olive | olivedrab
+        ['o', 'l', 'i'] => tail!("ve", "drab", C::Olive, C::OliveDrab),
+        // orange | orangered
+        ['o', 'r', 'a'] => tail!("nge", "red", C::Orange, C::OrangeRed),
+        ['o', 'r', 'c'] => tail!("hid", C::Orchid),
+        // pale* colors
+        ['p', 'a', 'l'] => {
+            match preceded(Caseless("e"), ascii_lower).parse_next(input)? {
+                // goldenrod | green
+                'g' => match ascii_lower.parse_next(input)? {
+                    'o' => tail!("ldenrod", C::PaleGoldenRod),
+                    'r' => tail!("een", C::PaleGreen),
+                    _ => fail.parse_next(input),
+                },
+                't' => tail!("urquoise", C::PaleTurquoise),
+                'v' => tail!("ioletred", C::PaleVioletRed),
+                _ => fail.parse_next(input),
+            }
+        }
+        ['p', 'a', 'p'] => tail!("ayawhip", C::PapayaWhip),
+        ['p', 'e', 'a'] => tail!("chpuff", C::PeachPuff),
+        ['p', 'e', 'r'] => tail!("u", C::Peru),
+        ['p', 'i', 'n'] => tail!("k", C::Pink),
+        ['p', 'l', 'u'] => tail!("m", C::Plum),
+        ['p', 'o', 'w'] => tail!("derblue", C::PowderBlue),
+        ['p', 'u', 'r'] => tail!("ple", C::Purple),
+        ['r', 'e', 'd'] => tail!(C::Red),
+        ['r', 'o', 's'] => tail!("ybrown", C::RosyBrown),
+        ['r', 'o', 'y'] => tail!("alblue", C::RoyalBlue),
+        ['s', 'a', 'd'] => tail!("dlebrown", C::SaddleBrown),
+        ['s', 'a', 'l'] => tail!("mon", C::Salmon),
+        ['s', 'a', 'n'] => tail!("dybrown", C::SandyBrown),
+        // seagreen | seashell
+        ['s', 'e', 'a'] => match ascii_lower.parse_next(input)? {
+            'g' => tail!("reen", C::SeaGreen),
+            's' => tail!("hell", C::SeaShell),
+            _ => fail.parse_next(input),
+        },
+        ['s', 'i', 'e'] => tail!("nna", C::Sienna),
+        ['s', 'i', 'l'] => tail!("ver", C::Silver),
+        ['s', 'k', 'y'] => tail!("blue", C::SkyBlue),
+        // slateblue | slategray | slategrey
+        ['s', 'l', 'a'] => {
+            match preceded(Caseless("te"), ascii_lower).parse_next(input)? {
+                'b' => tail!("lue", C::SlateBlue),
+                // slategray | slategrey
+                'g' => match preceded(Caseless("r"), ascii_lower)
+                    .parse_next(input)?
+                {
+                    'a' => tail!("y", C::SlateGray),
+                    'e' => tail!("y", C::SlateGrey),
+                    _ => fail.parse_next(input),
+                },
+                _ => fail.parse_next(input),
+            }
+        }
+        ['s', 'n', 'o'] => tail!("w", C::Snow),
+        ['s', 'p', 'r'] => tail!("inggreen", C::SpringGreen),
+        ['s', 't', 'e'] => tail!("elblue", C::SteelBlue),
+        ['t', 'a', 'n'] => tail!(C::Tan),
+        ['t', 'e', 'a'] => tail!("l", C::Teal),
+        ['t', 'h', 'i'] => tail!("stle", C::Thistle),
+        ['t', 'o', 'm'] => tail!("ato", C::Tomato),
+        ['t', 'u', 'r'] => tail!("quoise", C::Turquoise),
+        ['v', 'i', 'o'] => tail!("let", C::Violet),
+        ['w', 'h', 'e'] => tail!("at", C::Wheat),
+        // white | whitesmoke
+        ['w', 'h', 'i'] => tail!("te", "smoke", C::White, C::WhiteSmoke),
+        // yellow | yellowgreen
+        ['y', 'e', 'l'] => tail!("low", "green", C::Yellow, C::YellowGreen),
+        _ => fail.parse_next(input),
+    }
+}
+
+/// Parses a single token from the `input`, converts it into a `char`, and then
+/// invokes [`char::make_ascii_lowercase`] and returns the result.
+pub fn ascii_lower<I, E>(input: &mut I) -> Result<char, E>
+where
+    I: StreamIsPartial + Stream,
+    I::Token: AsChar + Clone,
+    E: ParserError<I>,
+{
+    let mut c = any.parse_next(input)?.as_char();
+    c.make_ascii_lowercase();
+    Ok(c)
+}
+
 /// Parses a single digit (of the base given by `RADIX`) and returns its value.
 pub fn digit<I, E, const RADIX: u32>(input: &mut I) -> Result<u8, E>
 where
@@ -2070,5 +2414,17 @@ mod tests {
 
         assert!(digit::<_, (), 10>.parse_peek("A").is_err());
         assert!(digit::<_, (), 16>.parse_peek("A").is_ok());
+    }
+
+    #[test]
+    fn color_parser() {
+        for c in Css3Color::iter() {
+            dbg![c];
+            let input = c.as_str();
+            let (tail, res) = color::<_, ()>.parse_peek(input).unwrap();
+            dbg![tail];
+            assert!(tail.is_empty());
+            assert_eq!(c, res);
+        }
     }
 }
