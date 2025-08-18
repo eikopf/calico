@@ -237,9 +237,7 @@ enum EventTerminationProp<S> {
 
 #[cfg(test)]
 mod tests {
-    use chrono::NaiveDate;
-
-    use crate::model::primitive::{Date, RawTime, Time};
+    use crate::{date, time};
 
     use super::*;
 
@@ -250,15 +248,8 @@ mod tests {
         let uid = EventProp::Uid(Prop::from_value(Uid("some-identifier")));
         let dtstamp = EventProp::DtStamp(Prop {
             value: DateTime {
-                date: Date(NaiveDate::from_ymd_opt(1997, 12, 24).unwrap()),
-                time: Time {
-                    raw: RawTime {
-                        hours: 15,
-                        minutes: 20,
-                        seconds: 12,
-                    },
-                    format: Utc,
-                },
+                date: date!(1997;12;24),
+                time: time!(15;20;12, Utc),
             },
             params: Default::default(),
             extra_params: Default::default(),

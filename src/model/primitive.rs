@@ -145,6 +145,18 @@ pub enum TimeFormat {
     Utc,
 }
 
+impl From<Utc> for TimeFormat {
+    fn from(Utc: Utc) -> Self {
+        Self::Utc
+    }
+}
+
+impl From<Local> for TimeFormat {
+    fn from(Local: Local) -> Self {
+        Self::Local
+    }
+}
+
 /// One of the seven weekdays.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
@@ -801,9 +813,67 @@ impl<T> From<(T, T, T)> for RequestStatusCode<T> {
     }
 }
 
+/// Constructs a [`Date`] from input of the form `yyyy;MM;dd`. Will panic if
+/// the given date is invalid according to [`chrono::NaiveDate::from_ymd_opt`].
+#[macro_export]
+macro_rules! date {
+    ($year:expr ; $month:expr ; $day:expr) => {
+        $crate::model::primitive::Date(
+            ::chrono::NaiveDate::from_ymd_opt($year, $month, $day).unwrap(),
+        )
+    };
+}
+
+/// Constructs a [`Time`] from input of the form `hh;mm;ss, <format>`.
+#[macro_export]
+macro_rules! time {
+    ($hours:expr ; $minutes:expr ; $seconds:expr, $format:ident) => {
+        $crate::model::primitive::Time {
+            raw: $crate::model::primitive::RawTime {
+                hours: $hours,
+                minutes: $minutes,
+                seconds: $seconds,
+            },
+            format: $format.into(),
+        }
+    };
+}
+
 #[cfg(test)]
 mod tests {
+    use chrono::Datelike;
+
     use super::*;
+
+    #[test]
+    fn date_macro() {
+        let xmas_2003 = date!(2003;12;25);
+        let silvester_1957 = date!(1957;12;31);
+
+        assert_eq!(xmas_2003.0.month(), silvester_1957.0.month());
+    }
+
+    #[test]
+    fn time_macro() {
+        let noon_utc: Time<Utc> = time!(12;00;00, Utc);
+        let noon_utc_tf: Time<TimeFormat> = time!(12;00;00, Utc);
+        let noon_local: Time<Local> = time!(12;00;00, Local);
+        let noon_local_tf: Time<TimeFormat> = time!(12;00;00, Local);
+
+        let noon_raw = RawTime {
+            hours: 12,
+            minutes: 0,
+            seconds: 0,
+        };
+
+        assert_eq!(noon_utc.raw, noon_raw);
+        assert_eq!(noon_utc_tf.raw, noon_raw);
+        assert_eq!(noon_local.raw, noon_raw);
+        assert_eq!(noon_local_tf.raw, noon_raw);
+
+        assert_eq!(noon_utc_tf.format, TimeFormat::Utc);
+        assert_eq!(noon_local_tf.format, TimeFormat::Local);
+    }
 
     #[test]
     fn raw_time_ord_impl() {
