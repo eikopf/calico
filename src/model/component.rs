@@ -56,6 +56,98 @@ macro_rules! enum_with_names {
     };
 }
 
+/// Creates a table type with the given name generic over a type parameter `S`.
+/// The `ident` must be a type of kind `Type -> Type`, i.e with a single type
+/// parameter.
+macro_rules! table {
+    ($(#[ $m:meta ])* $name:ident, $value:ident) => {
+        $(#[ $m ])*
+        struct $name <S> (HashTable<Entry<$value<S>, S>>, RandomState);
+
+        impl<S> Default for $name <S> {
+            fn default() -> Self {
+                Self::new()
+            }
+        }
+
+        impl<S> $name<S> {
+            pub fn new() -> Self {
+                Self(HashTable::new(), RandomState::new())
+            }
+
+            pub fn insert_raw(
+                &mut self,
+                value: Entry<$value<S>, S>
+            ) -> Option<Entry<$value<S>, S>>
+            where
+                S: Hash + PartialEq,
+            {
+                let hash = Self::hash_entry(&self.1);
+                let key = value.as_key();
+                let eq = Self::eq(&key);
+
+                match self.0.entry(hash(&value), eq, hash) {
+                    TableEntry::Occupied(mut entry) => {
+                        Some(std::mem::replace(entry.get_mut(), value))
+                    }
+                    TableEntry::Vacant(entry) => {
+                        entry.insert(value);
+                        None
+                    }
+                }
+            }
+
+            pub fn get_raw(&self, key: Key<$value<S>, &S>) -> Option<&Entry<$value<S>, S>>
+            where
+                S: Hash + PartialEq,
+            {
+                let hash = Self::hash_key(&self.1);
+                let eq = Self::eq(&key);
+
+                self.0.find(hash(&key), eq)
+            }
+
+            fn eq(lhs: &Key<$value<S>, &S>) -> impl Fn(&Entry<$value<S>, S>) -> bool
+            where
+                S: PartialEq,
+            {
+                move |rhs| match rhs.as_key() {
+                    Key::Known(r) => matches!(lhs, Key::Known(l) if l == &r),
+                    Key::Iana(r) => matches!(lhs, Key::Iana(l) if l == &r),
+                    Key::X(r) => matches!(lhs, Key::X(l) if l == &r),
+                }
+            }
+
+            fn hash_entry(hasher: &impl BuildHasher) -> impl Fn(&Entry<$value<S>, S>) -> u64
+            where
+                S: Hash,
+            {
+                let h = Self::hash_key(hasher);
+                move |entry| h(&entry.as_key())
+            }
+
+            fn hash_key(
+                hasher: &impl BuildHasher,
+            ) -> impl Fn(&Key<$value<S>, &S>) -> u64
+            where
+                S: Hash,
+            {
+                |key| {
+                    let mut hasher = hasher.build_hasher();
+
+                    match key {
+                        Key::Known(d) => d.hash(&mut hasher),
+                        Key::Iana(name) => name.hash(&mut hasher),
+                        Key::X(name) => name.hash(&mut hasher),
+                    };
+
+                    hasher.finish()
+                }
+            }
+        }
+    };
+}
+
 /// A sequence of [`Prop`].
 type PropSeq<V, P = ()> = Box<[Prop<V, P>]>;
 
@@ -66,91 +158,6 @@ trait Disc {
 
     /// Returns the discriminant value of `self`.
     fn discriminant(&self) -> Self::Discriminant;
-}
-
-/// A VEVENT component (RFC 5545 §3.6.1).
-#[derive(Debug)]
-pub struct Event<S>(HashTable<EventEntry<S>>, RandomState);
-
-type EventEntry<S> = Entry<EventProp<S>, S>;
-
-impl<S> Event<S> {
-    pub fn new() -> Self {
-        Self(HashTable::new(), RandomState::new())
-    }
-
-    fn insert_raw(&mut self, value: EventEntry<S>) -> Option<EventEntry<S>>
-    where
-        S: Hash + PartialEq,
-    {
-        let hash = Self::hash_entry(&self.1);
-        let key = value.as_key();
-        let eq = Self::eq(&key);
-
-        match self.0.entry(hash(&value), eq, hash) {
-            TableEntry::Occupied(mut entry) => {
-                Some(std::mem::replace(entry.get_mut(), value))
-            }
-            TableEntry::Vacant(entry) => {
-                entry.insert(value);
-                None
-            }
-        }
-    }
-
-    fn get_raw(&self, key: Key<EventProp<S>, &S>) -> Option<&EventEntry<S>>
-    where
-        S: Hash + PartialEq,
-    {
-        let hash = Self::hash_key(&self.1);
-        let eq = Self::eq(&key);
-
-        self.0.find(hash(&key), eq)
-    }
-
-    fn eq(lhs: &Key<EventProp<S>, &S>) -> impl Fn(&EventEntry<S>) -> bool
-    where
-        S: PartialEq,
-    {
-        move |rhs| match rhs.as_key() {
-            Key::Known(r) => matches!(lhs, Key::Known(l) if l == &r),
-            Key::Iana(r) => matches!(lhs, Key::Iana(l) if l == &r),
-            Key::X(r) => matches!(lhs, Key::X(l) if l == &r),
-        }
-    }
-
-    fn hash_entry(hasher: &impl BuildHasher) -> impl Fn(&EventEntry<S>) -> u64
-    where
-        S: Hash,
-    {
-        let h = Self::hash_key(hasher);
-        move |entry| h(&entry.as_key())
-    }
-
-    fn hash_key(
-        hasher: &impl BuildHasher,
-    ) -> impl Fn(&Key<EventProp<S>, &S>) -> u64
-    where
-        S: Hash,
-    {
-        |key| {
-            let mut hasher = hasher.build_hasher();
-
-            match key {
-                Key::Known(d) => d.hash(&mut hasher),
-                Key::Iana(name) => name.hash(&mut hasher),
-                Key::X(name) => name.hash(&mut hasher),
-            };
-
-            hasher.finish()
-        }
-    }
-}
-
-impl<S> Default for Event<S> {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -181,6 +188,18 @@ impl<T: Disc, S> Entry<T, S> {
             Entry::X { name, .. } => Key::X(name),
         }
     }
+}
+
+/// A VEVENT component (RFC 5545 §3.6.1).
+#[derive(Debug)]
+pub struct Event<S> {
+    props: EventTable<S>,
+    alarms: Box<[()]>, // TODO: update with Alarm component type
+}
+
+table! {
+    #[derive(Debug, Clone)]
+    EventTable, EventProp
 }
 
 enum_with_names! {
@@ -243,7 +262,7 @@ mod tests {
 
     #[test]
     fn basic_event_table_usage() {
-        let mut event = Event::new();
+        let mut event = EventTable::new();
 
         let uid = EventProp::Uid(Prop::from_value(Uid("some-identifier")));
         let dtstamp = EventProp::DtStamp(Prop {
