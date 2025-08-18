@@ -27,6 +27,7 @@ use property::{ConfProp, ImageProp, Prop, SeqLangProp, TextProp};
 use rrule::RRule;
 use std::collections::HashMap;
 
+pub mod component;
 pub mod css;
 pub mod parameter;
 pub mod primitive;

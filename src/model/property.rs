@@ -23,11 +23,21 @@ pub type ImageProp<S> = Prop<ImageData<S>, ImageParams<S>>;
 pub type ConfProp<S> = Prop<Uri<S>, ConfParams<S>>;
 
 /// A property generic over values and parameters.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Prop<V, P = ()> {
     pub params: P,
     pub value: V,
-    pub extra_params: HashMap<Box<str>, Box<str>>, // TODO: use a better type for this!
+    pub extra_params: Box<HashMap<Box<str>, Box<str>>>, // TODO: use a better type for this!
+}
+
+impl<V> Prop<V> {
+    pub fn from_value(value: V) -> Self {
+        Self {
+            value,
+            params: (),
+            extra_params: Default::default(),
+        }
+    }
 }
 
 /// The parameters associated with the `ATTACH` property.
