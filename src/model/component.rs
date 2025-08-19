@@ -193,6 +193,15 @@ impl<T: Disc, S> Entry<T, S> {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum Component<S> {
+    Event(Event<S>),
+    Todo(Todo<S>),
+    Journal(Journal<S>),
+    FreeBusy(FreeBusy<S>),
+    TimeZone(TimeZone<S>),
+}
+
 /// A VEVENT component (RFC 5545 §3.6.1).
 #[derive(Debug, Clone)]
 pub struct Event<S> {
