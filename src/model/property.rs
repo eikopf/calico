@@ -5,9 +5,10 @@ use std::collections::HashMap;
 use crate::parser::parameter::ParamValue;
 
 use super::primitive::{
-    CalAddress, CalendarUserType, DisplayType, FeatureType, FormatType,
-    FreeBusyType, ImageData, Language, ParticipationRole, ParticipationStatus,
-    RelationshipType, Text, ThisAndFuture, TriggerRelation, TzId, Uri,
+    CalAddress, CalendarUserType, DateTime, DateTimeOrDate, DisplayType,
+    Duration, FeatureType, FormatType, FreeBusyType, ImageData, Language,
+    ParticipationRole, ParticipationStatus, RelationshipType, Text,
+    ThisAndFuture, TriggerRelation, TzId, Uri, Utc,
 };
 
 /// An ordinary textual property.
@@ -38,6 +39,24 @@ impl<V> Prop<V> {
             extra_params: Default::default(),
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EventTerminationProp<S> {
+    End(Prop<DateTimeOrDate, DtParams<S>>),
+    Duration(Prop<Duration>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TodoTerminationProp<S> {
+    Due(Prop<DateTimeOrDate, DtParams<S>>),
+    Duration(Prop<Duration>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TriggerProp {
+    Relative(Prop<Duration, TriggerParams>),
+    Absolute(Prop<DateTime<Utc>>),
 }
 
 /// The parameters associated with the `ATTACH` property.

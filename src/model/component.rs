@@ -7,13 +7,16 @@ use hashbrown::{HashTable, hash_table::Entry as TableEntry};
 use super::{
     parameter::KnownParam,
     primitive::{
-        AttachValue, CalAddress, ClassValue, DateTime, DateTimeOrDate,
-        DateTimeOrDateSeq, Duration, EventStatus, Geo, Integer, Priority,
-        RDateSeq, RequestStatus, Text, TimeTransparency, Uid, Uri, Utc, Value,
+        AttachValue, AudioAction, CalAddress, ClassValue, CompletionPercentage,
+        DateTime, DateTimeOrDate, DateTimeOrDateSeq, DisplayAction, Duration,
+        EmailAction, EventStatus, Geo, Integer, JournalStatus, Period,
+        Priority, RDateSeq, RequestStatus, Text, TimeTransparency, TodoStatus,
+        TzId, Uid, Uri, Utc, UtcOffset, Value,
     },
     property::{
-        AttachParams, AttendeeParams, DtParams, LangParams, OrganizerParams,
-        Prop, RecurrenceIdParams, RelTypeParams, TextParams,
+        AttachParams, AttendeeParams, DtParams, EventTerminationProp,
+        FBTypeParams, LangParams, OrganizerParams, Prop, RecurrenceIdParams,
+        RelTypeParams, TextParams, TodoTerminationProp, TriggerProp,
     },
     rrule::RRule,
 };
@@ -75,7 +78,7 @@ macro_rules! table {
                 Self(HashTable::new(), RandomState::new())
             }
 
-            pub fn insert_raw(
+            pub fn insert(
                 &mut self,
                 value: Entry<$value<S>, S>
             ) -> Option<Entry<$value<S>, S>>
@@ -97,7 +100,7 @@ macro_rules! table {
                 }
             }
 
-            pub fn get_raw(&self, key: Key<$value<S>, &S>) -> Option<&Entry<$value<S>, S>>
+            pub fn get(&self, key: Key<$value<S>, &S>) -> Option<&Entry<$value<S>, S>>
             where
                 S: Hash + PartialEq,
             {
@@ -191,10 +194,89 @@ impl<T: Disc, S> Entry<T, S> {
 }
 
 /// A VEVENT component (RFC 5545 §3.6.1).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Event<S> {
     props: EventTable<S>,
-    alarms: Box<[()]>, // TODO: update with Alarm component type
+    alarms: Box<[Alarm<S>]>,
+}
+
+/// A VTODO component (RFC 5545 §3.6.2).
+#[derive(Debug, Clone)]
+pub struct Todo<S> {
+    props: TodoTable<S>,
+    alarms: Box<[Alarm<S>]>,
+}
+
+/// A VJOURNAL component (RFC 5545 §3.6.3).
+#[derive(Debug, Clone)]
+pub struct Journal<S> {
+    props: JournalTable<S>,
+}
+
+/// A VFREEBUSY component (RFC 5545 §3.6.4).
+#[derive(Debug, Clone)]
+pub struct FreeBusy<S> {
+    props: FreeBusyTable<S>,
+}
+
+/// A VTIMEZONE component (RFC 5545 §3.6.5).
+#[derive(Debug, Clone)]
+pub struct TimeZone<S> {
+    props: TimeZoneTable<S>,
+    /// The STANDARD and DAYLIGHT subcomponents. This list is guaranteed to have
+    /// at least one element.
+    subcomponents: Box<[TzRule<S>]>,
+}
+
+/// A STANDARD or DAYLIGHT subcomponent of a [`TimeZone`].
+#[derive(Debug, Clone)]
+pub struct TzRule<S> {
+    props: OffsetTable<S>,
+    kind: TzRuleKind,
+}
+
+/// The kind of a [`TzRule`], for which the default is [`Standard`].
+///
+/// [`Standard`]: TzRuleKind::Standard
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum TzRuleKind {
+    #[default]
+    Standard,
+    Daylight,
+}
+
+/// A VALARM component (RFC 5545 §3.6.6).
+#[derive(Debug, Clone)]
+pub enum Alarm<S> {
+    Audio(AudioAlarm<S>),
+    Display(DisplayAlarm<S>),
+    Email(EmailAlarm<S>),
+    Iana(OtherAlarm<S>),
+    X(OtherAlarm<S>),
+}
+
+/// A VALARM with the AUDIO action.
+#[derive(Debug, Clone)]
+pub struct AudioAlarm<S> {
+    props: AudioAlarmTable<S>,
+}
+
+/// A VALARM with the DISPLAY action.
+#[derive(Debug, Clone)]
+pub struct DisplayAlarm<S> {
+    props: DisplayAlarmTable<S>,
+}
+
+/// A VALARM with the EMAIL action.
+#[derive(Debug, Clone)]
+pub struct EmailAlarm<S> {
+    props: EmailAlarmTable<S>,
+}
+
+/// A VALARM with an action other than AUDIO, DISPLAY, or EMAIL.
+#[derive(Debug, Clone)]
+pub struct OtherAlarm<S> {
+    props: OtherAlarmTable<S>,
 }
 
 table! {
@@ -248,11 +330,253 @@ EventPropName {
     RDate(PropSeq<RDateSeq, DtParams<S>>)
 }}
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum EventTerminationProp<S> {
-    End(Prop<DateTimeOrDate, DtParams<S>>),
-    Duration(Prop<Duration>),
+table! {
+    #[derive(Debug, Clone)]
+    TodoTable, TodoProp
 }
+
+enum_with_names! {
+#[derive(Debug, Clone, PartialEq, Eq)]
+TodoProp<S>,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+TodoPropName {
+    // mandatory fields
+    DtStamp(Prop<DateTime<Utc>>),
+    Uid(Prop<Uid<S>>),
+
+    // optional fields
+    Class(Prop<ClassValue<S>>),
+    Completed(Prop<DateTime<Utc>>),
+    Created(Prop<DateTime<Utc>>),
+    Description(Prop<Text<S>, TextParams<S>>),
+    DtStart(Prop<DateTimeOrDate, DtParams<S>>),
+    Geo(Prop<Geo>),
+    LastModified(Prop<DateTime<Utc>>),
+    Location(Prop<Text<S>, TextParams<S>>),
+    Organizer(Prop<CalAddress<S>, Box<OrganizerParams<S>>>),
+    Percent(Prop<CompletionPercentage>),
+    Priority(Prop<Priority>),
+    RecurId(Prop<DateTimeOrDate, RecurrenceIdParams<S>>),
+    Sequence(Prop<Integer>),
+    Status(Prop<TodoStatus>),
+    Summary(Prop<Text<S>, TextParams<S>>),
+    Url(Prop<Uri<S>>),
+    RRule(Prop<Box<RRule>>), // SHOULD NOT occur more than once
+
+    // either DTDUE or DURATION, since they are mutually exclusive
+    Termination(TodoTerminationProp<S>),
+
+    // free multiplicity fields
+    Attach(PropSeq<AttachValue<S>, Box<AttachParams<S>>>),
+    Attendee(PropSeq<CalAddress<S>, Box<AttendeeParams<S>>>),
+    Categories(PropSeq<Box<[Text<S>]>, LangParams<S>>),
+    Comment(PropSeq<Text<S>, TextParams<S>>),
+    Contact(PropSeq<Text<S>, TextParams<S>>),
+    ExDate(PropSeq<DateTimeOrDateSeq, DtParams<S>>),
+    RequestStatus(PropSeq<RequestStatus<S>, LangParams<S>>),
+    RelatedTo(PropSeq<Text<S>, RelTypeParams<S>>),
+    Resources(PropSeq<Box<[Text<S>]>, TextParams<S>>),
+    RDate(PropSeq<RDateSeq, DtParams<S>>)
+}}
+
+table! {
+    #[derive(Debug, Clone)]
+    JournalTable, JournalProp
+}
+
+enum_with_names! {
+#[derive(Debug, Clone, PartialEq, Eq)]
+JournalProp<S>,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+JournalPropName {
+    // mandatory fields
+    DtStamp(Prop<DateTime<Utc>>),
+    Uid(Prop<Uid<S>>),
+
+    // optional fields
+    Class(Prop<ClassValue<S>>),
+    Created(Prop<DateTime<Utc>>),
+    DtStart(Prop<DateTimeOrDate, DtParams<S>>),
+    LastModified(Prop<DateTime<Utc>>),
+    Organizer(Prop<CalAddress<S>, Box<OrganizerParams<S>>>),
+    RecurId(Prop<DateTimeOrDate, RecurrenceIdParams<S>>),
+    Sequence(Prop<Integer>),
+    Status(Prop<JournalStatus>),
+    Summary(Prop<Text<S>, TextParams<S>>),
+    Url(Prop<Uri<S>>),
+    RRule(Prop<Box<RRule>>), // SHOULD NOT occur more than once
+
+    // free multiplicity fields
+    Attach(PropSeq<AttachValue<S>, Box<AttachParams<S>>>),
+    Attendee(PropSeq<CalAddress<S>, Box<AttendeeParams<S>>>),
+    Categories(PropSeq<Box<[Text<S>]>, LangParams<S>>),
+    Comment(PropSeq<Text<S>, TextParams<S>>),
+    Contact(PropSeq<Text<S>, TextParams<S>>),
+    Description(PropSeq<Box<[Text<S>]>, TextParams<S>>),
+    ExDate(PropSeq<DateTimeOrDateSeq, DtParams<S>>),
+    RequestStatus(PropSeq<RequestStatus<S>, LangParams<S>>),
+    RelatedTo(PropSeq<Text<S>, RelTypeParams<S>>),
+    RDate(PropSeq<RDateSeq, DtParams<S>>)
+}}
+
+table! {
+    #[derive(Debug, Clone)]
+    FreeBusyTable, FreeBusyProp
+}
+
+enum_with_names! {
+#[derive(Debug, Clone, PartialEq, Eq)]
+FreeBusyProp<S>,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+FreeBusyPropName {
+    // mandatory fields
+    DtStamp(Prop<DateTime<Utc>>),
+    Uid(Prop<Uid<S>>),
+
+    // optional fields
+    Contact(Prop<Text<S>, TextParams<S>>),
+    DtStart(Prop<DateTimeOrDate, DtParams<S>>),
+    DtEnd(Prop<DateTimeOrDate, DtParams<S>>),
+    Organizer(Prop<CalAddress<S>, Box<OrganizerParams<S>>>),
+    Url(Prop<Uri<S>>),
+
+    // free multiplicity fields
+    Attendee(PropSeq<CalAddress<S>, Box<AttendeeParams<S>>>),
+    Comment(PropSeq<Text<S>, TextParams<S>>),
+    FreeBusy(PropSeq<Box<[Period]>, FBTypeParams<S>>),
+    RequestStatus(PropSeq<RequestStatus<S>, LangParams<S>>)
+}}
+
+table! {
+    #[derive(Debug, Clone)]
+    TimeZoneTable, TimeZoneProp
+}
+
+enum_with_names! {
+#[derive(Debug, Clone, PartialEq, Eq)]
+TimeZoneProp<S>,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+TimeZonePropName {
+    // mandatory fields
+    TzId(Prop<TzId<S>>),
+
+    // optional fields
+    LastModified(Prop<DateTime<Utc>>),
+    TzUrl(Prop<Uri<S>>)
+}}
+
+// NOTE: since the contents of the STANDARD and DAYLIGHT components are the
+// same, we invent the OffsetTable type to represent this shared form
+
+table! {
+    #[derive(Debug, Clone)]
+    OffsetTable, OffsetProp
+}
+
+enum_with_names! {
+#[derive(Debug, Clone, PartialEq, Eq)]
+OffsetProp<S>,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+OffsetPropName {
+    // mandatory fields
+    DtStart(Prop<DateTimeOrDate, DtParams<S>>),
+    TzOffsetTo(Prop<UtcOffset>),
+    TzOffsetFrom(Prop<UtcOffset>),
+
+    // optional fields
+    RRule(Prop<Box<RRule>>), // SHOULD NOT occur more than once
+
+    // free multiplicity fields
+    Comment(PropSeq<Text<S>, TextParams<S>>),
+    RDate(PropSeq<RDateSeq, DtParams<S>>),
+    TzName(Prop<Text<S>, LangParams<S>>)
+}}
+
+table! {
+    #[derive(Debug, Clone)]
+    AudioAlarmTable, AudioAlarmProp
+}
+
+enum_with_names! {
+#[derive(Debug, Clone, PartialEq, Eq)]
+AudioAlarmProp<S>,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+AudioAlarmPropName {
+    // mandatory fields
+    Action(Prop<AudioAction>),
+    Trigger(TriggerProp),
+
+    // optional fields
+    DurRep(Prop<Duration>, Prop<Integer>), // the product of DURATION and REPEAT
+    Attach(Prop<AttachValue<S>, AttachParams<S>>)
+}}
+
+table! {
+    #[derive(Debug, Clone)]
+    DisplayAlarmTable, DisplayAlarmProp
+}
+
+enum_with_names! {
+#[derive(Debug, Clone, PartialEq, Eq)]
+DisplayAlarmProp<S>,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+DisplayAlarmPropName {
+    // mandatory fields
+    Action(Prop<DisplayAction>),
+    Description(Prop<Text<S>, TextParams<S>>),
+    Trigger(TriggerProp),
+
+    // optional fields
+    DurRep(Prop<Duration>, Prop<Integer>) // the product of DURATION and REPEAT
+}}
+
+table! {
+    #[derive(Debug, Clone)]
+    EmailAlarmTable, EmailAlarmProp
+}
+
+enum_with_names! {
+#[derive(Debug, Clone, PartialEq, Eq)]
+EmailAlarmProp<S>,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+EmailAlarmPropName {
+    // mandatory fields
+    Action(Prop<EmailAction>),
+    Description(Prop<Text<S>, TextParams<S>>),
+    Trigger(TriggerProp),
+    Summary(Prop<Text<S>, TextParams<S>>),
+
+    // optional fields
+    DurRep(Prop<Duration>, Prop<Integer>), // the product of DURATION and REPEAT
+
+    // free multiplicity fields
+    Attendee(PropSeq<CalAddress<S>, Box<AttendeeParams<S>>>),
+    Attach(PropSeq<AttachValue<S>, AttachParams<S>>)
+}}
+
+table! {
+    #[derive(Debug, Clone)]
+    OtherAlarmTable, OtherAlarmProp
+}
+
+enum_with_names! {
+#[derive(Debug, Clone, PartialEq, Eq)]
+OtherAlarmProp<S>,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+OtherAlarmPropName {
+    // mandatory fields
+    Action(Prop<S>),
+    Description(Prop<Text<S>, TextParams<S>>),
+    Trigger(TriggerProp),
+    Summary(Prop<Text<S>, TextParams<S>>),
+
+    // optional fields
+    DurRep(Prop<Duration>, Prop<Integer>), // the product of DURATION and REPEAT
+
+    // free multiplicity fields
+    Attendee(PropSeq<CalAddress<S>, Box<AttendeeParams<S>>>),
+    Attach(PropSeq<AttachValue<S>, AttachParams<S>>)
+}}
 
 #[cfg(test)]
 mod tests {
@@ -274,14 +598,14 @@ mod tests {
             extra_params: Default::default(),
         });
 
-        let prev = event.insert_raw(Entry::Known(uid.clone()));
+        let prev = event.insert(Entry::Known(uid.clone()));
         assert!(prev.is_none());
-        let prev = event.insert_raw(Entry::Known(dtstamp.clone()));
+        let prev = event.insert(Entry::Known(dtstamp.clone()));
         assert!(prev.is_none());
         assert_eq!(event.0.len(), 2);
 
-        let uid_ref = event.get_raw(Key::Known(EventPropName::Uid));
-        let dtstamp_ref = event.get_raw(Key::Known(EventPropName::DtStamp));
+        let uid_ref = event.get(Key::Known(EventPropName::Uid));
+        let dtstamp_ref = event.get(Key::Known(EventPropName::DtStamp));
 
         assert_eq!(Some(&Entry::Known(uid)), uid_ref);
         assert_eq!(Some(&Entry::Known(dtstamp)), dtstamp_ref);

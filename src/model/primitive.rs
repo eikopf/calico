@@ -349,6 +349,22 @@ pub enum FreeBusyType<S> {
     X(S),
 }
 
+/// The [`Audio`] alarm action.
+///
+/// [`Audio`]: AlarmAction::Audio
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub struct AudioAction;
+/// The [`Display`] alarm action.
+///
+/// [`Display`]: AlarmAction::Display
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub struct DisplayAction;
+/// The [`Email`] alarm action.
+///
+/// [`Email`]: AlarmAction::Email
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub struct EmailAction;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AlarmAction<S> {
     Audio,
