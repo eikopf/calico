@@ -586,7 +586,9 @@ where
     <I as Stream>::Token: AsChar + Clone,
     E: ParserError<I>,
 {
-    ('X', '-', iana_token).take().parse_next(input)
+    (one_of(('x', 'X')), '-', iana_token)
+        .take()
+        .parse_next(input)
 }
 
 /// Parses a [`Text`].
@@ -2045,7 +2047,7 @@ mod tests {
             x_name::<_, ()>.parse_peek("X-baz-123"),
             Ok(("", "X-baz-123"))
         );
-        assert!(x_name::<_, ()>.parse_peek("x-must-be-capital").is_err());
+        assert!(x_name::<_, ()>.parse_peek("x-lower-case").is_ok());
     }
 
     #[test]
