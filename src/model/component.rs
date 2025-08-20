@@ -5,18 +5,21 @@ use std::hash::{BuildHasher, Hash, Hasher, RandomState};
 use hashbrown::{HashTable, hash_table::Entry as TableEntry};
 
 use super::{
+    css::Css3Color,
     parameter::KnownParam,
     primitive::{
-        AttachValue, AudioAction, CalAddress, ClassValue, CompletionPercentage,
-        DateTime, DateTimeOrDate, DateTimeOrDateSeq, DisplayAction, Duration,
-        EmailAction, EventStatus, Geo, Integer, JournalStatus, Period,
-        Priority, RDateSeq, RequestStatus, Text, TimeTransparency, TodoStatus,
-        TzId, Uid, Uri, Utc, UtcOffset, Value,
+        AlarmAction, AttachValue, AudioAction, CalAddress, ClassValue,
+        CompletionPercentage, DateTime, DateTimeOrDate, DateTimeOrDateSeq,
+        DisplayAction, Duration, EmailAction, EventStatus, Geo, ImageData,
+        Integer, JournalStatus, Method, Period, Priority, RDateSeq,
+        RequestStatus, Status, Text, TimeTransparency, TodoStatus, TzId, Uid,
+        Uri, Utc, UtcOffset, Value,
     },
     property::{
-        AttachParams, AttendeeParams, DtParams, EventTerminationProp,
-        FBTypeParams, LangParams, OrganizerParams, Prop, RecurrenceIdParams,
-        RelTypeParams, TextParams, TodoTerminationProp, TriggerProp,
+        AttachParams, AttendeeParams, ConfParams, DtParams,
+        EventTerminationProp, FBTypeParams, ImageParams, LangParams,
+        OrganizerParams, Prop, RecurrenceIdParams, RelTypeParams, TextParams,
+        TodoTerminationProp, TriggerProp,
     },
     rrule::RRule,
 };
@@ -193,6 +196,14 @@ impl<T: Disc, S> Entry<T, S> {
     }
 }
 
+/// An iCalendar object (RFC 5545 §3.4).
+#[derive(Debug, Clone)]
+pub struct Calendar<S> {
+    props: CalendarTable<S>,
+    components: Box<[Component<S>]>,
+}
+
+/// A component in an iCalendar object (RFC 5545 §3.6).
 #[derive(Debug, Clone)]
 pub enum Component<S> {
     Event(Event<S>),
@@ -200,6 +211,8 @@ pub enum Component<S> {
     Journal(Journal<S>),
     FreeBusy(FreeBusy<S>),
     TimeZone(TimeZone<S>),
+    Iana(OtherComponent<S>),
+    X(OtherComponent<S>),
 }
 
 /// A VEVENT component (RFC 5545 §3.6.1).
@@ -288,6 +301,49 @@ pub struct OtherAlarm<S> {
     props: OtherAlarmTable<S>,
 }
 
+/// An arbitrary component which may have any properties and subcomponents.
+#[derive(Debug, Clone)]
+pub struct OtherComponent<S> {
+    props: AnyPropTable<S>,
+    subcomponents: Box<[Component<S>]>,
+}
+
+table! {
+    #[derive(Debug, Clone)]
+    CalendarTable, CalendarProp
+}
+
+enum_with_names! {
+/// The potential properties of an [`Event`] together with their value and
+/// parameter types.
+#[derive(Debug, Clone, PartialEq, Eq)]
+CalendarProp<S>,
+/// The name of a variant of [`EventProp`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+CalendarPropName {
+    // mandatory fields (RFC 5545)
+    ProdId(Prop<Text<S>>),
+    Version(Prop<()>),
+
+    // optional fields (RFC 5545)
+    CalScale(Prop<()>),
+    Method(Prop<Method<S>>),
+
+    // optional fields (RFC 7986)
+    Uid(Prop<Uid<S>>),
+    LastModified(Prop<DateTime<Utc>>),
+    Url(Prop<Uri<S>>),
+    RefreshInterval(Prop<Duration>),
+    Source(Prop<Uri<S>>),
+    Color(Prop<Css3Color>),
+
+    // free multiplicity fields (RFC 7986)
+    Name(PropSeq<Text<S>, TextParams<S>>),
+    Description(PropSeq<Text<S>, TextParams<S>>),
+    Categories(PropSeq<Box<[Text<S>]>, LangParams<S>>),
+    Image(PropSeq<ImageData<S>, ImageParams<S>>)
+}}
+
 table! {
     #[derive(Debug, Clone)]
     EventTable, EventProp
@@ -322,6 +378,7 @@ EventPropName {
     Url(Prop<Uri<S>>),
     RecurId(Prop<DateTimeOrDate, RecurrenceIdParams<S>>),
     RRule(Prop<Box<RRule>>), // SHOULD NOT occur more than once
+    Color(Prop<Css3Color>), // RFC 7986 §4
 
     // either DTEND or DURATION, since they are mutually exclusive
     Termination(EventTerminationProp<S>),
@@ -336,7 +393,9 @@ EventPropName {
     RequestStatus(PropSeq<RequestStatus<S>, LangParams<S>>),
     RelatedTo(PropSeq<Text<S>, RelTypeParams<S>>),
     Resources(PropSeq<Box<[Text<S>]>, TextParams<S>>),
-    RDate(PropSeq<RDateSeq, DtParams<S>>)
+    RDate(PropSeq<RDateSeq, DtParams<S>>),
+    Conference(PropSeq<Uri<S>, ConfParams<S>>), // RFC 7986 §4
+    Image(PropSeq<ImageData<S>, ImageParams<S>>) // RFC 7986 §4
 }}
 
 table! {
@@ -371,6 +430,7 @@ TodoPropName {
     Summary(Prop<Text<S>, TextParams<S>>),
     Url(Prop<Uri<S>>),
     RRule(Prop<Box<RRule>>), // SHOULD NOT occur more than once
+    Color(Prop<Css3Color>), // RFC 7986 §4
 
     // either DTDUE or DURATION, since they are mutually exclusive
     Termination(TodoTerminationProp<S>),
@@ -385,7 +445,9 @@ TodoPropName {
     RequestStatus(PropSeq<RequestStatus<S>, LangParams<S>>),
     RelatedTo(PropSeq<Text<S>, RelTypeParams<S>>),
     Resources(PropSeq<Box<[Text<S>]>, TextParams<S>>),
-    RDate(PropSeq<RDateSeq, DtParams<S>>)
+    RDate(PropSeq<RDateSeq, DtParams<S>>),
+    Conference(PropSeq<Uri<S>, ConfParams<S>>), // RFC 7986 §4
+    Image(PropSeq<ImageData<S>, ImageParams<S>>) // RFC 7986 §4
 }}
 
 table! {
@@ -414,6 +476,7 @@ JournalPropName {
     Summary(Prop<Text<S>, TextParams<S>>),
     Url(Prop<Uri<S>>),
     RRule(Prop<Box<RRule>>), // SHOULD NOT occur more than once
+    Color(Prop<Css3Color>), // RFC 7986 §4
 
     // free multiplicity fields
     Attach(PropSeq<AttachValue<S>, Box<AttachParams<S>>>),
@@ -425,7 +488,8 @@ JournalPropName {
     ExDate(PropSeq<DateTimeOrDateSeq, DtParams<S>>),
     RequestStatus(PropSeq<RequestStatus<S>, LangParams<S>>),
     RelatedTo(PropSeq<Text<S>, RelTypeParams<S>>),
-    RDate(PropSeq<RDateSeq, DtParams<S>>)
+    RDate(PropSeq<RDateSeq, DtParams<S>>),
+    Image(PropSeq<ImageData<S>, ImageParams<S>>) // RFC 7986 §4
 }}
 
 table! {
@@ -585,6 +649,87 @@ OtherAlarmPropName {
     // free multiplicity fields
     Attendee(PropSeq<CalAddress<S>, Box<AttendeeParams<S>>>),
     Attach(PropSeq<AttachValue<S>, AttachParams<S>>)
+}}
+
+// NOTE: the following is a catch-all type for the properties on iana and
+// x-name components. we assume that every property may occur with any
+// multiplicity
+
+table! {
+    #[derive(Debug, Clone)]
+    AnyPropTable, AnyProp
+}
+
+enum_with_names! {
+/// The potential properties of an [`Event`] together with their value and
+/// parameter types.
+#[derive(Debug, Clone, PartialEq, Eq)]
+AnyProp<S>,
+/// The name of a variant of [`EventProp`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+AnyPropName {
+    // CALENDAR PROPERTIES
+    CalScale(PropSeq<()>),
+    Method(PropSeq<Method<S>>),
+    ProdId(PropSeq<Text<S>>),
+    Version(PropSeq<()>),
+    // DESCRIPTIVE COMPONENT PROPERTIES
+    Attach(PropSeq<AttachValue<S>, Box<AttachParams<S>>>),
+    Categories(PropSeq<Box<[Text<S>]>, LangParams<S>>),
+    Class(PropSeq<ClassValue<S>>),
+    Comment(PropSeq<Text<S>, TextParams<S>>),
+    Description(PropSeq<Text<S>, TextParams<S>>),
+    Geo(PropSeq<Geo>),
+    Location(PropSeq<Text<S>, TextParams<S>>),
+    PercentComplete(PropSeq<CompletionPercentage>),
+    Priority(PropSeq<Priority>),
+    Resources(PropSeq<Box<[Text<S>]>, TextParams<S>>),
+    Status(PropSeq<Status>),
+    Summary(PropSeq<Text<S>, TextParams<S>>),
+    // DATE AND TIME COMPONENT PROPERTIES
+    DtCompleted(PropSeq<DateTime<Utc>>),
+    DtEnd(PropSeq<DateTimeOrDate, DtParams<S>>),
+    DtDue(PropSeq<DateTimeOrDate, DtParams<S>>),
+    DtStart(PropSeq<DateTimeOrDate, DtParams<S>>),
+    Duration(PropSeq<Duration>),
+    FreeBusy(PropSeq<Box<[Period]>, FBTypeParams<S>>),
+    Transp(PropSeq<TimeTransparency>),
+    // TIME ZONE COMPONENT PROPERTIES
+    TzId(PropSeq<TzId<S>>),
+    TzName(PropSeq<Text<S>, LangParams<S>>),
+    TzOffsetFrom(PropSeq<UtcOffset>),
+    TzOffsetTo(PropSeq<UtcOffset>),
+    TzUrl(PropSeq<Uri<S>>),
+    // RELATIONSHIP COMPONENT PROPERTIES
+    Attendee(PropSeq<CalAddress<S>, Box<AttendeeParams<S>>>),
+    Contact(PropSeq<Text<S>, TextParams<S>>),
+    Organizer(PropSeq<CalAddress<S>, Box<OrganizerParams<S>>>),
+    RecurId(PropSeq<DateTimeOrDate, RecurrenceIdParams<S>>),
+    RelatedTo(PropSeq<Text<S>, RelTypeParams<S>>),
+    Url(PropSeq<Uri<S>>),
+    Uid(PropSeq<Uid<S>>),
+    // RECURRENCE COMPONENT PROPERTIES
+    ExDate(PropSeq<DateTimeOrDateSeq, DtParams<S>>),
+    RDate(PropSeq<RDateSeq, DtParams<S>>),
+    RRule(PropSeq<Box<RRule>>),
+    // ALARM COMPONENT PROPERTIES
+    Action(PropSeq<AlarmAction<S>>),
+    Repeat(PropSeq<Integer>),
+    Trigger(Box<[TriggerProp]>),
+    // CHANGE MANAGEMENT COMPONENT PROPERTIES
+    Created(PropSeq<DateTime<Utc>>),
+    DtStamp(PropSeq<DateTime<Utc>>),
+    LastModified(PropSeq<DateTime<Utc>>),
+    Sequence(PropSeq<Integer>),
+    // MISCELLANEOUS COMPONENT PROPERTIES
+    RequestStatus(PropSeq<RequestStatus<S>, LangParams<S>>),
+    // RFC 7986 PROPERTIES
+    Name(PropSeq<Text<S>, TextParams<S>>),
+    RefreshInterval(PropSeq<Duration>),
+    Source(PropSeq<Uri<S>>),
+    Color(PropSeq<Css3Color>),
+    Image(PropSeq<ImageData<S>, ImageParams<S>>),
+    Conference(PropSeq<Uri<S>, ConfParams<S>>)
 }}
 
 #[cfg(test)]
