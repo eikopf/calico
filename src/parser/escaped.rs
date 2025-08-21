@@ -9,6 +9,68 @@ use winnow::{
     },
 };
 
+/// A notion of equivalence modulo an equivalence relation `R`. This pattern
+/// is borrowed from [`equivalence`](https://crates.io/crates/equivalence).
+pub trait Equiv<R, Rhs = Self> {
+    fn equiv(&self, other: Rhs, ctx: R) -> bool;
+}
+
+/// An equivalence relation that ignores line fold escape sequences.
+pub struct LineFold;
+/// The combination of [`LineFold`] with case insensitivity.
+pub struct LineFoldCaseless;
+
+impl<Lhs, Rhs> Equiv<LineFold, Rhs> for Lhs
+where
+    Lhs: AsRef<[u8]>,
+    Rhs: AsRef<[u8]>,
+{
+    fn equiv(&self, other: Rhs, _: LineFold) -> bool {
+        let mut lhs = self.as_ref().as_escaped().iter_offsets().map(|(_, x)| x);
+        let mut rhs =
+            other.as_ref().as_escaped().iter_offsets().map(|(_, x)| x);
+
+        loop {
+            match (lhs.next(), rhs.next()) {
+                (Some(l), Some(r)) => {
+                    if l != r {
+                        return false;
+                    }
+                }
+                (None, None) => return true,
+                _ => return false,
+            }
+        }
+    }
+}
+
+impl<Lhs, Rhs> Equiv<LineFoldCaseless, Rhs> for Lhs
+where
+    Lhs: AsRef<[u8]>,
+    Rhs: AsRef<[u8]>,
+{
+    fn equiv(&self, other: Rhs, _: LineFoldCaseless) -> bool {
+        let mut lhs = self.as_ref().as_escaped().iter_offsets().map(|(_, x)| x);
+        let mut rhs =
+            other.as_ref().as_escaped().iter_offsets().map(|(_, x)| x);
+
+        loop {
+            match (lhs.next(), rhs.next()) {
+                (Some(mut l), Some(mut r)) => {
+                    l.make_ascii_lowercase();
+                    r.make_ascii_lowercase();
+
+                    if l != r {
+                        return false;
+                    }
+                }
+                (None, None) => return true,
+                _ => return false,
+            }
+        }
+    }
+}
+
 pub trait AsEscaped {
     fn as_escaped<'a>(&'a self) -> Escaped<'a>;
 }
@@ -41,6 +103,12 @@ impl<'a> Escaped<'a> {
 impl<'a> std::fmt::Debug for Escaped<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         <winnow::BStr as std::fmt::Debug>::fmt(winnow::BStr::new(self.0), f)
+    }
+}
+
+impl<'a> AsRef<[u8]> for Escaped<'a> {
+    fn as_ref(&self) -> &[u8] {
+        self.as_bytes()
     }
 }
 
@@ -312,6 +380,29 @@ mod tests {
     use winnow::{Parser, token::take};
 
     use super::*;
+
+    #[test]
+    fn line_fold_equivalence() {
+        assert!("".equiv("", LineFold));
+        assert!("abcde".equiv("abcde", LineFold));
+        assert!(!"abcde".equiv("ABcdE", LineFold));
+        assert!(!"abc".equiv("abcde", LineFold));
+        assert!(!"abcdef".equiv("abcde", LineFold));
+        assert!("abcde".equiv("ab\r\n c\r\n\tde", LineFold));
+        assert!("abcde".equiv("ab\r\n c\r\n\tde".as_escaped(), LineFold));
+    }
+
+    #[test]
+    fn line_fold_caseless_equivalence() {
+        assert!("".equiv("", LineFoldCaseless));
+        assert!("abcde".equiv("ABcdE", LineFoldCaseless));
+        assert!(!"abc".equiv("abcde", LineFoldCaseless));
+        assert!(!"abcdef".equiv("abcde", LineFoldCaseless));
+        assert!("abcde".equiv("ab\r\n C\r\n\tde", LineFoldCaseless));
+        assert!(
+            "abcde".equiv("aB\r\n c\r\n\tde".as_escaped(), LineFoldCaseless)
+        );
+    }
 
     #[test]
     fn compare_str_caseless() {
