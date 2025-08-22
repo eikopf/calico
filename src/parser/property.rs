@@ -151,6 +151,70 @@ pub enum KnownProp<S> {
     Conference(Uri<S>, ConfParams<S>),
 }
 
+impl<S> KnownProp<S> {
+    pub const fn name(&self) -> PropName<S> {
+        use PropName::*;
+        use Rfc5545PropName as PN5545;
+        use Rfc7986PropName as PN7986;
+
+        match self {
+            KnownProp::CalScale => Rfc5545(PN5545::CalendarScale),
+            KnownProp::Method(..) => Rfc5545(PN5545::Method),
+            KnownProp::ProdId(..) => Rfc5545(PN5545::ProductIdentifier),
+            KnownProp::Version => Rfc5545(PN5545::Version),
+            KnownProp::Attach(..) => Rfc5545(PN5545::Attachment),
+            KnownProp::Categories(..) => Rfc5545(PN5545::Categories),
+            KnownProp::Class(..) => Rfc5545(PN5545::Classification),
+            KnownProp::Comment(..) => Rfc5545(PN5545::Comment),
+            KnownProp::Description(..) => Rfc5545(PN5545::Description),
+            KnownProp::Geo(..) => Rfc5545(PN5545::GeographicPosition),
+            KnownProp::Location(..) => Rfc5545(PN5545::Location),
+            KnownProp::PercentComplete(..) => Rfc5545(PN5545::PercentComplete),
+            KnownProp::Priority(..) => Rfc5545(PN5545::Priority),
+            KnownProp::Resources(..) => Rfc5545(PN5545::Resources),
+            KnownProp::Status(..) => Rfc5545(PN5545::Status),
+            KnownProp::Summary(..) => Rfc5545(PN5545::Summary),
+            KnownProp::DtCompleted(..) => Rfc5545(PN5545::DateTimeCompleted),
+            KnownProp::DtEnd(..) => Rfc5545(PN5545::DateTimeEnd),
+            KnownProp::DtDue(..) => Rfc5545(PN5545::DateTimeDue),
+            KnownProp::DtStart(..) => Rfc5545(PN5545::DateTimeStart),
+            KnownProp::Duration(..) => Rfc5545(PN5545::Duration),
+            KnownProp::FreeBusy(..) => Rfc5545(PN5545::FreeBusyTime),
+            KnownProp::Transparency(..) => Rfc5545(PN5545::TimeTransparency),
+            KnownProp::TzId(..) => Rfc5545(PN5545::TimeZoneIdentifier),
+            KnownProp::TzName(..) => Rfc5545(PN5545::TimeZoneName),
+            KnownProp::TzOffsetFrom(..) => Rfc5545(PN5545::TimeZoneOffsetFrom),
+            KnownProp::TzOffsetTo(..) => Rfc5545(PN5545::TimeZoneOffsetTo),
+            KnownProp::TzUrl(..) => Rfc5545(PN5545::TimeZoneUrl),
+            KnownProp::Attendee(..) => Rfc5545(PN5545::Attendee),
+            KnownProp::Contact(..) => Rfc5545(PN5545::Contact),
+            KnownProp::Organizer(..) => Rfc5545(PN5545::Organizer),
+            KnownProp::RecurrenceId(..) => Rfc5545(PN5545::RecurrenceId),
+            KnownProp::RelatedTo(..) => Rfc5545(PN5545::RelatedTo),
+            KnownProp::Url(..) => Rfc5545(PN5545::UniformResourceLocator),
+            KnownProp::Uid(..) => Rfc5545(PN5545::UniqueIdentifier),
+            KnownProp::ExDate(..) => Rfc5545(PN5545::ExceptionDateTimes),
+            KnownProp::RDate(..) => Rfc5545(PN5545::RecurrenceDateTimes),
+            KnownProp::RRule(..) => Rfc5545(PN5545::RecurrenceRule),
+            KnownProp::Action(..) => Rfc5545(PN5545::Action),
+            KnownProp::Repeat(..) => Rfc5545(PN5545::RepeatCount),
+            KnownProp::TriggerRelative(..) => Rfc5545(PN5545::Trigger),
+            KnownProp::TriggerAbsolute(..) => Rfc5545(PN5545::Trigger),
+            KnownProp::Created(..) => Rfc5545(PN5545::DateTimeCreated),
+            KnownProp::DtStamp(..) => Rfc5545(PN5545::DateTimeStamp),
+            KnownProp::LastModified(..) => Rfc5545(PN5545::LastModified),
+            KnownProp::Sequence(..) => Rfc5545(PN5545::SequenceNumber),
+            KnownProp::RequestStatus(..) => Rfc5545(PN5545::RequestStatus),
+            KnownProp::Name(..) => Rfc7986(PN7986::Name),
+            KnownProp::RefreshInterval(..) => Rfc7986(PN7986::RefreshInterval),
+            KnownProp::Source(..) => Rfc7986(PN7986::Source),
+            KnownProp::Color(..) => Rfc7986(PN7986::Color),
+            KnownProp::Image(..) => Rfc7986(PN7986::Image),
+            KnownProp::Conference(..) => Rfc7986(PN7986::Conference),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UnknownProp<S> {
     Iana {
@@ -226,7 +290,7 @@ where
     }
 }
 
-type ParsedProp<S> = (Prop<S>, Box<[UnknownParam<S>]>);
+pub type ParsedProp<S> = (Prop<S>, Box<[UnknownParam<S>]>);
 
 /// Parses a [`Prop`].
 pub fn property<I, E>(input: &mut I) -> Result<ParsedProp<I::Slice>, E>
