@@ -78,6 +78,18 @@ pub enum DateTimeOrDate<F = TimeFormat> {
     Date(Date),
 }
 
+impl<F> From<Date> for DateTimeOrDate<F> {
+    fn from(value: Date) -> Self {
+        Self::Date(value)
+    }
+}
+
+impl<F> From<DateTime<F>> for DateTimeOrDate<F> {
+    fn from(value: DateTime<F>) -> Self {
+        Self::DateTime(value)
+    }
+}
+
 /// A homogeneous sequence of either datetimes or dates. Used primarily as the
 /// value type for the EXDATE property.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -828,6 +840,8 @@ impl<T> From<(T, T, T)> for RequestStatusCode<T> {
         Self(a, b, Some(c))
     }
 }
+
+// TODO: add macro for UtcOffset literals.
 
 /// Constructs a [`Date`] from input of the form `yyyy;MM;dd`. Will panic if
 /// the given date is invalid according to [`chrono::NaiveDate::from_ymd_opt`].

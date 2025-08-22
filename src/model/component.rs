@@ -4,6 +4,8 @@ use std::hash::{BuildHasher, Hash, Hasher, RandomState};
 
 use hashbrown::{HashTable, hash_table::Entry as TableEntry};
 
+use crate::parser::escaped::{Equiv, LineFoldCaseless};
+
 use super::{
     css::Css3Color,
     parameter::KnownParam,
@@ -33,12 +35,12 @@ macro_rules! enum_with_names {
         { $($variant:ident ($($field:ty),*)),* }
     ) => {
         $(#[ $m1 ])*
-        enum $enum_name $(<$($t),+>)? {
+        pub enum $enum_name $(<$($t),+>)? {
             $($variant ($($field),*)),*
         }
 
         $(#[ $m2 ])*
-        enum $names_name {
+        pub enum $names_name {
             $($variant),*
         }
 
@@ -68,7 +70,7 @@ macro_rules! enum_with_names {
 macro_rules! table {
     ($(#[ $m:meta ])* $name:ident, $value:ident) => {
         $(#[ $m ])*
-        struct $name <S> (HashTable<Entry<$value<S>, S>>, RandomState);
+        pub struct $name <S> (HashTable<Entry<$value<S>, S>>, RandomState);
 
         impl<S> Default for $name <S> {
             fn default() -> Self {
@@ -86,7 +88,7 @@ macro_rules! table {
                 value: Entry<$value<S>, S>
             ) -> Option<Entry<$value<S>, S>>
             where
-                S: Hash + PartialEq,
+                S: Hash + PartialEq + Equiv<LineFoldCaseless> + AsRef<[u8]>,
             {
                 let hash = Self::hash_entry(&self.1);
                 let key = value.as_key();
@@ -103,9 +105,55 @@ macro_rules! table {
                 }
             }
 
+            pub fn insert_iana(
+                &mut self,
+                name: S,
+                prop: Prop<S, Box<Value<S>>, Box<[KnownParam<S>]>>
+            ) where S: Hash + PartialEq + Equiv<LineFoldCaseless> + AsRef<[u8]> {
+                let key = Key::Iana(&name);
+
+                match self.get_mut(key) {
+                    Some(Entry::Iana { props, .. }) => {
+                        props.push(prop);
+                    }
+                    Some(_) => unreachable!(),
+                    None => {
+                        let entry = Entry::Iana {
+                            name,
+                            props: vec![prop],
+                        };
+
+                        self.insert(entry);
+                    }
+                }
+            }
+
+            pub fn insert_x(
+                &mut self,
+                name: S,
+                prop: Prop<S, Box<Value<S>>, Box<[KnownParam<S>]>>
+            ) where S: Hash + PartialEq + Equiv<LineFoldCaseless> + AsRef<[u8]> {
+                let key = Key::X(&name);
+
+                match self.get_mut(key) {
+                    Some(Entry::X { props, .. }) => {
+                        props.push(prop);
+                    }
+                    Some(_) => unreachable!(),
+                    None => {
+                        let entry = Entry::X {
+                            name,
+                            props: vec![prop],
+                        };
+
+                        self.insert(entry);
+                    }
+                }
+            }
+
             pub fn get(&self, key: Key<$value<S>, &S>) -> Option<&Entry<$value<S>, S>>
             where
-                S: Hash + PartialEq,
+                S: Hash + PartialEq + Equiv<LineFoldCaseless> + AsRef<[u8]>,
             {
                 let hash = Self::hash_key(&self.1);
                 let eq = Self::eq(&key);
@@ -113,14 +161,24 @@ macro_rules! table {
                 self.0.find(hash(&key), eq)
             }
 
+            pub fn get_mut(&mut self, key: Key<$value<S>, &S>) -> Option<&mut Entry<$value<S>, S>>
+            where
+                S: Hash + PartialEq + Equiv<LineFoldCaseless> + AsRef<[u8]>,
+            {
+                let hash = Self::hash_key(&self.1);
+                let eq = Self::eq(&key);
+
+                self.0.find_mut(hash(&key), eq)
+            }
+
             fn eq(lhs: &Key<$value<S>, &S>) -> impl Fn(&Entry<$value<S>, S>) -> bool
             where
-                S: PartialEq,
+                S: PartialEq + Equiv<LineFoldCaseless> + AsRef<[u8]>,
             {
                 move |rhs| match rhs.as_key() {
                     Key::Known(r) => matches!(lhs, Key::Known(l) if l == &r),
-                    Key::Iana(r) => matches!(lhs, Key::Iana(l) if l == &r),
-                    Key::X(r) => matches!(lhs, Key::X(l) if l == &r),
+                    Key::Iana(r) => matches!(lhs, Key::Iana(l) if l.equiv(&r, LineFoldCaseless)),
+                    Key::X(r) => matches!(lhs, Key::X(l) if l.equiv(&r, LineFoldCaseless)),
                 }
             }
 
@@ -154,11 +212,42 @@ macro_rules! table {
     };
 }
 
+macro_rules! mandatory_accessors {
+    ($prop_type:ident, $prop_name:ident; $([$key:ident, $name:ident, $ret:ty]),* $(,)?) => {
+        $(
+            pub fn $name(&self) -> $ret {
+                let raw_entry = self.props.get(Key::Known($prop_name::$key));
+
+                match raw_entry {
+                    Some(Entry::Known($prop_type::$key(prop))) => prop,
+                    Some(_) | None => unreachable!(),
+                }
+            }
+        )*
+    };
+}
+
+macro_rules! optional_accessors {
+    ($prop_type:ident, $prop_name:ident; $([$key:ident, $name:ident, $ret:ty]),* $(,)?) => {
+        $(
+            pub fn $name(&self) -> Option<$ret> {
+                let raw_entry = self.props.get(Key::Known($prop_name::$key));
+
+                match raw_entry {
+                    Some(Entry::Known($prop_type::$key(prop))) => Some(prop),
+                    Some(_) => unreachable!(),
+                    None => None,
+                }
+            }
+        )*
+    };
+}
+
 /// A sequence of [`Prop`].
-type PropSeq<V, P = ()> = Box<[Prop<V, P>]>;
+type PropSeq<S, V, P = ()> = Vec<Prop<S, V, P>>;
 
 /// A basic trait for types that have a discriminant and can return it.
-trait Disc {
+pub trait Disc {
     /// The discriminant type of `Self`.
     type Discriminant;
 
@@ -167,22 +256,23 @@ trait Disc {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Key<T: Disc, S> {
+pub enum Key<T: Disc, S> {
     Known(T::Discriminant),
     Iana(S),
     X(S),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum Entry<T, S> {
+#[allow(clippy::type_complexity)]
+pub enum Entry<T, S> {
     Known(T),
     Iana {
         name: S,
-        prop: Prop<Box<Value<S>>, Box<[KnownParam<S>]>>,
+        props: PropSeq<S, Box<Value<S>>, Box<[KnownParam<S>]>>,
     },
     X {
         name: S,
-        prop: Prop<Box<Value<S>>, Box<[KnownParam<S>]>>,
+        props: PropSeq<S, Box<Value<S>>, Box<[KnownParam<S>]>>,
     },
 }
 
@@ -200,7 +290,7 @@ impl<T: Disc, S> Entry<T, S> {
 #[derive(Debug, Clone)]
 pub struct Calendar<S> {
     props: CalendarTable<S>,
-    components: Box<[Component<S>]>,
+    components: Vec<Component<S>>,
 }
 
 /// A component in an iCalendar object (RFC 5545 §3.6).
@@ -219,14 +309,14 @@ pub enum Component<S> {
 #[derive(Debug, Clone)]
 pub struct Event<S> {
     props: EventTable<S>,
-    alarms: Box<[Alarm<S>]>,
+    alarms: Vec<Alarm<S>>,
 }
 
 /// A VTODO component (RFC 5545 §3.6.2).
 #[derive(Debug, Clone)]
 pub struct Todo<S> {
     props: TodoTable<S>,
-    alarms: Box<[Alarm<S>]>,
+    alarms: Vec<Alarm<S>>,
 }
 
 /// A VJOURNAL component (RFC 5545 §3.6.3).
@@ -244,17 +334,58 @@ pub struct FreeBusy<S> {
 /// A VTIMEZONE component (RFC 5545 §3.6.5).
 #[derive(Debug, Clone)]
 pub struct TimeZone<S> {
-    props: TimeZoneTable<S>,
+    pub(crate) props: TimeZoneTable<S>,
     /// The STANDARD and DAYLIGHT subcomponents. This list is guaranteed to have
     /// at least one element.
-    subcomponents: Box<[TzRule<S>]>,
+    pub(crate) subcomponents: Vec<TzRule<S>>,
+}
+
+impl<S> TimeZone<S> {
+    pub fn rules(&self) -> &[TzRule<S>] {
+        &self.subcomponents
+    }
+}
+
+impl<S> TimeZone<S>
+where
+    S: Hash + PartialEq + Equiv<LineFoldCaseless> + AsRef<[u8]>,
+{
+    optional_accessors! {TimeZoneProp, TimeZonePropName;
+        [TzId, id, &Prop<S, TzId<S>>],
+        [LastModified, last_modified, &Prop<S, DateTime<Utc>>],
+        [TzUrl, url, &Prop<S, Uri<S>>],
+    }
 }
 
 /// A STANDARD or DAYLIGHT subcomponent of a [`TimeZone`].
 #[derive(Debug, Clone)]
 pub struct TzRule<S> {
-    props: OffsetTable<S>,
-    kind: TzRuleKind,
+    pub(crate) kind: TzRuleKind,
+    pub(crate) props: OffsetTable<S>,
+}
+
+impl<S> TzRule<S> {
+    pub fn kind(&self) -> TzRuleKind {
+        self.kind
+    }
+}
+
+impl<S> TzRule<S>
+where
+    S: Hash + PartialEq + Equiv<LineFoldCaseless> + AsRef<[u8]>,
+{
+    mandatory_accessors! {OffsetProp, OffsetPropName;
+        [DtStart, start, &Prop<S, DateTimeOrDate, DtParams<S>>],
+        [TzOffsetTo, offset_to, &Prop<S, UtcOffset>],
+        [TzOffsetFrom, offset_from, &Prop<S, UtcOffset>],
+    }
+
+    optional_accessors! {OffsetProp, OffsetPropName;
+        [RRule, rrule, &Prop<S, Box<RRule>>],
+        [Comment, comments, &[Prop<S, Text<S>, TextParams<S>>]],
+        [RDate, recurrence_dates, &[Prop<S, RDateSeq, DtParams<S>>]],
+        [TzName, names, &[Prop<S, Text<S>, LangParams<S>>]],
+    }
 }
 
 /// The kind of a [`TzRule`], for which the default is [`Standard`].
@@ -322,20 +453,20 @@ CalendarProp<S>,
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 CalendarPropName {
     // mandatory fields (RFC 5545)
-    ProdId(Prop<Text<S>>),
-    Version(Prop<()>),
+    ProdId(Prop<S, Text<S>>),
+    Version(Prop<S, ()>),
 
     // optional fields (RFC 5545)
-    CalScale(Prop<()>),
-    Method(Prop<Method<S>>),
+    CalScale(Prop<S, ()>),
+    Method(Prop<S, Method<S>>),
 
     // optional fields (RFC 7986)
-    Uid(Prop<Uid<S>>),
-    LastModified(Prop<DateTime<Utc>>),
-    Url(Prop<Uri<S>>),
-    RefreshInterval(Prop<Duration>),
-    Source(Prop<Uri<S>>),
-    Color(Prop<Css3Color>),
+    Uid(Prop<S, Uid<S>>),
+    LastModified(Prop<S, DateTime<Utc>>),
+    Url(Prop<S, Uri<S>>),
+    RefreshInterval(Prop<S, Duration>),
+    Source(Prop<S, Uri<S>>),
+    Color(Prop<S, Css3Color>),
 
     // free multiplicity fields (RFC 7986)
     Name(PropSeq<Text<S>, TextParams<S>>),
@@ -358,44 +489,44 @@ EventProp<S>,
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 EventPropName {
     // mandatory fields
-    DtStamp(Prop<DateTime<Utc>>),
-    Uid(Prop<Uid<S>>),
+    DtStamp(Prop<S, DateTime<Utc>>),
+    Uid(Prop<S, Uid<S>>),
 
     // optional fields
-    DtStart(Prop<DateTimeOrDate, DtParams<S>>), // required if METHOD is absent
-    Class(Prop<ClassValue<S>>),
-    Created(Prop<DateTime<Utc>>),
-    Description(Prop<Text<S>, TextParams<S>>),
-    Geo(Prop<Geo>),
-    LastModified(Prop<DateTime<Utc>>),
-    Location(Prop<Text<S>, TextParams<S>>),
-    Organizer(Prop<CalAddress<S>, Box<OrganizerParams<S>>>),
-    Priority(Prop<Priority>),
-    Sequence(Prop<Integer>),
-    Status(Prop<EventStatus>),
-    Summary(Prop<Text<S>, TextParams<S>>),
-    Transp(Prop<TimeTransparency>),
-    Url(Prop<Uri<S>>),
-    RecurId(Prop<DateTimeOrDate, RecurrenceIdParams<S>>),
-    RRule(Prop<Box<RRule>>), // SHOULD NOT occur more than once
-    Color(Prop<Css3Color>), // RFC 7986 §4
+    DtStart(Prop<S, DateTimeOrDate, DtParams<S>>), // required if METHOD is absent
+    Class(Prop<S, ClassValue<S>>),
+    Created(Prop<S, DateTime<Utc>>),
+    Description(Prop<S, Text<S>, TextParams<S>>),
+    Geo(Prop<S, Geo>),
+    LastModified(Prop<S, DateTime<Utc>>),
+    Location(Prop<S, Text<S>, TextParams<S>>),
+    Organizer(Prop<S, CalAddress<S>, Box<OrganizerParams<S>>>),
+    Priority(Prop<S, Priority>),
+    Sequence(Prop<S, Integer>),
+    Status(Prop<S, EventStatus>),
+    Summary(Prop<S, Text<S>, TextParams<S>>),
+    Transp(Prop<S, TimeTransparency>),
+    Url(Prop<S, Uri<S>>),
+    RecurId(Prop<S, DateTimeOrDate, RecurrenceIdParams<S>>),
+    RRule(Prop<S, Box<RRule>>), // SHOULD NOT occur more than once
+    Color(Prop<S, Css3Color>), // RFC 7986 §4
 
     // either DTEND or DURATION, since they are mutually exclusive
     Termination(EventTerminationProp<S>),
 
     // free multiplicity fields
-    Attach(PropSeq<AttachValue<S>, Box<AttachParams<S>>>),
-    Attendee(PropSeq<CalAddress<S>, Box<AttendeeParams<S>>>),
-    Categories(PropSeq<Box<[Text<S>]>, LangParams<S>>),
-    Comment(PropSeq<Text<S>, TextParams<S>>),
-    Contact(PropSeq<Text<S>, TextParams<S>>),
-    ExDate(PropSeq<DateTimeOrDateSeq, DtParams<S>>),
-    RequestStatus(PropSeq<RequestStatus<S>, LangParams<S>>),
-    RelatedTo(PropSeq<Text<S>, RelTypeParams<S>>),
-    Resources(PropSeq<Box<[Text<S>]>, TextParams<S>>),
-    RDate(PropSeq<RDateSeq, DtParams<S>>),
-    Conference(PropSeq<Uri<S>, ConfParams<S>>), // RFC 7986 §4
-    Image(PropSeq<ImageData<S>, ImageParams<S>>) // RFC 7986 §4
+    Attach(PropSeq<S, AttachValue<S>, Box<AttachParams<S>>>),
+    Attendee(PropSeq<S, CalAddress<S>, Box<AttendeeParams<S>>>),
+    Categories(PropSeq<S, Box<[Text<S>]>, LangParams<S>>),
+    Comment(PropSeq<S, Text<S>, TextParams<S>>),
+    Contact(PropSeq<S, Text<S>, TextParams<S>>),
+    ExDate(PropSeq<S, DateTimeOrDateSeq, DtParams<S>>),
+    RequestStatus(PropSeq<S, RequestStatus<S>, LangParams<S>>),
+    RelatedTo(PropSeq<S, Text<S>, RelTypeParams<S>>),
+    Resources(PropSeq<S, Box<[Text<S>]>, TextParams<S>>),
+    RDate(PropSeq<S, RDateSeq, DtParams<S>>),
+    Conference(PropSeq<S, Uri<S>, ConfParams<S>>), // RFC 7986 §4
+    Image(PropSeq<S, ImageData<S>, ImageParams<S>>) // RFC 7986 §4
 }}
 
 table! {
@@ -409,45 +540,45 @@ TodoProp<S>,
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 TodoPropName {
     // mandatory fields
-    DtStamp(Prop<DateTime<Utc>>),
-    Uid(Prop<Uid<S>>),
+    DtStamp(Prop<S, DateTime<Utc>>),
+    Uid(Prop<S, Uid<S>>),
 
     // optional fields
-    Class(Prop<ClassValue<S>>),
-    Completed(Prop<DateTime<Utc>>),
-    Created(Prop<DateTime<Utc>>),
-    Description(Prop<Text<S>, TextParams<S>>),
-    DtStart(Prop<DateTimeOrDate, DtParams<S>>),
-    Geo(Prop<Geo>),
-    LastModified(Prop<DateTime<Utc>>),
-    Location(Prop<Text<S>, TextParams<S>>),
-    Organizer(Prop<CalAddress<S>, Box<OrganizerParams<S>>>),
-    Percent(Prop<CompletionPercentage>),
-    Priority(Prop<Priority>),
-    RecurId(Prop<DateTimeOrDate, RecurrenceIdParams<S>>),
-    Sequence(Prop<Integer>),
-    Status(Prop<TodoStatus>),
-    Summary(Prop<Text<S>, TextParams<S>>),
-    Url(Prop<Uri<S>>),
-    RRule(Prop<Box<RRule>>), // SHOULD NOT occur more than once
-    Color(Prop<Css3Color>), // RFC 7986 §4
+    Class(Prop<S, ClassValue<S>>),
+    Completed(Prop<S, DateTime<Utc>>),
+    Created(Prop<S, DateTime<Utc>>),
+    Description(Prop<S, Text<S>, TextParams<S>>),
+    DtStart(Prop<S, DateTimeOrDate, DtParams<S>>),
+    Geo(Prop<S, Geo>),
+    LastModified(Prop<S, DateTime<Utc>>),
+    Location(Prop<S, Text<S>, TextParams<S>>),
+    Organizer(Prop<S, CalAddress<S>, Box<OrganizerParams<S>>>),
+    Percent(Prop<S, CompletionPercentage>),
+    Priority(Prop<S, Priority>),
+    RecurId(Prop<S, DateTimeOrDate, RecurrenceIdParams<S>>),
+    Sequence(Prop<S, Integer>),
+    Status(Prop<S, TodoStatus>),
+    Summary(Prop<S, Text<S>, TextParams<S>>),
+    Url(Prop<S, Uri<S>>),
+    RRule(Prop<S, Box<RRule>>), // SHOULD NOT occur more than once
+    Color(Prop<S, Css3Color>), // RFC 7986 §4
 
     // either DTDUE or DURATION, since they are mutually exclusive
     Termination(TodoTerminationProp<S>),
 
     // free multiplicity fields
-    Attach(PropSeq<AttachValue<S>, Box<AttachParams<S>>>),
-    Attendee(PropSeq<CalAddress<S>, Box<AttendeeParams<S>>>),
-    Categories(PropSeq<Box<[Text<S>]>, LangParams<S>>),
-    Comment(PropSeq<Text<S>, TextParams<S>>),
-    Contact(PropSeq<Text<S>, TextParams<S>>),
-    ExDate(PropSeq<DateTimeOrDateSeq, DtParams<S>>),
-    RequestStatus(PropSeq<RequestStatus<S>, LangParams<S>>),
-    RelatedTo(PropSeq<Text<S>, RelTypeParams<S>>),
-    Resources(PropSeq<Box<[Text<S>]>, TextParams<S>>),
-    RDate(PropSeq<RDateSeq, DtParams<S>>),
-    Conference(PropSeq<Uri<S>, ConfParams<S>>), // RFC 7986 §4
-    Image(PropSeq<ImageData<S>, ImageParams<S>>) // RFC 7986 §4
+    Attach(PropSeq<S, AttachValue<S>, Box<AttachParams<S>>>),
+    Attendee(PropSeq<S, CalAddress<S>, Box<AttendeeParams<S>>>),
+    Categories(PropSeq<S, Box<[Text<S>]>, LangParams<S>>),
+    Comment(PropSeq<S, Text<S>, TextParams<S>>),
+    Contact(PropSeq<S, Text<S>, TextParams<S>>),
+    ExDate(PropSeq<S, DateTimeOrDateSeq, DtParams<S>>),
+    RequestStatus(PropSeq<S, RequestStatus<S>, LangParams<S>>),
+    RelatedTo(PropSeq<S, Text<S>, RelTypeParams<S>>),
+    Resources(PropSeq<S, Box<[Text<S>]>, TextParams<S>>),
+    RDate(PropSeq<S, RDateSeq, DtParams<S>>),
+    Conference(PropSeq<S, Uri<S>, ConfParams<S>>), // RFC 7986 §4
+    Image(PropSeq<S, ImageData<S>, ImageParams<S>>) // RFC 7986 §4
 }}
 
 table! {
@@ -461,35 +592,35 @@ JournalProp<S>,
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 JournalPropName {
     // mandatory fields
-    DtStamp(Prop<DateTime<Utc>>),
-    Uid(Prop<Uid<S>>),
+    DtStamp(Prop<S, DateTime<Utc>>),
+    Uid(Prop<S, Uid<S>>),
 
     // optional fields
-    Class(Prop<ClassValue<S>>),
-    Created(Prop<DateTime<Utc>>),
-    DtStart(Prop<DateTimeOrDate, DtParams<S>>),
-    LastModified(Prop<DateTime<Utc>>),
-    Organizer(Prop<CalAddress<S>, Box<OrganizerParams<S>>>),
-    RecurId(Prop<DateTimeOrDate, RecurrenceIdParams<S>>),
-    Sequence(Prop<Integer>),
-    Status(Prop<JournalStatus>),
-    Summary(Prop<Text<S>, TextParams<S>>),
-    Url(Prop<Uri<S>>),
-    RRule(Prop<Box<RRule>>), // SHOULD NOT occur more than once
-    Color(Prop<Css3Color>), // RFC 7986 §4
+    Class(Prop<S, ClassValue<S>>),
+    Created(Prop<S, DateTime<Utc>>),
+    DtStart(Prop<S, DateTimeOrDate, DtParams<S>>),
+    LastModified(Prop<S, DateTime<Utc>>),
+    Organizer(Prop<S, CalAddress<S>, Box<OrganizerParams<S>>>),
+    RecurId(Prop<S, DateTimeOrDate, RecurrenceIdParams<S>>),
+    Sequence(Prop<S, Integer>),
+    Status(Prop<S, JournalStatus>),
+    Summary(Prop<S, Text<S>, TextParams<S>>),
+    Url(Prop<S, Uri<S>>),
+    RRule(Prop<S, Box<RRule>>), // SHOULD NOT occur more than once
+    Color(Prop<S, Css3Color>), // RFC 7986 §4
 
     // free multiplicity fields
-    Attach(PropSeq<AttachValue<S>, Box<AttachParams<S>>>),
-    Attendee(PropSeq<CalAddress<S>, Box<AttendeeParams<S>>>),
-    Categories(PropSeq<Box<[Text<S>]>, LangParams<S>>),
-    Comment(PropSeq<Text<S>, TextParams<S>>),
-    Contact(PropSeq<Text<S>, TextParams<S>>),
-    Description(PropSeq<Box<[Text<S>]>, TextParams<S>>),
-    ExDate(PropSeq<DateTimeOrDateSeq, DtParams<S>>),
-    RequestStatus(PropSeq<RequestStatus<S>, LangParams<S>>),
-    RelatedTo(PropSeq<Text<S>, RelTypeParams<S>>),
-    RDate(PropSeq<RDateSeq, DtParams<S>>),
-    Image(PropSeq<ImageData<S>, ImageParams<S>>) // RFC 7986 §4
+    Attach(PropSeq<S, AttachValue<S>, Box<AttachParams<S>>>),
+    Attendee(PropSeq<S, CalAddress<S>, Box<AttendeeParams<S>>>),
+    Categories(PropSeq<S, Box<[Text<S>]>, LangParams<S>>),
+    Comment(PropSeq<S, Text<S>, TextParams<S>>),
+    Contact(PropSeq<S, Text<S>, TextParams<S>>),
+    Description(PropSeq<S, Box<[Text<S>]>, TextParams<S>>),
+    ExDate(PropSeq<S, DateTimeOrDateSeq, DtParams<S>>),
+    RequestStatus(PropSeq<S, RequestStatus<S>, LangParams<S>>),
+    RelatedTo(PropSeq<S, Text<S>, RelTypeParams<S>>),
+    RDate(PropSeq<S, RDateSeq, DtParams<S>>),
+    Image(PropSeq<S, ImageData<S>, ImageParams<S>>) // RFC 7986 §4
 }}
 
 table! {
@@ -503,21 +634,21 @@ FreeBusyProp<S>,
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 FreeBusyPropName {
     // mandatory fields
-    DtStamp(Prop<DateTime<Utc>>),
-    Uid(Prop<Uid<S>>),
+    DtStamp(Prop<S, DateTime<Utc>>),
+    Uid(Prop<S, Uid<S>>),
 
     // optional fields
-    Contact(Prop<Text<S>, TextParams<S>>),
-    DtStart(Prop<DateTimeOrDate, DtParams<S>>),
-    DtEnd(Prop<DateTimeOrDate, DtParams<S>>),
-    Organizer(Prop<CalAddress<S>, Box<OrganizerParams<S>>>),
-    Url(Prop<Uri<S>>),
+    Contact(Prop<S, Text<S>, TextParams<S>>),
+    DtStart(Prop<S, DateTimeOrDate, DtParams<S>>),
+    DtEnd(Prop<S, DateTimeOrDate, DtParams<S>>),
+    Organizer(Prop<S, CalAddress<S>, Box<OrganizerParams<S>>>),
+    Url(Prop<S, Uri<S>>),
 
     // free multiplicity fields
-    Attendee(PropSeq<CalAddress<S>, Box<AttendeeParams<S>>>),
-    Comment(PropSeq<Text<S>, TextParams<S>>),
-    FreeBusy(PropSeq<Box<[Period]>, FBTypeParams<S>>),
-    RequestStatus(PropSeq<RequestStatus<S>, LangParams<S>>)
+    Attendee(PropSeq<S, CalAddress<S>, Box<AttendeeParams<S>>>),
+    Comment(PropSeq<S, Text<S>, TextParams<S>>),
+    FreeBusy(PropSeq<S, Box<[Period]>, FBTypeParams<S>>),
+    RequestStatus(PropSeq<S, RequestStatus<S>, LangParams<S>>)
 }}
 
 table! {
@@ -531,11 +662,11 @@ TimeZoneProp<S>,
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 TimeZonePropName {
     // mandatory fields
-    TzId(Prop<TzId<S>>),
+    TzId(Prop<S, TzId<S>>),
 
     // optional fields
-    LastModified(Prop<DateTime<Utc>>),
-    TzUrl(Prop<Uri<S>>)
+    LastModified(Prop<S, DateTime<Utc>>),
+    TzUrl(Prop<S, Uri<S>>)
 }}
 
 // NOTE: since the contents of the STANDARD and DAYLIGHT components are the
@@ -552,17 +683,17 @@ OffsetProp<S>,
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 OffsetPropName {
     // mandatory fields
-    DtStart(Prop<DateTimeOrDate, DtParams<S>>),
-    TzOffsetTo(Prop<UtcOffset>),
-    TzOffsetFrom(Prop<UtcOffset>),
+    DtStart(Prop<S, DateTimeOrDate, DtParams<S>>),
+    TzOffsetTo(Prop<S, UtcOffset>),
+    TzOffsetFrom(Prop<S, UtcOffset>),
 
     // optional fields
-    RRule(Prop<Box<RRule>>), // SHOULD NOT occur more than once
+    RRule(Prop<S, Box<RRule>>), // SHOULD NOT occur more than once
 
     // free multiplicity fields
-    Comment(PropSeq<Text<S>, TextParams<S>>),
-    RDate(PropSeq<RDateSeq, DtParams<S>>),
-    TzName(Prop<Text<S>, LangParams<S>>)
+    Comment(PropSeq<S, Text<S>, TextParams<S>>),
+    RDate(PropSeq<S, RDateSeq, DtParams<S>>),
+    TzName(PropSeq<S, Text<S>, LangParams<S>>)
 }}
 
 table! {
@@ -576,12 +707,12 @@ AudioAlarmProp<S>,
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 AudioAlarmPropName {
     // mandatory fields
-    Action(Prop<AudioAction>),
-    Trigger(TriggerProp),
+    Action(Prop<S, AudioAction>),
+    Trigger(TriggerProp<S>),
 
     // optional fields
-    DurRep(Prop<Duration>, Prop<Integer>), // the product of DURATION and REPEAT
-    Attach(Prop<AttachValue<S>, AttachParams<S>>)
+    DurRep(Prop<S, Duration>, Prop<S, Integer>), // the product of DURATION and REPEAT
+    Attach(Prop<S, AttachValue<S>, AttachParams<S>>)
 }}
 
 table! {
@@ -595,12 +726,12 @@ DisplayAlarmProp<S>,
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 DisplayAlarmPropName {
     // mandatory fields
-    Action(Prop<DisplayAction>),
-    Description(Prop<Text<S>, TextParams<S>>),
-    Trigger(TriggerProp),
+    Action(Prop<S, DisplayAction>),
+    Description(Prop<S, Text<S>, TextParams<S>>),
+    Trigger(TriggerProp<S>),
 
     // optional fields
-    DurRep(Prop<Duration>, Prop<Integer>) // the product of DURATION and REPEAT
+    DurRep(Prop<S, Duration>, Prop<S, Integer>) // the product of DURATION and REPEAT
 }}
 
 table! {
@@ -614,17 +745,17 @@ EmailAlarmProp<S>,
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 EmailAlarmPropName {
     // mandatory fields
-    Action(Prop<EmailAction>),
-    Description(Prop<Text<S>, TextParams<S>>),
-    Trigger(TriggerProp),
-    Summary(Prop<Text<S>, TextParams<S>>),
+    Action(Prop<S, EmailAction>),
+    Description(Prop<S, Text<S>, TextParams<S>>),
+    Trigger(TriggerProp<S>),
+    Summary(Prop<S, Text<S>, TextParams<S>>),
 
     // optional fields
-    DurRep(Prop<Duration>, Prop<Integer>), // the product of DURATION and REPEAT
+    DurRep(Prop<S, Duration>, Prop<S, Integer>), // the product of DURATION and REPEAT
 
     // free multiplicity fields
-    Attendee(PropSeq<CalAddress<S>, Box<AttendeeParams<S>>>),
-    Attach(PropSeq<AttachValue<S>, AttachParams<S>>)
+    Attendee(PropSeq<S, CalAddress<S>, Box<AttendeeParams<S>>>),
+    Attach(PropSeq<S, AttachValue<S>, AttachParams<S>>)
 }}
 
 table! {
@@ -638,17 +769,17 @@ OtherAlarmProp<S>,
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 OtherAlarmPropName {
     // mandatory fields
-    Action(Prop<S>),
-    Description(Prop<Text<S>, TextParams<S>>),
-    Trigger(TriggerProp),
-    Summary(Prop<Text<S>, TextParams<S>>),
+    Action(Prop<S, S>),
+    Description(Prop<S, Text<S>, TextParams<S>>),
+    Trigger(TriggerProp<S>),
+    Summary(Prop<S, Text<S>, TextParams<S>>),
 
     // optional fields
-    DurRep(Prop<Duration>, Prop<Integer>), // the product of DURATION and REPEAT
+    DurRep(Prop<S, Duration>, Prop<S, Integer>), // the product of DURATION and REPEAT
 
     // free multiplicity fields
-    Attendee(PropSeq<CalAddress<S>, Box<AttendeeParams<S>>>),
-    Attach(PropSeq<AttachValue<S>, AttachParams<S>>)
+    Attendee(PropSeq<S, CalAddress<S>, Box<AttendeeParams<S>>>),
+    Attach(PropSeq<S, AttachValue<S>, AttachParams<S>>)
 }}
 
 // NOTE: the following is a catch-all type for the properties on iana and
@@ -669,67 +800,67 @@ AnyProp<S>,
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 AnyPropName {
     // CALENDAR PROPERTIES
-    CalScale(PropSeq<()>),
-    Method(PropSeq<Method<S>>),
-    ProdId(PropSeq<Text<S>>),
-    Version(PropSeq<()>),
+    CalScale(PropSeq<S, ()>),
+    Method(PropSeq<S, Method<S>>),
+    ProdId(PropSeq<S, Text<S>>),
+    Version(PropSeq<S, ()>),
     // DESCRIPTIVE COMPONENT PROPERTIES
-    Attach(PropSeq<AttachValue<S>, Box<AttachParams<S>>>),
-    Categories(PropSeq<Box<[Text<S>]>, LangParams<S>>),
-    Class(PropSeq<ClassValue<S>>),
-    Comment(PropSeq<Text<S>, TextParams<S>>),
-    Description(PropSeq<Text<S>, TextParams<S>>),
-    Geo(PropSeq<Geo>),
-    Location(PropSeq<Text<S>, TextParams<S>>),
-    PercentComplete(PropSeq<CompletionPercentage>),
-    Priority(PropSeq<Priority>),
-    Resources(PropSeq<Box<[Text<S>]>, TextParams<S>>),
-    Status(PropSeq<Status>),
-    Summary(PropSeq<Text<S>, TextParams<S>>),
+    Attach(PropSeq<S, AttachValue<S>, Box<AttachParams<S>>>),
+    Categories(PropSeq<S, Box<[Text<S>]>, LangParams<S>>),
+    Class(PropSeq<S, ClassValue<S>>),
+    Comment(PropSeq<S, Text<S>, TextParams<S>>),
+    Description(PropSeq<S, Text<S>, TextParams<S>>),
+    Geo(PropSeq<S, Geo>),
+    Location(PropSeq<S, Text<S>, TextParams<S>>),
+    PercentComplete(PropSeq<S, CompletionPercentage>),
+    Priority(PropSeq<S, Priority>),
+    Resources(PropSeq<S, Box<[Text<S>]>, TextParams<S>>),
+    Status(PropSeq<S, Status>),
+    Summary(PropSeq<S, Text<S>, TextParams<S>>),
     // DATE AND TIME COMPONENT PROPERTIES
-    DtCompleted(PropSeq<DateTime<Utc>>),
-    DtEnd(PropSeq<DateTimeOrDate, DtParams<S>>),
-    DtDue(PropSeq<DateTimeOrDate, DtParams<S>>),
-    DtStart(PropSeq<DateTimeOrDate, DtParams<S>>),
-    Duration(PropSeq<Duration>),
-    FreeBusy(PropSeq<Box<[Period]>, FBTypeParams<S>>),
-    Transp(PropSeq<TimeTransparency>),
+    DtCompleted(PropSeq<S, DateTime<Utc>>),
+    DtEnd(PropSeq<S, DateTimeOrDate, DtParams<S>>),
+    DtDue(PropSeq<S, DateTimeOrDate, DtParams<S>>),
+    DtStart(PropSeq<S, DateTimeOrDate, DtParams<S>>),
+    Duration(PropSeq<S, Duration>),
+    FreeBusy(PropSeq<S, Box<[Period]>, FBTypeParams<S>>),
+    Transp(PropSeq<S, TimeTransparency>),
     // TIME ZONE COMPONENT PROPERTIES
-    TzId(PropSeq<TzId<S>>),
-    TzName(PropSeq<Text<S>, LangParams<S>>),
-    TzOffsetFrom(PropSeq<UtcOffset>),
-    TzOffsetTo(PropSeq<UtcOffset>),
-    TzUrl(PropSeq<Uri<S>>),
+    TzId(PropSeq<S, TzId<S>>),
+    TzName(PropSeq<S, Text<S>, LangParams<S>>),
+    TzOffsetFrom(PropSeq<S, UtcOffset>),
+    TzOffsetTo(PropSeq<S, UtcOffset>),
+    TzUrl(PropSeq<S, Uri<S>>),
     // RELATIONSHIP COMPONENT PROPERTIES
-    Attendee(PropSeq<CalAddress<S>, Box<AttendeeParams<S>>>),
-    Contact(PropSeq<Text<S>, TextParams<S>>),
-    Organizer(PropSeq<CalAddress<S>, Box<OrganizerParams<S>>>),
-    RecurId(PropSeq<DateTimeOrDate, RecurrenceIdParams<S>>),
-    RelatedTo(PropSeq<Text<S>, RelTypeParams<S>>),
-    Url(PropSeq<Uri<S>>),
-    Uid(PropSeq<Uid<S>>),
+    Attendee(PropSeq<S, CalAddress<S>, Box<AttendeeParams<S>>>),
+    Contact(PropSeq<S, Text<S>, TextParams<S>>),
+    Organizer(PropSeq<S, CalAddress<S>, Box<OrganizerParams<S>>>),
+    RecurId(PropSeq<S, DateTimeOrDate, RecurrenceIdParams<S>>),
+    RelatedTo(PropSeq<S, Text<S>, RelTypeParams<S>>),
+    Url(PropSeq<S, Uri<S>>),
+    Uid(PropSeq<S, Uid<S>>),
     // RECURRENCE COMPONENT PROPERTIES
-    ExDate(PropSeq<DateTimeOrDateSeq, DtParams<S>>),
-    RDate(PropSeq<RDateSeq, DtParams<S>>),
-    RRule(PropSeq<Box<RRule>>),
+    ExDate(PropSeq<S, DateTimeOrDateSeq, DtParams<S>>),
+    RDate(PropSeq<S, RDateSeq, DtParams<S>>),
+    RRule(PropSeq<S, Box<RRule>>),
     // ALARM COMPONENT PROPERTIES
-    Action(PropSeq<AlarmAction<S>>),
-    Repeat(PropSeq<Integer>),
-    Trigger(Box<[TriggerProp]>),
+    Action(PropSeq<S, AlarmAction<S>>),
+    Repeat(PropSeq<S, Integer>),
+    Trigger(Box<[TriggerProp<S>]>),
     // CHANGE MANAGEMENT COMPONENT PROPERTIES
-    Created(PropSeq<DateTime<Utc>>),
-    DtStamp(PropSeq<DateTime<Utc>>),
-    LastModified(PropSeq<DateTime<Utc>>),
-    Sequence(PropSeq<Integer>),
+    Created(PropSeq<S, DateTime<Utc>>),
+    DtStamp(PropSeq<S, DateTime<Utc>>),
+    LastModified(PropSeq<S, DateTime<Utc>>),
+    Sequence(PropSeq<S, Integer>),
     // MISCELLANEOUS COMPONENT PROPERTIES
-    RequestStatus(PropSeq<RequestStatus<S>, LangParams<S>>),
+    RequestStatus(PropSeq<S, RequestStatus<S>, LangParams<S>>),
     // RFC 7986 PROPERTIES
-    Name(PropSeq<Text<S>, TextParams<S>>),
-    RefreshInterval(PropSeq<Duration>),
-    Source(PropSeq<Uri<S>>),
-    Color(PropSeq<Css3Color>),
-    Image(PropSeq<ImageData<S>, ImageParams<S>>),
-    Conference(PropSeq<Uri<S>, ConfParams<S>>)
+    Name(PropSeq<S, Text<S>, TextParams<S>>),
+    RefreshInterval(PropSeq<S, Duration>),
+    Source(PropSeq<S, Uri<S>>),
+    Color(PropSeq<S, Css3Color>),
+    Image(PropSeq<S, ImageData<S>, ImageParams<S>>),
+    Conference(PropSeq<S, Uri<S>, ConfParams<S>>)
 }}
 
 #[cfg(test)]
@@ -743,14 +874,10 @@ mod tests {
         let mut event = EventTable::new();
 
         let uid = EventProp::Uid(Prop::from_value(Uid("some-identifier")));
-        let dtstamp = EventProp::DtStamp(Prop {
-            value: DateTime {
-                date: date!(1997;12;24),
-                time: time!(15;20;12, Utc),
-            },
-            params: Default::default(),
-            extra_params: Default::default(),
-        });
+        let dtstamp = EventProp::DtStamp(Prop::from_value(DateTime {
+            date: date!(1997;12;24),
+            time: time!(15;20;12, Utc),
+        }));
 
         let prev = event.insert(Entry::Known(uid.clone()));
         assert!(prev.is_none());

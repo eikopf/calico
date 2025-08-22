@@ -1,62 +1,54 @@
 //! iCalendar properties.
 
-use std::collections::HashMap;
-
 use crate::parser::parameter::ParamValue;
 
-use super::primitive::{
-    CalAddress, CalendarUserType, DateTime, DateTimeOrDate, DisplayType,
-    Duration, FeatureType, FormatType, FreeBusyType, ImageData, Language,
-    ParticipationRole, ParticipationStatus, RelationshipType, Text,
-    ThisAndFuture, TriggerRelation, TzId, Uri, Utc,
+use super::{
+    parameter::UnknownParam,
+    primitive::{
+        CalAddress, CalendarUserType, DateTime, DateTimeOrDate, DisplayType,
+        Duration, FeatureType, FormatType, FreeBusyType, Language,
+        ParticipationRole, ParticipationStatus, RelationshipType,
+        ThisAndFuture, TriggerRelation, TzId, Uri, Utc,
+    },
 };
-
-/// An ordinary textual property.
-pub type TextProp<S> = Prop<Text<S>, TextParams<S>>;
-
-/// A sequence of textual values with the LANGUAGE parameter.
-pub type SeqLangProp<S> = Prop<Box<[Text<S>]>, LangParams<S>>;
-
-/// An ordinary image property.
-pub type ImageProp<S> = Prop<ImageData<S>, ImageParams<S>>;
-
-/// A conference property.
-pub type ConfProp<S> = Prop<Uri<S>, ConfParams<S>>;
 
 /// A property generic over values and parameters.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct Prop<V, P = ()> {
+pub struct Prop<S, V, P = ()> {
     pub params: P,
     pub value: V,
-    pub extra_params: Box<HashMap<Box<str>, Box<str>>>, // TODO: use a better type for this!
+    pub unknown_params: Box<[UnknownParam<S>]>,
 }
 
-impl<V> Prop<V> {
-    pub fn from_value(value: V) -> Self {
+impl<S, V, P> Prop<S, V, P> {
+    pub fn from_value(value: V) -> Self
+    where
+        P: Default,
+    {
         Self {
             value,
-            params: (),
-            extra_params: Default::default(),
+            params: Default::default(),
+            unknown_params: Default::default(),
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EventTerminationProp<S> {
-    End(Prop<DateTimeOrDate, DtParams<S>>),
-    Duration(Prop<Duration>),
+    End(Prop<S, DateTimeOrDate, DtParams<S>>),
+    Duration(Prop<S, Duration>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TodoTerminationProp<S> {
-    Due(Prop<DateTimeOrDate, DtParams<S>>),
-    Duration(Prop<Duration>),
+    Due(Prop<S, DateTimeOrDate, DtParams<S>>),
+    Duration(Prop<S, Duration>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TriggerProp {
-    Relative(Prop<Duration, TriggerParams>),
-    Absolute(Prop<DateTime<Utc>>),
+pub enum TriggerProp<S> {
+    Relative(Prop<S, Duration, TriggerParams>),
+    Absolute(Prop<S, DateTime<Utc>>),
 }
 
 /// The parameters associated with the `ATTACH` property.
@@ -146,10 +138,26 @@ pub struct LangParams<S> {
     pub language: Option<Language<S>>,
 }
 
+impl<S> Default for LangParams<S> {
+    fn default() -> Self {
+        Self {
+            language: Default::default(),
+        }
+    }
+}
+
 /// The parameters associated with several date and time properties.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DtParams<S> {
     pub tz_id: Option<TzId<S>>,
+}
+
+impl<S> Default for DtParams<S> {
+    fn default() -> Self {
+        Self {
+            tz_id: Default::default(),
+        }
+    }
 }
 
 /// The parameters associated with the `TRIGGER` property.
