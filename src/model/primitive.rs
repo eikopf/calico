@@ -841,7 +841,35 @@ impl<T> From<(T, T, T)> for RequestStatusCode<T> {
     }
 }
 
-// TODO: add macro for UtcOffset literals.
+#[macro_export]
+macro_rules! utc_offset {
+    (+ $h:expr;$m:expr $(; $s:expr)?) => {
+        {
+        let s: Option<u8> = None;
+        $(let s = Some($s);)?
+
+        $crate::model::primitive::UtcOffset {
+            sign: $crate::model::primitive::Sign::Positive,
+            hours: $h,
+            minutes: $m,
+            seconds: s,
+        }
+        }
+    };
+    (- $h:expr;$m:expr $(; $s:expr)?) => {
+        {
+        let s: Option<u8> = None;
+        $(let s = Some($s);)?
+
+        $crate::model::primitive::UtcOffset {
+            sign: $crate::model::primitive::Sign::Negative,
+            hours: $h,
+            minutes: $m,
+            seconds: s,
+        }
+        }
+    };
+}
 
 /// Constructs a [`Date`] from input of the form `yyyy;MM;dd`. Will panic if
 /// the given date is invalid according to [`chrono::NaiveDate::from_ymd_opt`].
@@ -874,6 +902,21 @@ mod tests {
     use chrono::Datelike;
 
     use super::*;
+
+    #[test]
+    fn utc_offset_macro() {
+        let pos_0800 = utc_offset!(+8;00);
+        assert_eq!(pos_0800.sign, Sign::Positive);
+        assert_eq!(pos_0800.hours, 8);
+        assert_eq!(pos_0800.minutes, 0);
+        assert!(pos_0800.seconds.is_none());
+
+        let neg_160050 = utc_offset!(-16;00;50);
+        assert_eq!(neg_160050.sign, Sign::Negative);
+        assert_eq!(neg_160050.hours, 16);
+        assert_eq!(neg_160050.minutes, 0);
+        assert_eq!(neg_160050.seconds, Some(50));
+    }
 
     #[test]
     fn date_macro() {
