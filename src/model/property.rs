@@ -171,6 +171,14 @@ pub struct FBTypeParams<S> {
     pub free_busy_type: Option<FreeBusyType<S>>,
 }
 
+impl<S> Default for FBTypeParams<S> {
+    fn default() -> Self {
+        Self {
+            free_busy_type: Default::default(),
+        }
+    }
+}
+
 /// The parameters usually associated with text values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TextParams<S> {
