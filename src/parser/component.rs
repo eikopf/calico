@@ -14,11 +14,12 @@ use winnow::{
 use crate::{
     model::{
         component::{
-            Component, Entry, Event, Key, OffsetProp, OffsetPropName,
-            OffsetTable, OtherComponent, TimeZone, TimeZoneProp,
-            TimeZonePropName, TimeZoneTable, Todo, TzRule, TzRuleKind,
+            Alarm, Component, Entry, Event, FreeAlarmProp, FreeAlarmPropName,
+            FreeAlarmTable, Key, OffsetProp, OffsetPropName, OffsetTable,
+            OtherComponent, TimeZone, TimeZoneProp, TimeZonePropName,
+            TimeZoneTable, Todo, TzRule, TzRuleKind,
         },
-        property::Prop,
+        property::{Prop, TriggerProp},
     },
     parser::{
         escaped::{Equiv, LineFoldCaseless},
@@ -35,12 +36,7 @@ use super::{
     property::{ParsedProp, property},
 };
 
-// WARN: it is possible for the name of a component (say a long x-name) to be
-// folded over multiple lines. since END is shorter than BEGIN, it is possible
-// that the name will be folded differently in the beginning and in the end of
-// the component. therefore a simple equality check on the names DOES NOT
-// suffice to parse input correctly
-
+/// Parses a [`Component`].
 pub fn component<I, E>(input: &mut I) -> Result<Component<I::Slice>, E>
 where
     I: StreamIsPartial
@@ -407,6 +403,42 @@ where
         let kind = terminated(begin(rule_kind), crlf).parse_next(input)?;
         let props = StateMachine::new(rule_step).parse_next(input)?;
 
+        // check for mandatory fields
+        if props.get(Key::Known(OffsetPropName::DtStart)).is_none() {
+            return Err(E::from_external_error(
+                input,
+                CalendarParseError::MissingProp {
+                    prop: PropName::Rfc5545(Rfc5545PropName::DateTimeStart),
+                    component: kind.into(),
+                },
+            ));
+        }
+
+        if props.get(Key::Known(OffsetPropName::TzOffsetTo)).is_none() {
+            return Err(E::from_external_error(
+                input,
+                CalendarParseError::MissingProp {
+                    prop: PropName::Rfc5545(Rfc5545PropName::TimeZoneOffsetTo),
+                    component: kind.into(),
+                },
+            ));
+        }
+
+        if props
+            .get(Key::Known(OffsetPropName::TzOffsetFrom))
+            .is_none()
+        {
+            return Err(E::from_external_error(
+                input,
+                CalendarParseError::MissingProp {
+                    prop: PropName::Rfc5545(
+                        Rfc5545PropName::TimeZoneOffsetFrom,
+                    ),
+                    component: kind.into(),
+                },
+            ));
+        }
+
         match terminated(end(rule_kind), crlf).parse_next(input)? == kind {
             true => Ok(TzRule { props, kind }),
             false => fail.parse_next(input),
@@ -423,6 +455,138 @@ where
         props,
         subcomponents,
     })
+}
+
+fn alarm<I, E>(input: &mut I) -> Result<Alarm<I::Slice>, E>
+where
+    I: StreamIsPartial
+        + Stream
+        + Compare<Caseless<&'static str>>
+        + Compare<char>,
+    I::Token: AsChar + Clone,
+    I::Slice: AsBStr
+        + Clone
+        + PartialEq
+        + Eq
+        + SliceLen
+        + Stream
+        + Equiv<LineFoldCaseless>
+        + AsRef<[u8]>
+        + Hash,
+    <<I as Stream>::Slice as Stream>::Token: AsChar,
+    E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
+{
+    fn step<S>(
+        (prop, unknown_params): ParsedProp<S>,
+        state: &mut FreeAlarmTable<S>,
+    ) -> Result<(), CalendarParseError<S>>
+    where
+        S: Hash + PartialEq + Debug + Equiv<LineFoldCaseless> + AsRef<[u8]>,
+    {
+        step_inner! {state, Alarm, prop, unknown_params;
+            ParserProp::Known(KnownProp::Action(value)) => {
+                try_insert_once!(state, Alarm, Key::Known(FreeAlarmPropName::Action),
+                    PropName::Rfc5545(Rfc5545PropName::Action),
+                    Entry::Known(FreeAlarmProp::Action(Prop {
+                        value,
+                        params: (),
+                        unknown_params
+                    })),
+                )
+            },
+            ParserProp::Known(KnownProp::Description(value, params)) => {
+                try_insert_once!(state, Alarm, Key::Known(FreeAlarmPropName::Description),
+                    PropName::Rfc5545(Rfc5545PropName::Description),
+                    Entry::Known(FreeAlarmProp::Description(Prop {
+                        value,
+                        params,
+                        unknown_params
+                    })),
+                )
+            },
+            ParserProp::Known(KnownProp::TriggerRelative(value, params)) => {
+                try_insert_once!(state, Alarm, Key::Known(FreeAlarmPropName::Trigger),
+                    PropName::Rfc5545(Rfc5545PropName::Trigger),
+                    Entry::Known(FreeAlarmProp::Trigger(TriggerProp::Relative(Prop {
+                        value,
+                        params,
+                        unknown_params
+                    }))),
+                )
+            },
+            ParserProp::Known(KnownProp::TriggerAbsolute(value)) => {
+                try_insert_once!(state, Alarm, Key::Known(FreeAlarmPropName::Trigger),
+                    PropName::Rfc5545(Rfc5545PropName::Trigger),
+                    Entry::Known(FreeAlarmProp::Trigger(TriggerProp::Absolute(Prop {
+                        value,
+                        params: (),
+                        unknown_params
+                    }))),
+                )
+            },
+            ParserProp::Known(KnownProp::Summary(value, params)) => {
+                try_insert_once!(state, Alarm, Key::Known(FreeAlarmPropName::Summary),
+                    PropName::Rfc5545(Rfc5545PropName::Summary),
+                    Entry::Known(FreeAlarmProp::Summary(Prop {
+                        value,
+                        params,
+                        unknown_params
+                    })),
+                )
+            },
+            ParserProp::Known(KnownProp::Duration(value)) => {
+                try_insert_once!(state, Alarm, Key::Known(FreeAlarmPropName::Duration),
+                    PropName::Rfc5545(Rfc5545PropName::Duration),
+                    Entry::Known(FreeAlarmProp::Duration(Prop {
+                        value,
+                        params: (),
+                        unknown_params
+                    })),
+                )
+            },
+            ParserProp::Known(KnownProp::Repeat(value)) => {
+                try_insert_once!(state, Alarm, Key::Known(FreeAlarmPropName::Repeat),
+                    PropName::Rfc5545(Rfc5545PropName::RepeatCount),
+                    Entry::Known(FreeAlarmProp::Repeat(Prop {
+                        value,
+                        params: (),
+                        unknown_params
+                    })),
+                )
+            },
+            ParserProp::Known(KnownProp::Attendee(value, params)) => {
+                insert_seq!(state, FreeAlarmProp, Attendee, Key::Known(FreeAlarmPropName::Attendee), Prop {
+                    value,
+                    params: Box::new(params),
+                    unknown_params,
+                })
+            },
+            ParserProp::Known(KnownProp::Attach(value, params)) => {
+                insert_seq!(state, FreeAlarmProp, Attach, Key::Known(FreeAlarmPropName::Attach), Prop {
+                    value,
+                    params,
+                    unknown_params,
+                })
+            },
+        }
+    }
+
+    fn name<I, E>(input: &mut I) -> Result<(), E>
+    where
+        I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
+        E: ParserError<I>,
+    {
+        Caseless("VALARM").void().parse_next(input)
+    }
+
+    terminated(begin(name), crlf).parse_next(input)?;
+    let raw_table = StateMachine::new(step).parse_next(input)?;
+    terminated(end(name), crlf).parse_next(input)?;
+
+    match raw_table.try_into_alarm() {
+        Ok(alarm) => Ok(alarm),
+        Err(err) => Err(E::from_external_error(input, err)),
+    }
 }
 
 /// Parses an [`OtherComponent`].
@@ -588,51 +752,51 @@ where
 mod tests {
     use crate::{
         date,
-        model::primitive::{DateTime, Local, Sign, Text, TzId, Utc, UtcOffset},
-        time,
+        model::{
+            primitive::{
+                AttachValue, AudioAction, CalAddress, DateTime, DisplayAction,
+                Duration, DurationKind, DurationTime, EmailAction, FormatType,
+                Local, Sign, Text, TriggerRelation, TzId, Uri, Utc,
+            },
+            property::{AttachParams, TriggerParams},
+        },
+        parser::escaped::AsEscaped,
+        time, utc_offset,
     };
 
     use super::*;
 
+    macro_rules! concat_crlf {
+        ($($l:literal),* $(,)?) => {
+            concat! (
+                $(
+                    $l, "\r\n",
+                )*
+            )
+        };
+    }
+
     #[test]
     fn timezone_parser() {
-        let input = concat!(
+        let input = concat_crlf!(
             "BEGIN:VTIMEZONE",
-            "\r\n",
             "TZID:America/New_York",
-            "\r\n",
             "LAST-MODIFIED:20050809T020000Z",
-            "\r\n",
             "BEGIN:DAYLIGHT",
-            "\r\n",
             "DTSTART:19670430T020000",
-            "\r\n",
             "RRULE:FREQ=YEARLY;BYMONTH=4;BYDAY=-1SU;UNTIL=19730429T070000Z",
-            "\r\n",
             "TZOFFSETFROM:-0500",
-            "\r\n",
             "TZOFFSETTO:-0400",
-            "\r\n",
             "TZNAME:EDT",
-            "\r\n",
             "END:DAYLIGHT",
-            "\r\n",
             "BEGIN:STANDARD",
-            "\r\n",
             "DTSTART:19671029T020000",
-            "\r\n",
             "RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU;UNTIL=20061029T060000Z",
-            "\r\n",
             "TZOFFSETFROM:-0400",
-            "\r\n",
             "TZOFFSETTO:-0500",
-            "\r\n",
             "TZNAME:EST",
-            "\r\n",
             "END:STANDARD",
-            "\r\n",
             "END:VTIMEZONE",
-            "\r\n",
         );
 
         let (tail, tz) = timezone::<_, ()>.parse_peek(input).unwrap();
@@ -680,24 +844,10 @@ mod tests {
 
         assert!(daylight.rrule().is_some());
 
-        assert_eq!(
-            daylight.offset_to(),
-            &Prop::from_value(UtcOffset {
-                sign: Sign::Negative,
-                hours: 4,
-                minutes: 0,
-                seconds: None,
-            })
-        );
-
+        assert_eq!(daylight.offset_to(), &Prop::from_value(utc_offset!(-4;00)));
         assert_eq!(
             daylight.offset_from(),
-            &Prop::from_value(UtcOffset {
-                sign: Sign::Negative,
-                hours: 5,
-                minutes: 0,
-                seconds: None,
-            })
+            &Prop::from_value(utc_offset!(-5;00))
         );
 
         assert_eq!(
@@ -721,30 +871,215 @@ mod tests {
 
         assert!(standard.rrule().is_some());
 
-        assert_eq!(
-            standard.offset_to(),
-            &Prop::from_value(UtcOffset {
-                sign: Sign::Negative,
-                hours: 5,
-                minutes: 0,
-                seconds: None,
-            })
-        );
-
+        assert_eq!(standard.offset_to(), &Prop::from_value(utc_offset!(-5;00)));
         assert_eq!(
             standard.offset_from(),
-            &Prop::from_value(UtcOffset {
-                sign: Sign::Negative,
-                hours: 4,
-                minutes: 0,
-                seconds: None,
-            })
+            &Prop::from_value(utc_offset!(-4;00))
         );
 
         assert_eq!(
             standard.names(),
             Some([Prop::from_value(Text("EST"))].as_slice())
         );
+    }
+
+    #[test]
+    fn rfc_5545_example_audio_alarm() {
+        let input = concat_crlf!(
+            "BEGIN:VALARM",
+            "TRIGGER;VALUE=DATE-TIME:19970317T133000Z",
+            "REPEAT:4",
+            "DURATION:PT15M",
+            "ACTION:AUDIO",
+            "ATTACH;FMTTYPE=audio/basic:ftp://example.com/pub/",
+            " sounds/bell-01.aud",
+            "END:VALARM",
+        );
+
+        let (tail, alarm) =
+            alarm::<_, ()>.parse_peek(input.as_escaped()).unwrap();
+        assert!(tail.is_empty());
+
+        let Alarm::Audio(alarm) = alarm else { panic!() };
+        assert_eq!(alarm.action(), &Prop::from_value(AudioAction));
+
+        assert_eq!(
+            alarm.trigger(),
+            &TriggerProp::Absolute(Prop::from_value(DateTime {
+                date: date!(1997;3;17),
+                time: time!(13;30;00, Utc)
+            }))
+        );
+
+        assert_eq!(
+            alarm.attachment(),
+            Some(&Prop {
+                value: AttachValue::Uri(Uri(
+                    "ftp://example.com/pub/\r\n sounds/bell-01.aud"
+                        .as_escaped()
+                )),
+                params: AttachParams {
+                    format_type: Some(FormatType {
+                        source: "audio/basic".as_escaped(),
+                        separator_index: 5
+                    }),
+                },
+                unknown_params: Default::default(),
+            })
+        );
+
+        let (duration, repeat) = alarm.duration_and_repeat().unwrap();
+        assert_eq!(repeat, &Prop::from_value(4));
+        assert_eq!(
+            duration,
+            &Prop::from_value(Duration {
+                sign: None,
+                kind: DurationKind::Time {
+                    time: DurationTime::M { minutes: 15 },
+                },
+            })
+        );
+    }
+
+    #[test]
+    fn rfc_5545_example_display_alarm() {
+        let input = concat_crlf!(
+            "BEGIN:VALARM",
+            "TRIGGER:-PT30M",
+            "REPEAT:2",
+            "DURATION:PT15M",
+            "ACTION:DISPLAY",
+            "DESCRIPTION:Breakfast meeting with executive\\n",
+            " team at 8:30 AM EST.",
+            "END:VALARM",
+        );
+
+        let (tail, alarm) =
+            alarm::<_, ()>.parse_peek(input.as_escaped()).unwrap();
+        assert!(tail.is_empty());
+
+        let Alarm::Display(alarm) = alarm else {
+            panic!()
+        };
+
+        assert_eq!(alarm.action(), &Prop::from_value(DisplayAction));
+
+        assert_eq!(
+            alarm.trigger(),
+            &TriggerProp::Relative(Prop::from_value(Duration {
+                sign: Some(Sign::Negative),
+                kind: DurationKind::Time {
+                    time: DurationTime::M { minutes: 30 },
+                },
+            }))
+        );
+
+        assert_eq!(
+            alarm.description(),
+            &Prop::from_value(Text(
+                "Breakfast meeting with executive\\n\r\n team at 8:30 AM EST."
+                    .as_escaped()
+            ))
+        );
+
+        let (duration, repeat) = alarm.duration_and_repeat().unwrap();
+        assert_eq!(repeat, &Prop::from_value(2));
+        assert_eq!(
+            duration,
+            &Prop::from_value(Duration {
+                sign: None,
+                kind: DurationKind::Time {
+                    time: DurationTime::M { minutes: 15 },
+                },
+            })
+        );
+    }
+
+    #[test]
+    fn rfc_5545_example_email_alarm() {
+        let input = concat_crlf!(
+            "BEGIN:VALARM",
+            "TRIGGER;RELATED=END:-P2D",
+            "ACTION:EMAIL",
+            "ATTENDEE:mailto:john_doe@example.com",
+            "SUMMARY:*** REMINDER: SEND AGENDA FOR WEEKLY STAFF MEETING ***",
+            "DESCRIPTION:A draft agenda needs to be sent out to the attendees",
+            " to the weekly managers meeting (MGR-LIST). Attached is a",
+            " pointer the document template for the agenda file.",
+            "ATTACH;FMTTYPE=application/msword:http://example.com/",
+            " templates/agenda.doc",
+            "END:VALARM",
+        );
+
+        let (tail, alarm) =
+            alarm::<_, ()>.parse_peek(input.as_escaped()).unwrap();
+        assert!(tail.is_empty());
+
+        let Alarm::Email(alarm) = alarm else { panic!() };
+
+        assert_eq!(alarm.action(), &Prop::from_value(EmailAction));
+
+        assert_eq!(
+            alarm.trigger(),
+            &TriggerProp::Relative(Prop {
+                value: Duration {
+                    sign: Some(Sign::Negative),
+                    kind: DurationKind::Date {
+                        days: 2,
+                        time: None,
+                    },
+                },
+                params: TriggerParams {
+                    trigger_relation: Some(TriggerRelation::End)
+                },
+                unknown_params: Default::default(),
+            })
+        );
+
+        assert_eq!(
+            alarm.attendees(),
+            Some(
+                [Prop::from_value(CalAddress(
+                    "mailto:john_doe@example.com".as_escaped()
+                ))]
+                .as_slice()
+            ),
+        );
+
+        assert_eq!(
+            alarm.summary(),
+            &Prop::from_value(Text(
+                "*** REMINDER: SEND AGENDA FOR WEEKLY STAFF MEETING ***"
+                    .as_escaped()
+            ))
+        );
+
+        assert_eq!(
+            alarm.description(),
+            &Prop::from_value(Text("A draft agenda needs to be sent out to the attendees\r\n to the weekly managers meeting (MGR-LIST). Attached is a\r\n pointer the document template for the agenda file.".as_escaped())),
+        );
+
+        assert_eq!(
+            alarm.attachments(),
+            Some(
+                [Prop {
+                    value: AttachValue::Uri(Uri(
+                        "http://example.com/\r\n templates/agenda.doc"
+                            .as_escaped()
+                    )),
+                    params: AttachParams {
+                        format_type: Some(FormatType {
+                            source: "application/msword".as_escaped(),
+                            separator_index: 11
+                        })
+                    },
+                    unknown_params: Default::default(),
+                }]
+                .as_slice()
+            ),
+        );
+
+        assert!(alarm.duration_and_repeat().is_none());
     }
 
     #[test]

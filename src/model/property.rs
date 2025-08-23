@@ -161,7 +161,7 @@ impl<S> Default for DtParams<S> {
 }
 
 /// The parameters associated with the `TRIGGER` property.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct TriggerParams {
     pub trigger_relation: Option<TriggerRelation>,
 }

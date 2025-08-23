@@ -4,7 +4,14 @@ use std::hash::{BuildHasher, Hash, Hasher, RandomState};
 
 use hashbrown::{HashTable, hash_table::Entry as TableEntry};
 
-use crate::parser::escaped::{Equiv, LineFoldCaseless};
+use crate::{
+    model::primitive::UnknownAction,
+    parser::{
+        error::{CalendarParseError, ComponentKind},
+        escaped::{Equiv, LineFoldCaseless},
+        property::{PropName, Rfc5545PropName},
+    },
+};
 
 use super::{
     css::Css3Color,
@@ -25,6 +32,13 @@ use super::{
     },
     rrule::RRule,
 };
+
+// WARN: it's technically possible for RRULE to appear multiple times in the same component, even
+// though RFC 5545 explicitly says it SHOULD NOT appear more than once in every case. should i
+// refactor to allow multiple RRULES in components?
+
+// TODO: (maybe) replace Prop in APIs with a PropRef type that provides a reference to a slice
+// of unknown_params instead of a reference to a boxed slice.
 
 macro_rules! enum_with_names {
     (
@@ -171,6 +185,24 @@ macro_rules! table {
                 self.0.find_mut(hash(&key), eq)
             }
 
+            pub fn remove(&mut self, key: Key<$value<S>, &S>) -> Option<Entry<$value<S>, S>>
+            where
+                S: Hash + PartialEq + Equiv<LineFoldCaseless> + AsRef<[u8]>,
+            {
+                let hash_key = Self::hash_key(&self.1);
+                let hash = Self::hash_entry(&self.1);
+                let eq = Self::eq(&key);
+                let table_entry = self.0.entry(hash_key(&key), eq, hash);
+
+                match table_entry {
+                    TableEntry::Vacant(_) => None,
+                    TableEntry::Occupied(entry) => {
+                        let (entry, _) = entry.remove();
+                        Some(entry)
+                    }
+                }
+            }
+
             fn eq(lhs: &Key<$value<S>, &S>) -> impl Fn(&Entry<$value<S>, S>) -> bool
             where
                 S: PartialEq + Equiv<LineFoldCaseless> + AsRef<[u8]>,
@@ -212,11 +244,33 @@ macro_rules! table {
     };
 }
 
-macro_rules! mandatory_accessors {
-    ($prop_type:ident, $prop_name:ident; $([$key:ident, $name:ident, $ret:ty]),* $(,)?) => {
+macro_rules! remove_fields {
+    ($this:ident, $prop:ident, $prop_name:ident; $([let $name:ident = $field:ident]),* $(,)?) => {
         $(
-            pub fn $name(&self) -> $ret {
+            let $name =
+                $this.remove(Key::Known($prop_name::$field))
+                    .map(|entry| match entry {
+                        Entry::Known($prop::$field(x)) => x,
+                        _ => unreachable!(),
+                    });
+        )*
+    };
+}
+
+macro_rules! mandatory_accessors {
+    ($prop_type:ident, $prop_name:ident; $([$key:ident, $name:ident, $name_mut:ident, $ret:ty]),* $(,)?) => {
+        $(
+            pub fn $name(&self) -> &$ret {
                 let raw_entry = self.props.get(Key::Known($prop_name::$key));
+
+                match raw_entry {
+                    Some(Entry::Known($prop_type::$key(prop))) => prop,
+                    Some(_) | None => unreachable!(),
+                }
+            }
+
+            pub fn $name_mut(&mut self) -> &mut $ret {
+                let raw_entry = self.props.get_mut(Key::Known($prop_name::$key));
 
                 match raw_entry {
                     Some(Entry::Known($prop_type::$key(prop))) => prop,
@@ -228,13 +282,23 @@ macro_rules! mandatory_accessors {
 }
 
 macro_rules! optional_accessors {
-    ($prop_type:ident, $prop_name:ident; $([$key:ident, $name:ident, $ret:ty]),* $(,)?) => {
+    ($prop_type:ident, $prop_name:ident; $([$key:ident, $name:ident, $name_mut:ident, $ret:ty $(, $f:expr)?]),* $(,)?) => {
         $(
-            pub fn $name(&self) -> Option<$ret> {
+            pub fn $name(&self) -> Option<&$ret> {
                 let raw_entry = self.props.get(Key::Known($prop_name::$key));
 
                 match raw_entry {
-                    Some(Entry::Known($prop_type::$key(prop))) => Some(prop),
+                    Some(Entry::Known($prop_type::$key(prop))) => Some(prop) $(.map($f))?,
+                    Some(_) => unreachable!(),
+                    None => None,
+                }
+            }
+
+            pub fn $name_mut(&mut self) -> Option<&mut $ret> {
+                let raw_entry = self.props.get_mut(Key::Known($prop_name::$key));
+
+                match raw_entry {
+                    Some(Entry::Known($prop_type::$key(prop))) => Some(prop) $(.map($f))?,
                     Some(_) => unreachable!(),
                     None => None,
                 }
@@ -331,6 +395,28 @@ pub struct FreeBusy<S> {
     props: FreeBusyTable<S>,
 }
 
+impl<S> FreeBusy<S>
+where
+    S: Hash + PartialEq + Equiv<LineFoldCaseless> + AsRef<[u8]>,
+{
+    mandatory_accessors! {FreeBusyProp, FreeBusyPropName;
+        [DtStamp, timestamp, timestamp_mut, Prop<S, DateTime<Utc>>],
+        [Uid, uid, uid_mut, Prop<S, Uid<S>>],
+    }
+
+    optional_accessors! {FreeBusyProp, FreeBusyPropName;
+        [Contact, contact, contact_mut, Prop<S, Text<S>, TextParams<S>>],
+        [DtStart, start, start_mut, Prop<S, DateTimeOrDate, DtParams<S>>],
+        [DtEnd, end, end_mut, Prop<S, DateTimeOrDate, DtParams<S>>],
+        [Organizer, organizer, organizer_mut, Prop<S, CalAddress<S>, Box<OrganizerParams<S>>>],
+        [Url, url, url_mut, Prop<S, Uri<S>>],
+        [Attendee, attendees, attendees_mut, [Prop<S, CalAddress<S>, Box<AttendeeParams<S>>>]],
+        [Comment, comments, comments_mut, [Prop<S, Text<S>, TextParams<S>>]],
+        [FreeBusy, free_busy_periods, free_busy_periods_mut, [Prop<S, Box<[Period]>, FBTypeParams<S>>]],
+        [RequestStatus, request_statuses, request_statuses_mut, [Prop<S, RequestStatus<S>, LangParams<S>>]],
+    }
+}
+
 /// A VTIMEZONE component (RFC 5545 §3.6.5).
 #[derive(Debug, Clone)]
 pub struct TimeZone<S> {
@@ -351,9 +437,9 @@ where
     S: Hash + PartialEq + Equiv<LineFoldCaseless> + AsRef<[u8]>,
 {
     optional_accessors! {TimeZoneProp, TimeZonePropName;
-        [TzId, id, &Prop<S, TzId<S>>],
-        [LastModified, last_modified, &Prop<S, DateTime<Utc>>],
-        [TzUrl, url, &Prop<S, Uri<S>>],
+        [TzId, id, id_mut, Prop<S, TzId<S>>],
+        [LastModified, last_modified, last_modified_mut, Prop<S, DateTime<Utc>>],
+        [TzUrl, url, url_mut, Prop<S, Uri<S>>],
     }
 }
 
@@ -375,16 +461,16 @@ where
     S: Hash + PartialEq + Equiv<LineFoldCaseless> + AsRef<[u8]>,
 {
     mandatory_accessors! {OffsetProp, OffsetPropName;
-        [DtStart, start, &Prop<S, DateTimeOrDate, DtParams<S>>],
-        [TzOffsetTo, offset_to, &Prop<S, UtcOffset>],
-        [TzOffsetFrom, offset_from, &Prop<S, UtcOffset>],
+        [DtStart, start, start_mut, Prop<S, DateTimeOrDate, DtParams<S>>],
+        [TzOffsetTo, offset_to, offset_to_mut, Prop<S, UtcOffset>],
+        [TzOffsetFrom, offset_from, offset_from_mut, Prop<S, UtcOffset>],
     }
 
     optional_accessors! {OffsetProp, OffsetPropName;
-        [RRule, rrule, &Prop<S, Box<RRule>>],
-        [Comment, comments, &[Prop<S, Text<S>, TextParams<S>>]],
-        [RDate, recurrence_dates, &[Prop<S, RDateSeq, DtParams<S>>]],
-        [TzName, names, &[Prop<S, Text<S>, LangParams<S>>]],
+        [RRule, rrule, rrule_mut, Prop<S, Box<RRule>>],
+        [Comment, comments, comments_mut, [Prop<S, Text<S>, TextParams<S>>]],
+        [RDate, recurrence_dates, recurrence_dates_mut, [Prop<S, RDateSeq, DtParams<S>>]],
+        [TzName, names, names_mut, [Prop<S, Text<S>, LangParams<S>>]],
     }
 }
 
@@ -404,8 +490,21 @@ pub enum Alarm<S> {
     Audio(AudioAlarm<S>),
     Display(DisplayAlarm<S>),
     Email(EmailAlarm<S>),
-    Iana(OtherAlarm<S>),
-    X(OtherAlarm<S>),
+    Other(OtherAlarm<S>),
+}
+
+macro_rules! dur_rep_accessors {
+    ($prop_type:ident, $prop_name:ident) => {
+        pub fn duration_and_repeat(
+            &self,
+        ) -> Option<(&Prop<S, Duration>, &Prop<S, Integer>)> {
+            match self.props.get(Key::Known($prop_name::DurRep)) {
+                Some(Entry::Known($prop_type::DurRep(d, r))) => Some((d, r)),
+                Some(_) => unreachable!(),
+                None => None,
+            }
+        }
+    };
 }
 
 /// A VALARM with the AUDIO action.
@@ -414,10 +513,39 @@ pub struct AudioAlarm<S> {
     props: AudioAlarmTable<S>,
 }
 
+impl<S> AudioAlarm<S>
+where
+    S: Hash + PartialEq + Equiv<LineFoldCaseless> + AsRef<[u8]>,
+{
+    mandatory_accessors! {AudioAlarmProp, AudioAlarmPropName;
+        [Action, action, action_mut, Prop<S, AudioAction>],
+        [Trigger, trigger, trigger_mut, TriggerProp<S>],
+    }
+
+    optional_accessors! {AudioAlarmProp, AudioAlarmPropName;
+        [Attach, attachment, attachment_mut, Prop<S, AttachValue<S>, AttachParams<S>>],
+    }
+
+    dur_rep_accessors!(AudioAlarmProp, AudioAlarmPropName);
+}
+
 /// A VALARM with the DISPLAY action.
 #[derive(Debug, Clone)]
 pub struct DisplayAlarm<S> {
     props: DisplayAlarmTable<S>,
+}
+
+impl<S> DisplayAlarm<S>
+where
+    S: Hash + PartialEq + Equiv<LineFoldCaseless> + AsRef<[u8]>,
+{
+    mandatory_accessors! {DisplayAlarmProp, DisplayAlarmPropName;
+        [Action, action, action_mut, Prop<S, DisplayAction>],
+        [Description, description, description_mut, Prop<S, Text<S>, TextParams<S>>],
+        [Trigger, trigger, trigger_mut, TriggerProp<S>],
+    }
+
+    dur_rep_accessors!(DisplayAlarmProp, DisplayAlarmPropName);
 }
 
 /// A VALARM with the EMAIL action.
@@ -426,10 +554,48 @@ pub struct EmailAlarm<S> {
     props: EmailAlarmTable<S>,
 }
 
+impl<S> EmailAlarm<S>
+where
+    S: Hash + PartialEq + Equiv<LineFoldCaseless> + AsRef<[u8]>,
+{
+    mandatory_accessors! {EmailAlarmProp, EmailAlarmPropName;
+        [Action, action, action_mut, Prop<S, EmailAction>],
+        [Description, description, description_mut, Prop<S, Text<S>, TextParams<S>>],
+        [Trigger, trigger, trigger_mut, TriggerProp<S>],
+        [Summary, summary, summary_mut, Prop<S, Text<S>, TextParams<S>>],
+    }
+
+    optional_accessors! {EmailAlarmProp, EmailAlarmPropName;
+        [Attendee, attendees, attendees_mut, [Prop<S, CalAddress<S>, Box<AttendeeParams<S>>>]],
+        [Attach, attachments, attachments_mut, [Prop<S, AttachValue<S>, AttachParams<S>>]],
+    }
+
+    dur_rep_accessors!(EmailAlarmProp, EmailAlarmPropName);
+}
+
 /// A VALARM with an action other than AUDIO, DISPLAY, or EMAIL.
 #[derive(Debug, Clone)]
 pub struct OtherAlarm<S> {
     props: OtherAlarmTable<S>,
+}
+
+impl<S> OtherAlarm<S>
+where
+    S: Hash + PartialEq + Equiv<LineFoldCaseless> + AsRef<[u8]>,
+{
+    mandatory_accessors! {OtherAlarmProp, OtherAlarmPropName;
+        [Action, action, action_mut, Prop<S, UnknownAction<S>>],
+        [Description, description, description_mut, Prop<S, Text<S>, TextParams<S>>],
+        [Trigger, trigger, trigger_mut, TriggerProp<S>],
+        [Summary, summary, summary_mut, Prop<S, Text<S>, TextParams<S>>],
+    }
+
+    optional_accessors! {OtherAlarmProp, OtherAlarmPropName;
+        [Attendee, attendees, attendees_mut, [Prop<S, CalAddress<S>, Box<AttendeeParams<S>>>]],
+        [Attach, attachments, attachments_mut, [Prop<S, AttachValue<S>, AttachParams<S>>]],
+    }
+
+    dur_rep_accessors!(OtherAlarmProp, OtherAlarmPropName);
 }
 
 /// An arbitrary component which may have any properties and subcomponents.
@@ -769,13 +935,323 @@ OtherAlarmProp<S>,
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 OtherAlarmPropName {
     // mandatory fields
-    Action(Prop<S, S>),
-    Description(Prop<S, Text<S>, TextParams<S>>),
+    Action(Prop<S, UnknownAction<S>>),
     Trigger(TriggerProp<S>),
-    Summary(Prop<S, Text<S>, TextParams<S>>),
 
     // optional fields
+    Description(Prop<S, Text<S>, TextParams<S>>),
     DurRep(Prop<S, Duration>, Prop<S, Integer>), // the product of DURATION and REPEAT
+    Summary(Prop<S, Text<S>, TextParams<S>>),
+
+    // free multiplicity fields
+    Attendee(PropSeq<S, CalAddress<S>, Box<AttendeeParams<S>>>),
+    Attach(PropSeq<S, AttachValue<S>, AttachParams<S>>)
+}}
+
+// NOTE: the FreeAlarm* types exist exclusively to manage state during
+// parsing; they don't immediately correspond to anything in the iCalendar
+// model. after parsing a VALARM, the result is a FreeAlarmTable that can
+// be converted into an Alarm. this process is fallible, as the acceptable
+// fields depend on the ACTION.
+
+table! {
+    #[derive(Debug, Clone)]
+    FreeAlarmTable, FreeAlarmProp
+}
+
+impl<S> FreeAlarmTable<S>
+where
+    S: Hash + PartialEq + Equiv<LineFoldCaseless> + AsRef<[u8]>,
+{
+    pub fn try_into_alarm(mut self) -> Result<Alarm<S>, CalendarParseError<S>> {
+        remove_fields! {self, FreeAlarmProp, FreeAlarmPropName;
+            [let action      =      Action],
+            [let trigger     =     Trigger],
+            [let description = Description],
+            [let duration    =    Duration],
+            [let repeat      =      Repeat],
+            [let summary     =     Summary],
+            [let attendees   =    Attendee],
+            [let attachments =      Attach],
+        }
+
+        // check mandatory fields
+        let Some(action) = action else {
+            return Err(CalendarParseError::MissingProp {
+                prop: PropName::Rfc5545(Rfc5545PropName::Action),
+                component: ComponentKind::Alarm,
+            });
+        };
+
+        let Some(trigger) = trigger else {
+            return Err(CalendarParseError::MissingProp {
+                prop: PropName::Rfc5545(Rfc5545PropName::Trigger),
+                component: ComponentKind::Alarm,
+            });
+        };
+
+        // check duration and repeat occur together or not at all
+        let dur_rep = match (duration, repeat) {
+            (Some(d), Some(r)) => Some((d, r)),
+            (None, None) => None,
+            (Some(_), None) => {
+                return Err(CalendarParseError::DurationWithoutRepeat);
+            }
+            (None, Some(_)) => {
+                return Err(CalendarParseError::RepeatWithoutDuration);
+            }
+        };
+
+        match action.value {
+            AlarmAction::Audio => {
+                let mut props = AudioAlarmTable::new();
+
+                // insert action
+                props.insert(Entry::Known(AudioAlarmProp::Action(Prop {
+                    value: AudioAction,
+                    params: (),
+                    unknown_params: action.unknown_params,
+                })));
+
+                // insert trigger
+                props.insert(Entry::Known(AudioAlarmProp::Trigger(trigger)));
+
+                // insert optional fields
+                if let Some((d, r)) = dur_rep {
+                    props.insert(Entry::Known(AudioAlarmProp::DurRep(d, r)));
+                }
+
+                // insert attachment if single
+                if let Some(mut attachments) = attachments {
+                    if attachments.len() == 1 {
+                        let p = attachments.remove(0);
+                        props.insert(Entry::Known(AudioAlarmProp::Attach(p)));
+                    } else if attachments.len() > 1 {
+                        return Err(
+                            CalendarParseError::TooManyAttachmentsOnAudioAlarm,
+                        );
+                    }
+                }
+
+                // check for invalid fields
+                if description.is_some() {
+                    return Err(CalendarParseError::UnexpectedProp {
+                        prop: PropName::Rfc5545(Rfc5545PropName::Description),
+                        component: ComponentKind::AudioAlarm,
+                    });
+                }
+
+                if summary.is_some() {
+                    return Err(CalendarParseError::UnexpectedProp {
+                        prop: PropName::Rfc5545(Rfc5545PropName::Summary),
+                        component: ComponentKind::AudioAlarm,
+                    });
+                }
+
+                if attendees.is_some() {
+                    return Err(CalendarParseError::UnexpectedProp {
+                        prop: PropName::Rfc5545(Rfc5545PropName::Attendee),
+                        component: ComponentKind::AudioAlarm,
+                    });
+                }
+
+                Ok(Alarm::Audio(AudioAlarm { props }))
+            }
+            AlarmAction::Display => {
+                let mut props = DisplayAlarmTable::new();
+
+                // check for mandatory description
+                let Some(description) = description else {
+                    return Err(CalendarParseError::MissingProp {
+                        prop: PropName::Rfc5545(Rfc5545PropName::Description),
+                        component: ComponentKind::DisplayAlarm,
+                    });
+                };
+
+                // insert action
+                props.insert(Entry::Known(DisplayAlarmProp::Action(Prop {
+                    value: DisplayAction,
+                    params: (),
+                    unknown_params: action.unknown_params,
+                })));
+
+                // insert description
+                props.insert(Entry::Known(DisplayAlarmProp::Description(
+                    description,
+                )));
+
+                // insert trigger
+                props.insert(Entry::Known(DisplayAlarmProp::Trigger(trigger)));
+
+                // insert optional fields
+                if let Some((d, r)) = dur_rep {
+                    props.insert(Entry::Known(DisplayAlarmProp::DurRep(d, r)));
+                }
+
+                if summary.is_some() {
+                    return Err(CalendarParseError::UnexpectedProp {
+                        prop: PropName::Rfc5545(Rfc5545PropName::Summary),
+                        component: ComponentKind::DisplayAlarm,
+                    });
+                }
+
+                if attendees.is_some() {
+                    return Err(CalendarParseError::UnexpectedProp {
+                        prop: PropName::Rfc5545(Rfc5545PropName::Attendee),
+                        component: ComponentKind::DisplayAlarm,
+                    });
+                }
+
+                if attachments.is_some() {
+                    return Err(CalendarParseError::UnexpectedProp {
+                        prop: PropName::Rfc5545(Rfc5545PropName::Attachment),
+                        component: ComponentKind::DisplayAlarm,
+                    });
+                }
+
+                Ok(Alarm::Display(DisplayAlarm { props }))
+            }
+            AlarmAction::Email => {
+                let mut props = EmailAlarmTable::new();
+
+                // check for mandatory description
+                let Some(description) = description else {
+                    return Err(CalendarParseError::MissingProp {
+                        prop: PropName::Rfc5545(Rfc5545PropName::Description),
+                        component: ComponentKind::EmailAlarm,
+                    });
+                };
+
+                // check for mandatory summary
+                let Some(summary) = summary else {
+                    return Err(CalendarParseError::MissingProp {
+                        prop: PropName::Rfc5545(Rfc5545PropName::Summary),
+                        component: ComponentKind::EmailAlarm,
+                    });
+                };
+
+                // check for mandatory attendees
+                let Some(attendees) = attendees else {
+                    return Err(CalendarParseError::MissingProp {
+                        prop: PropName::Rfc5545(Rfc5545PropName::Attendee),
+                        component: ComponentKind::EmailAlarm,
+                    });
+                };
+
+                // insert mandatory fields
+                props.insert(Entry::Known(EmailAlarmProp::Action(Prop {
+                    value: EmailAction,
+                    params: (),
+                    unknown_params: action.unknown_params,
+                })));
+                props.insert(Entry::Known(EmailAlarmProp::Description(
+                    description,
+                )));
+                props.insert(Entry::Known(EmailAlarmProp::Trigger(trigger)));
+                props.insert(Entry::Known(EmailAlarmProp::Summary(summary)));
+                props.insert(Entry::Known(EmailAlarmProp::Attendee(attendees)));
+
+                // insert optional fields
+                if let Some((d, r)) = dur_rep {
+                    props.insert(Entry::Known(EmailAlarmProp::DurRep(d, r)));
+                }
+
+                if let Some(p) = attachments {
+                    props.insert(Entry::Known(EmailAlarmProp::Attach(p)));
+                }
+
+                Ok(Alarm::Email(EmailAlarm { props }))
+            }
+            AlarmAction::Iana(name) => {
+                let mut props = OtherAlarmTable::new();
+
+                // insert action
+                props.insert(Entry::Known(OtherAlarmProp::Action(Prop {
+                    value: UnknownAction::Iana(name),
+                    params: (),
+                    unknown_params: action.unknown_params,
+                })));
+
+                // insert trigger
+                props.insert(Entry::Known(OtherAlarmProp::Trigger(trigger)));
+
+                // insert optional fields
+                if let Some(p) = description {
+                    props.insert(Entry::Known(OtherAlarmProp::Description(p)));
+                }
+
+                if let Some((d, r)) = dur_rep {
+                    props.insert(Entry::Known(OtherAlarmProp::DurRep(d, r)));
+                }
+
+                if let Some(p) = summary {
+                    props.insert(Entry::Known(OtherAlarmProp::Summary(p)));
+                }
+
+                if let Some(p) = attendees {
+                    props.insert(Entry::Known(OtherAlarmProp::Attendee(p)));
+                }
+
+                if let Some(p) = attachments {
+                    props.insert(Entry::Known(OtherAlarmProp::Attach(p)));
+                }
+
+                Ok(Alarm::Other(OtherAlarm { props }))
+            }
+            AlarmAction::X(name) => {
+                let mut props = OtherAlarmTable::new();
+
+                // insert action
+                props.insert(Entry::Known(OtherAlarmProp::Action(Prop {
+                    value: UnknownAction::X(name),
+                    params: (),
+                    unknown_params: action.unknown_params,
+                })));
+
+                // insert trigger
+                props.insert(Entry::Known(OtherAlarmProp::Trigger(trigger)));
+
+                // insert optional fields
+                if let Some(p) = description {
+                    props.insert(Entry::Known(OtherAlarmProp::Description(p)));
+                }
+
+                if let Some((d, r)) = dur_rep {
+                    props.insert(Entry::Known(OtherAlarmProp::DurRep(d, r)));
+                }
+
+                if let Some(p) = summary {
+                    props.insert(Entry::Known(OtherAlarmProp::Summary(p)));
+                }
+
+                if let Some(p) = attendees {
+                    props.insert(Entry::Known(OtherAlarmProp::Attendee(p)));
+                }
+
+                if let Some(p) = attachments {
+                    props.insert(Entry::Known(OtherAlarmProp::Attach(p)));
+                }
+
+                Ok(Alarm::Other(OtherAlarm { props }))
+            }
+        }
+    }
+}
+
+enum_with_names! {
+#[derive(Debug, Clone, PartialEq, Eq)]
+FreeAlarmProp<S>,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+FreeAlarmPropName {
+    // mandatory fields
+    Action(Prop<S, AlarmAction<S>>),
+    Trigger(TriggerProp<S>),
+
+    // optional fields
+    Description(Prop<S, Text<S>, TextParams<S>>),
+    Duration(Prop<S, Duration>),
+    Repeat(Prop<S, Integer>),
+    Summary(Prop<S, Text<S>, TextParams<S>>),
 
     // free multiplicity fields
     Attendee(PropSeq<S, CalAddress<S>, Box<AttendeeParams<S>>>),

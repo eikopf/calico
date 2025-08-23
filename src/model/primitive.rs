@@ -378,6 +378,12 @@ pub struct DisplayAction;
 pub struct EmailAction;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnknownAction<S> {
+    Iana(S),
+    X(S),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AlarmAction<S> {
     Audio,
     Display,

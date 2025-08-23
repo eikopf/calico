@@ -1,6 +1,7 @@
 //! Error types for parsing iCalendar.
 
 use crate::model::{
+    component::TzRuleKind,
     parameter::{KnownParam, StaticParamName},
     primitive::{GeoComponent, Integer, Sign, ValueType},
     rrule,
@@ -56,6 +57,13 @@ pub enum CalendarParseError<S> {
         prop: PropName<S>,
         component: ComponentKind<S>,
     },
+    MissingProp {
+        prop: PropName<S>,
+        component: ComponentKind<S>,
+    },
+    DurationWithoutRepeat,
+    RepeatWithoutDuration,
+    TooManyAttachmentsOnAudioAlarm,
 }
 
 /// A component kind, including the static subcomponents.
@@ -67,11 +75,23 @@ pub enum ComponentKind<S> {
     FreeBusy,
     TimeZone,
     Alarm,
+    AudioAlarm,
+    DisplayAlarm,
+    EmailAlarm,
     Standard,
     Daylight,
     StandardOrDaylight,
     Iana(S),
     X(S),
+}
+
+impl<S> From<TzRuleKind> for ComponentKind<S> {
+    fn from(value: TzRuleKind) -> Self {
+        match value {
+            TzRuleKind::Standard => Self::Standard,
+            TzRuleKind::Daylight => Self::Daylight,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
