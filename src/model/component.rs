@@ -369,6 +369,90 @@ pub enum Component<S> {
     X(OtherComponent<S>),
 }
 
+impl<S> Component<S> {
+    pub fn as_event(&self) -> Option<&Event<S>> {
+        if let Self::Event(v) = self {
+            Some(v)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_todo(&self) -> Option<&Todo<S>> {
+        if let Self::Todo(v) = self {
+            Some(v)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_journal(&self) -> Option<&Journal<S>> {
+        if let Self::Journal(v) = self {
+            Some(v)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_free_busy(&self) -> Option<&FreeBusy<S>> {
+        if let Self::FreeBusy(v) = self {
+            Some(v)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_time_zone(&self) -> Option<&TimeZone<S>> {
+        if let Self::TimeZone(v) = self {
+            Some(v)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_iana(&self) -> Option<&OtherComponent<S>> {
+        if let Self::Iana(v) = self {
+            Some(v)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_x(&self) -> Option<&OtherComponent<S>> {
+        if let Self::X(v) = self { Some(v) } else { None }
+    }
+}
+
+impl<S> From<TimeZone<S>> for Component<S> {
+    fn from(v: TimeZone<S>) -> Self {
+        Self::TimeZone(v)
+    }
+}
+
+impl<S> From<FreeBusy<S>> for Component<S> {
+    fn from(v: FreeBusy<S>) -> Self {
+        Self::FreeBusy(v)
+    }
+}
+
+impl<S> From<Journal<S>> for Component<S> {
+    fn from(v: Journal<S>) -> Self {
+        Self::Journal(v)
+    }
+}
+
+impl<S> From<Todo<S>> for Component<S> {
+    fn from(v: Todo<S>) -> Self {
+        Self::Todo(v)
+    }
+}
+
+impl<S> From<Event<S>> for Component<S> {
+    fn from(v: Event<S>) -> Self {
+        Self::Event(v)
+    }
+}
+
 /// A VEVENT component (RFC 5545 §3.6.1).
 #[derive(Debug, Clone)]
 pub struct Event<S> {
