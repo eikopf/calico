@@ -87,7 +87,7 @@ impl AsEscaped for [u8] {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Escaped<'a>(pub &'a [u8]);
 
 impl<'a> Escaped<'a> {
