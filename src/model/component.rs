@@ -37,8 +37,9 @@ use super::{
 // though RFC 5545 explicitly says it SHOULD NOT appear more than once in every case. should i
 // refactor to allow multiple RRULES in components?
 
-// TODO: (maybe) replace Prop in APIs with a PropRef type that provides a reference to a slice
-// of unknown_params instead of a reference to a boxed slice.
+// NOTE: some parameter types (e.g. AttendeeParams) are quite large, and like the types in this
+// module they rarely have many fields active. so perhaps they should be refactored to use the
+// table pattern here?
 
 macro_rules! enum_with_names {
     (
@@ -307,6 +308,32 @@ macro_rules! optional_accessors {
     };
 }
 
+macro_rules! seq_accessors {
+    ($prop_type:ident, $prop_name:ident; $([$key:ident, $name:ident, $name_mut:ident, $ret:ty]),* $(,)?) => {
+        $(
+            pub fn $name(&self) -> Option<&[$ret]> {
+                let raw_entry = self.props.get(Key::Known($prop_name::$key));
+
+                match raw_entry {
+                    Some(Entry::Known($prop_type::$key(prop))) => Some(prop),
+                    Some(_) => unreachable!(),
+                    None => None,
+                }
+            }
+
+            pub fn $name_mut(&mut self) -> Option<&mut Vec<$ret>> {
+                let raw_entry = self.props.get_mut(Key::Known($prop_name::$key));
+
+                match raw_entry {
+                    Some(Entry::Known($prop_type::$key(prop))) => Some(prop),
+                    Some(_) => unreachable!(),
+                    None => None,
+                }
+            }
+        )*
+    };
+}
+
 /// A sequence of [`Prop`].
 type PropSeq<S, V, P = ()> = Vec<Prop<S, V, P>>;
 
@@ -473,10 +500,47 @@ pub struct Journal<S> {
     props: JournalTable<S>,
 }
 
+impl<S> Journal<S>
+where
+    S: Hash + PartialEq + Equiv<LineFoldCaseless> + AsRef<[u8]>,
+{
+    mandatory_accessors! {JournalProp, JournalPropName;
+        [DtStamp, timestamp, timestamp_mut, Prop<S, DateTime<Utc>>],
+        [Uid, uid, uid_mut, Prop<S, Uid<S>>],
+    }
+
+    optional_accessors! {JournalProp, JournalPropName;
+        [Class, class, class_mut, Prop<S, ClassValue<S>>],
+        [Created, created, created_mut, Prop<S, DateTime<Utc>>],
+        [DtStart, start, start_mut, Prop<S, DateTimeOrDate, DtParams<S>>],
+        [LastModified, last_modified, last_modified_mut, Prop<S, DateTime<Utc>>],
+        [Organizer, organizer, organizer_mut, Prop<S, CalAddress<S>, Box<OrganizerParams<S>>>],
+        [RecurId, recurrence_id, recurrence_id_mut, Prop<S, DateTimeOrDate, RecurrenceIdParams<S>>],
+        [Sequence, sequence, sequence_mut, Prop<S, Integer>],
+        [Status, status, status_mut, Prop<S, JournalStatus>],
+        [Summary, summary, summary_mut, Prop<S, Text<S>, TextParams<S>>],
+        [Url, url, url_mut, Prop<S, Uri<S>>],
+        [RRule, rrule, rrule_mut, Prop<S, Box<RRule>>],
+    }
+
+    seq_accessors! {JournalProp, JournalPropName;
+        [Attach, attachments, attachments_mut, Prop<S, AttachValue<S>, Box<AttachParams<S>>>],
+        [Attendee, attendees, attendees_mut, Prop<S, CalAddress<S>, Box<AttendeeParams<S>>>],
+        [Categories, categories, categories_mut, Prop<S, Box<[Text<S>]>, LangParams<S>>],
+        [Comment, comments, comments_mut, Prop<S, Text<S>, TextParams<S>>],
+        [Contact, contacts, contacts_mut, Prop<S, Text<S>, TextParams<S>>],
+        [Description, descriptions, descriptions_mut, Prop<S, Box<[Text<S>]>, TextParams<S>>],
+        [ExDate, exception_dates, exception_dates_mut, Prop<S, DateTimeOrDateSeq, DtParams<S>>],
+        [RelatedTo, relateds, relateds_mut, Prop<S, Text<S>, RelTypeParams<S>>],
+        [RDate, recurrence_dates, recurrence_dates_mut, Prop<S, RDateSeq, DtParams<S>>],
+        [RequestStatus, request_statuses, request_statuses_mut, Prop<S, RequestStatus<S>, LangParams<S>>],
+    }
+}
+
 /// A VFREEBUSY component (RFC 5545 §3.6.4).
 #[derive(Debug, Clone)]
 pub struct FreeBusy<S> {
-    props: FreeBusyTable<S>,
+    pub(crate) props: FreeBusyTable<S>,
 }
 
 impl<S> FreeBusy<S>
@@ -494,10 +558,13 @@ where
         [DtEnd, end, end_mut, Prop<S, DateTimeOrDate, DtParams<S>>],
         [Organizer, organizer, organizer_mut, Prop<S, CalAddress<S>, Box<OrganizerParams<S>>>],
         [Url, url, url_mut, Prop<S, Uri<S>>],
-        [Attendee, attendees, attendees_mut, [Prop<S, CalAddress<S>, Box<AttendeeParams<S>>>]],
-        [Comment, comments, comments_mut, [Prop<S, Text<S>, TextParams<S>>]],
-        [FreeBusy, free_busy_periods, free_busy_periods_mut, [Prop<S, Box<[Period]>, FBTypeParams<S>>]],
-        [RequestStatus, request_statuses, request_statuses_mut, [Prop<S, RequestStatus<S>, LangParams<S>>]],
+    }
+
+    seq_accessors! {FreeBusyProp, FreeBusyPropName;
+        [Attendee, attendees, attendees_mut, Prop<S, CalAddress<S>, Box<AttendeeParams<S>>>],
+        [Comment, comments, comments_mut, Prop<S, Text<S>, TextParams<S>>],
+        [FreeBusy, free_busy_periods, free_busy_periods_mut, Prop<S, Box<[Period]>, FBTypeParams<S>>],
+        [RequestStatus, request_statuses, request_statuses_mut, Prop<S, RequestStatus<S>, LangParams<S>>],
     }
 }
 
@@ -552,9 +619,12 @@ where
 
     optional_accessors! {OffsetProp, OffsetPropName;
         [RRule, rrule, rrule_mut, Prop<S, Box<RRule>>],
-        [Comment, comments, comments_mut, [Prop<S, Text<S>, TextParams<S>>]],
-        [RDate, recurrence_dates, recurrence_dates_mut, [Prop<S, RDateSeq, DtParams<S>>]],
-        [TzName, names, names_mut, [Prop<S, Text<S>, LangParams<S>>]],
+    }
+
+    seq_accessors! {OffsetProp, OffsetPropName;
+        [Comment, comments, comments_mut, Prop<S, Text<S>, TextParams<S>>],
+        [RDate, recurrence_dates, recurrence_dates_mut, Prop<S, RDateSeq, DtParams<S>>],
+        [TzName, names, names_mut, Prop<S, Text<S>, LangParams<S>>],
     }
 }
 
@@ -649,9 +719,9 @@ where
         [Summary, summary, summary_mut, Prop<S, Text<S>, TextParams<S>>],
     }
 
-    optional_accessors! {EmailAlarmProp, EmailAlarmPropName;
-        [Attendee, attendees, attendees_mut, [Prop<S, CalAddress<S>, Box<AttendeeParams<S>>>]],
-        [Attach, attachments, attachments_mut, [Prop<S, AttachValue<S>, AttachParams<S>>]],
+    seq_accessors! {EmailAlarmProp, EmailAlarmPropName;
+        [Attendee, attendees, attendees_mut, Prop<S, CalAddress<S>, Box<AttendeeParams<S>>>],
+        [Attach, attachments, attachments_mut, Prop<S, AttachValue<S>, AttachParams<S>>],
     }
 
     dur_rep_accessors!(EmailAlarmProp, EmailAlarmPropName);
@@ -674,9 +744,9 @@ where
         [Summary, summary, summary_mut, Prop<S, Text<S>, TextParams<S>>],
     }
 
-    optional_accessors! {OtherAlarmProp, OtherAlarmPropName;
-        [Attendee, attendees, attendees_mut, [Prop<S, CalAddress<S>, Box<AttendeeParams<S>>>]],
-        [Attach, attachments, attachments_mut, [Prop<S, AttachValue<S>, AttachParams<S>>]],
+    seq_accessors! {OtherAlarmProp, OtherAlarmPropName;
+        [Attendee, attendees, attendees_mut, Prop<S, CalAddress<S>, Box<AttendeeParams<S>>>],
+        [Attach, attachments, attachments_mut, Prop<S, AttachValue<S>, AttachParams<S>>],
     }
 
     dur_rep_accessors!(OtherAlarmProp, OtherAlarmPropName);
