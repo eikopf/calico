@@ -382,6 +382,44 @@ pub struct Calendar<S> {
     components: Vec<Component<S>>,
 }
 
+impl<S> Calendar<S> {
+    pub fn components(&self) -> &[Component<S>] {
+        &self.components
+    }
+
+    pub fn components_mut(&mut self) -> &mut Vec<Component<S>> {
+        &mut self.components
+    }
+}
+
+impl<S> Calendar<S>
+where
+    S: Hash + PartialEq + Equiv<LineFoldCaseless> + AsRef<[u8]>,
+{
+    mandatory_accessors! {CalendarProp, CalendarPropName;
+        [ProdId, prod_id, prod_id_mut, Prop<S, Text<S>>],
+        [Version, version, version_mut, Prop<S, ()>],
+    }
+
+    optional_accessors! {CalendarProp, CalendarPropName;
+        [CalScale, scale, scale_mut, Prop<S, ()>],
+        [Method, method, method_mut, Prop<S, Method<S>>],
+        [Uid, uid, uid_mut, Prop<S, Uid<S>>],
+        [LastModified, last_modified, last_modified_mut, Prop<S, DateTime<Utc>>],
+        [Url, url, url_mut, Prop<S, Uri<S>>],
+        [RefreshInterval, refresh_interval, refresh_interval_mut, Prop<S, Duration>],
+        [Source, source, source_mut, Prop<S, Uri<S>>],
+        [Color, color, color_mut, Prop<S, Css3Color>],
+    }
+
+    seq_accessors! {CalendarProp, CalendarPropName;
+        [Name, names, names_mut, Prop<S, Text<S>, TextParams<S>>],
+        [Description, description, description_mut, Prop<S, Text<S>, TextParams<S>>],
+        [Categories, categories, categories_mut, Prop<S, Box<[Text<S>]>, LangParams<S>>],
+        [Image, images, images_mut, Prop<S, ImageData<S>, ImageParams<S>>],
+    }
+}
+
 /// A component in an iCalendar object (RFC 5545 §3.6).
 #[derive(Debug, Clone)]
 pub enum Component<S> {
@@ -481,15 +519,128 @@ impl<S> From<Event<S>> for Component<S> {
 /// A VEVENT component (RFC 5545 §3.6.1).
 #[derive(Debug, Clone)]
 pub struct Event<S> {
-    props: EventTable<S>,
-    alarms: Vec<Alarm<S>>,
+    pub(crate) props: EventTable<S>,
+    pub(crate) alarms: Vec<Alarm<S>>,
+}
+
+impl<S> Event<S> {
+    pub fn alarms(&self) -> &[Alarm<S>] {
+        &self.alarms
+    }
+
+    pub fn alarms_mut(&mut self) -> &mut Vec<Alarm<S>> {
+        &mut self.alarms
+    }
+}
+
+impl<S> Event<S>
+where
+    S: Hash + PartialEq + Equiv<LineFoldCaseless> + AsRef<[u8]>,
+{
+    mandatory_accessors! {EventProp, EventPropName;
+        [DtStamp, timestamp, timestamp_mut, Prop<S, DateTime<Utc>>],
+        [Uid, uid, uid_mut, Prop<S, Uid<S>>],
+    }
+
+    optional_accessors! {EventProp, EventPropName;
+        [DtStart, start, start_mut, Prop<S, DateTimeOrDate, DtParams<S>>],
+        [Class, class, class_mut, Prop<S, ClassValue<S>>],
+        [Created, created, created_mut, Prop<S, DateTime<Utc>>],
+        [Description, description, description_mut, Prop<S, Text<S>, TextParams<S>>],
+        [Geo, geo, geo_mut, Prop<S, Geo>],
+        [LastModified, last_modified, last_modified_mut, Prop<S, DateTime<Utc>>],
+        [Location, location, location_mut, Prop<S, Text<S>, TextParams<S>>],
+        [Organizer, organizer, organizer_mut, Prop<S, CalAddress<S>, Box<OrganizerParams<S>>>],
+        [Priority, priority, priority_mut, Prop<S, Priority>],
+        [Sequence, sequence_number, sequence_number_mut, Prop<S, Integer>],
+        [Status, status, status_mut, Prop<S, EventStatus>],
+        [Summary, summary, summary_mut, Prop<S, Text<S>, TextParams<S>>],
+        [Transp, transparency, transparency_mut, Prop<S, TimeTransparency>],
+        [Url, url, url_mut, Prop<S, Uri<S>>],
+        [RecurId, recurrence_id, recurrence_id_mut, Prop<S, DateTimeOrDate, RecurrenceIdParams<S>>],
+        [RRule, rrule, rrule_mut, Prop<S, Box<RRule>>],
+        [Color, color, color_mut, Prop<S, Css3Color>],
+        [Termination, termination, termination_mut, EventTerminationProp<S>],
+    }
+
+    seq_accessors! {EventProp, EventPropName;
+        [Attach, attachments, attachments_mut, Prop<S, AttachValue<S>, Box<AttachParams<S>>>],
+        [Attendee, attendees, attendees_mut, Prop<S, CalAddress<S>, Box<AttendeeParams<S>>>],
+        [Categories, categories, categories_mut, Prop<S, Box<[Text<S>]>, LangParams<S>>],
+        [Comment, comments, comments_mut, Prop<S, Text<S>, TextParams<S>>],
+        [Contact, contacts, contacts_mut, Prop<S, Text<S>, TextParams<S>>],
+        [ExDate, exception_dates, exception_dates_mut, Prop<S, DateTimeOrDateSeq, DtParams<S>>],
+        [RequestStatus, request_statuses, request_statuses_mut, Prop<S, RequestStatus<S>, LangParams<S>>],
+        [RelatedTo, relateds, relateds_mut, Prop<S, Text<S>, RelTypeParams<S>>],
+        [Resources, resources, resources_mut, Prop<S, Box<[Text<S>]>, TextParams<S>>],
+        [RDate, recurrence_dates, recurrence_dates_mut, Prop<S, RDateSeq, DtParams<S>>],
+        [Conference, conferences, conferences_mut, Prop<S, Uri<S>, ConfParams<S>>],
+        [Image, images, images_mut, Prop<S, ImageData<S>, ImageParams<S>>],
+    }
 }
 
 /// A VTODO component (RFC 5545 §3.6.2).
 #[derive(Debug, Clone)]
 pub struct Todo<S> {
-    props: TodoTable<S>,
-    alarms: Vec<Alarm<S>>,
+    pub(crate) props: TodoTable<S>,
+    pub(crate) alarms: Vec<Alarm<S>>,
+}
+
+impl<S> Todo<S> {
+    pub fn alarms(&self) -> &[Alarm<S>] {
+        &self.alarms
+    }
+
+    pub fn alarms_mut(&mut self) -> &mut Vec<Alarm<S>> {
+        &mut self.alarms
+    }
+}
+
+impl<S> Todo<S>
+where
+    S: Hash + PartialEq + Equiv<LineFoldCaseless> + AsRef<[u8]>,
+{
+    mandatory_accessors! {TodoProp, TodoPropName;
+        [DtStamp, timestamp, timestamp_mut, Prop<S, DateTime<Utc>>],
+        [Uid, uid, uid_mut, Prop<S, Uid<S>>],
+    }
+
+    optional_accessors! {TodoProp, TodoPropName;
+        [Class, class, class_mut, Prop<S, ClassValue<S>>],
+        [Completed, completed, completed_mut, Prop<S, DateTime<Utc>>],
+        [Created, created, created_mut, Prop<S, DateTime<Utc>>],
+        [Description, description, description_mut, Prop<S, Text<S>, TextParams<S>>],
+        [DtStart, start, start_mut, Prop<S, DateTimeOrDate, DtParams<S>>],
+        [Geo, geo, geo_mut, Prop<S, Geo>],
+        [LastModified, last_modified, last_modified_mut, Prop<S, DateTime<Utc>>],
+        [Location, location, location_mut, Prop<S, Text<S>, TextParams<S>>],
+        [Organizer, organizer, organizer_mut, Prop<S, CalAddress<S>, Box<OrganizerParams<S>>>],
+        [Percent, percent, percent_mut, Prop<S, CompletionPercentage>],
+        [Priority, priority, priority_mut, Prop<S, Priority>],
+        [RecurId, recurrence_id, recurrence_id_mut, Prop<S, DateTimeOrDate, RecurrenceIdParams<S>>],
+        [Sequence, sequence_number, sequence_number_mut, Prop<S, Integer>],
+        [Status, status, status_mut, Prop<S, TodoStatus>],
+        [Summary, summary, summary_mut, Prop<S, Text<S>, TextParams<S>>],
+        [Url, url, url_mut, Prop<S, Uri<S>>],
+        [RRule, rrule, rrule_mut, Prop<S, Box<RRule>>],
+        [Color, color, color_mut, Prop<S, Css3Color>],
+        [Termination, termination, termination_mut, TodoTerminationProp<S>],
+    }
+
+    seq_accessors! {TodoProp, TodoPropName;
+        [Attach, attachments, attachments_mut, Prop<S, AttachValue<S>, Box<AttachParams<S>>>],
+        [Attendee, attendees, attendees_mut, Prop<S, CalAddress<S>, Box<AttendeeParams<S>>>],
+        [Categories, categories, categories_mut, Prop<S, Box<[Text<S>]>, LangParams<S>>],
+        [Comment, comments, comments_mut, Prop<S, Text<S>, TextParams<S>>],
+        [Contact, contacts, contacts_mut, Prop<S, Text<S>, TextParams<S>>],
+        [ExDate, exception_dates, exception_dates_mut, Prop<S, DateTimeOrDateSeq, DtParams<S>>],
+        [RequestStatus, request_statuses, request_statuses_mut, Prop<S, RequestStatus<S>, LangParams<S>>],
+        [RelatedTo, relateds, relateds_mut, Prop<S, Text<S>, RelTypeParams<S>>],
+        [Resources, resources, resources_mut, Prop<S, Box<[Text<S>]>, TextParams<S>>],
+        [RDate, recurrence_dates, recurrence_dates_mut, Prop<S, RDateSeq, DtParams<S>>],
+        [Conference, conferences, conferences_mut, Prop<S, Uri<S>, ConfParams<S>>],
+        [Image, images, images_mut, Prop<S, ImageData<S>, ImageParams<S>>],
+    }
 }
 
 /// A VJOURNAL component (RFC 5545 §3.6.3).
@@ -751,8 +902,27 @@ where
 /// An arbitrary component which may have any properties and subcomponents.
 #[derive(Debug, Clone)]
 pub struct OtherComponent<S> {
-    props: AnyPropTable<S>,
-    subcomponents: Box<[Component<S>]>,
+    pub(crate) name: S,
+    pub(crate) props: AnyPropTable<S>,
+    pub(crate) subcomponents: Vec<Component<S>>,
+}
+
+impl<S> OtherComponent<S> {
+    pub fn name(&self) -> &S {
+        &self.name
+    }
+
+    pub fn name_mut(&mut self) -> &mut S {
+        &mut self.name
+    }
+
+    pub fn subcomponents(&self) -> &[Component<S>] {
+        &self.subcomponents
+    }
+
+    pub fn subcomponents_mut(&mut self) -> &mut Vec<Component<S>> {
+        &mut self.subcomponents
+    }
 }
 
 table! {
@@ -785,10 +955,10 @@ CalendarPropName {
     Color(Prop<S, Css3Color>),
 
     // free multiplicity fields (RFC 7986)
-    Name(PropSeq<Text<S>, TextParams<S>>),
-    Description(PropSeq<Text<S>, TextParams<S>>),
-    Categories(PropSeq<Box<[Text<S>]>, LangParams<S>>),
-    Image(PropSeq<ImageData<S>, ImageParams<S>>)
+    Name(PropSeq<S, Text<S>, TextParams<S>>),
+    Description(PropSeq<S, Text<S>, TextParams<S>>),
+    Categories(PropSeq<S, Box<[Text<S>]>, LangParams<S>>),
+    Image(PropSeq<S, ImageData<S>, ImageParams<S>>)
 }}
 
 table! {

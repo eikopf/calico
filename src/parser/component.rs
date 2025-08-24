@@ -5,7 +5,7 @@ use std::{fmt::Debug, hash::Hash};
 use winnow::{
     Parser,
     ascii::Caseless,
-    combinator::{alt, empty, fail, preceded, repeat, terminated},
+    combinator::{alt, empty, fail, peek, preceded, repeat, terminated},
     error::{FromExternalError, ParserError},
     stream::{AsBStr, AsChar, Compare, SliceLen, Stream, StreamIsPartial},
     token::literal,
@@ -14,20 +14,22 @@ use winnow::{
 use crate::{
     model::{
         component::{
-            Alarm, Component, Entry, Event, FreeAlarmProp, FreeAlarmPropName, FreeAlarmTable,
-            FreeBusy, FreeBusyProp, FreeBusyPropName, FreeBusyTable, Journal, JournalProp,
-            JournalPropName, JournalTable, Key, OffsetProp, OffsetPropName, OffsetTable,
-            OtherComponent, TimeZone, TimeZoneProp, TimeZonePropName, TimeZoneTable, Todo, TzRule,
-            TzRuleKind,
+            Alarm, Component, Entry, Event, EventProp, EventPropName, EventTable, FreeAlarmProp,
+            FreeAlarmPropName, FreeAlarmTable, FreeBusy, FreeBusyProp, FreeBusyPropName,
+            FreeBusyTable, Journal, JournalProp, JournalPropName, JournalTable, Key, OffsetProp,
+            OffsetPropName, OffsetTable, OtherComponent, TimeZone, TimeZoneProp, TimeZonePropName,
+            TimeZoneTable, Todo, TodoProp, TodoPropName, TodoTable, TzRule, TzRuleKind,
         },
-        primitive::{JournalStatus, Status},
-        property::{Prop, TriggerProp},
+        primitive::{EventStatus, JournalStatus, Status, TodoStatus},
+        property::{EventTerminationProp, Prop, TodoTerminationProp, TriggerProp},
     },
     parser::{
         error::ComponentKind,
         escaped::{Equiv, LineFoldCaseless},
         primitive::{ascii_lower, iana_token, x_name},
-        property::{KnownProp, Prop as ParserProp, PropName, Rfc5545PropName, UnknownProp},
+        property::{
+            KnownProp, Prop as ParserProp, PropName, Rfc5545PropName, Rfc7986PropName, UnknownProp,
+        },
     },
 };
 
@@ -57,7 +59,8 @@ where
     <<I as Stream>::Slice as Stream>::Token: AsChar,
     E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
-    let kind = terminated(begin(comp_kind), crlf).parse_next(input)?;
+    // hacky lookahead to figure out which branch to take
+    let kind = peek(begin(comp_kind)).parse_next(input)?;
 
     let result = match kind {
         CalCompKind::Event => event.map(Into::into).parse_next(input),
@@ -65,11 +68,9 @@ where
         CalCompKind::Journal => journal.map(Into::into).parse_next(input),
         CalCompKind::FreeBusy => free_busy.map(Into::into).parse_next(input),
         CalCompKind::TimeZone => timezone.map(Into::into).parse_next(input),
-        CalCompKind::Iana(_) => other.map(Component::Iana).parse_next(input),
-        CalCompKind::X(_) => other.map(Component::X).parse_next(input),
+        CalCompKind::Iana(name) => other(name).map(Component::Iana).parse_next(input),
+        CalCompKind::X(name) => other(name).map(Component::X).parse_next(input),
     }?;
-
-    let () = terminated(end(kind.parser()), crlf).parse_next(input)?;
 
     Ok(result)
 }
@@ -224,7 +225,198 @@ where
     <<I as Stream>::Slice as Stream>::Token: AsChar,
     E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
-    todo!()
+    fn step<S>(
+        (prop, unknown_params): ParsedProp<S>,
+        state: &mut EventTable<S>,
+    ) -> Result<(), CalendarParseError<S>>
+    where
+        S: Hash + PartialEq + Debug + Equiv<LineFoldCaseless> + AsRef<[u8]>,
+    {
+        macro_rules! once {
+            ($name:ident, $long_name:expr, $value:expr, $params:expr) => {
+                try_insert_once!(
+                    state,
+                    Event,
+                    Key::Known(EventPropName::$name),
+                    $long_name,
+                    Entry::Known(EventProp::$name(Prop {
+                        value: $value,
+                        params: $params,
+                        unknown_params
+                    })),
+                )
+            };
+        }
+
+        macro_rules! seq {
+            ($name:ident, $value:expr, $params:expr) => {
+                insert_seq!(
+                    state,
+                    EventProp,
+                    $name,
+                    Key::Known(EventPropName::$name),
+                    Prop {
+                        value: $value,
+                        params: $params,
+                        unknown_params,
+                    }
+                )
+            };
+        }
+
+        step_inner! {state, Event, prop, unknown_params;
+            ParserProp::Known(KnownProp::DtStamp(value)) => {
+                once!(DtStamp, PropName::Rfc5545(Rfc5545PropName::DateTimeStamp), value, ())
+            },
+            ParserProp::Known(KnownProp::Uid(value)) => {
+                once!(Uid, PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier), value, ())
+            },
+            ParserProp::Known(KnownProp::DtStart(value, params)) => {
+                once!(DtStart, PropName::Rfc5545(Rfc5545PropName::DateTimeStart), value, params)
+            },
+            ParserProp::Known(KnownProp::Class(value)) => {
+                once!(Class, PropName::Rfc5545(Rfc5545PropName::Classification), value, ())
+            },
+            ParserProp::Known(KnownProp::Created(value)) => {
+                once!(Created, PropName::Rfc5545(Rfc5545PropName::DateTimeCreated), value, ())
+            },
+            ParserProp::Known(KnownProp::Description(value, params)) => {
+                once!(Description, PropName::Rfc5545(Rfc5545PropName::Description), value, params)
+            },
+            ParserProp::Known(KnownProp::Geo(value)) => {
+                once!(Geo, PropName::Rfc5545(Rfc5545PropName::GeographicPosition), value, ())
+            },
+            ParserProp::Known(KnownProp::LastModified(value)) => {
+                once!(LastModified, PropName::Rfc5545(Rfc5545PropName::LastModified), value, ())
+            },
+            ParserProp::Known(KnownProp::Location(value, params)) => {
+                once!(Location, PropName::Rfc5545(Rfc5545PropName::Location), value, params)
+            },
+            ParserProp::Known(KnownProp::Organizer(value, params)) => {
+                once!(Organizer, PropName::Rfc5545(Rfc5545PropName::Organizer), value, Box::new(params))
+            },
+            ParserProp::Known(KnownProp::Priority(value)) => {
+                once!(Priority, PropName::Rfc5545(Rfc5545PropName::Priority), value, ())
+            },
+            ParserProp::Known(KnownProp::Sequence(value)) => {
+                once!(Sequence, PropName::Rfc5545(Rfc5545PropName::SequenceNumber), value, ())
+            },
+            ParserProp::Known(KnownProp::Status(value)) => {
+                let value = match value {
+                    Status::Tentative => EventStatus::Tentative,
+                    Status::Confirmed => EventStatus::Confirmed,
+                    Status::Cancelled => EventStatus::Cancelled,
+                    status => return Err(CalendarParseError::InvalidEventStatus(status)),
+                };
+
+                once!(Status, PropName::Rfc5545(Rfc5545PropName::Status), value, ())
+            },
+            ParserProp::Known(KnownProp::Summary(value, params)) => {
+                once!(Summary, PropName::Rfc5545(Rfc5545PropName::Summary), value, params)
+            },
+            ParserProp::Known(KnownProp::Transparency(value)) => {
+                once!(Transp, PropName::Rfc5545(Rfc5545PropName::TimeTransparency), value, ())
+            },
+            ParserProp::Known(KnownProp::Url(value)) => {
+                once!(Url, PropName::Rfc5545(Rfc5545PropName::UniformResourceLocator), value, ())
+            },
+            ParserProp::Known(KnownProp::RecurrenceId(value, params)) => {
+                once!(RecurId, PropName::Rfc5545(Rfc5545PropName::RecurrenceId), value, params)
+            },
+            ParserProp::Known(KnownProp::RRule(value)) => {
+                once!(RRule, PropName::Rfc5545(Rfc5545PropName::RecurrenceRule), Box::new(value), ())
+            },
+            ParserProp::Known(KnownProp::Color(value)) => {
+                once!(Color, PropName::Rfc7986(Rfc7986PropName::Color), value, ())
+            },
+            ParserProp::Known(KnownProp::DtEnd(value, params)) => {
+                let prop = EventTerminationProp::End(Prop { value, params, unknown_params });
+                try_insert_once!(state, Event, Key::Known(EventPropName::Termination),
+                    PropName::Rfc5545(Rfc5545PropName::DateTimeEnd),
+                    Entry::Known(EventProp::Termination(prop))
+                )
+            },
+            ParserProp::Known(KnownProp::Duration(value)) => {
+                let prop = EventTerminationProp::Duration(Prop { value, params: (), unknown_params });
+                try_insert_once!(state, Event, Key::Known(EventPropName::Termination),
+                    PropName::Rfc5545(Rfc5545PropName::Duration),
+                    Entry::Known(EventProp::Termination(prop))
+                )
+            },
+            ParserProp::Known(KnownProp::Attach(value, params)) => {
+                seq!(Attach, value, Box::new(params))
+            },
+            ParserProp::Known(KnownProp::Attendee(value, params)) => {
+                seq!(Attendee, value, Box::new(params))
+            },
+            ParserProp::Known(KnownProp::Categories(value, params)) => {
+                seq!(Categories, value, params)
+            },
+            ParserProp::Known(KnownProp::Comment(value, params)) => {
+                seq!(Comment, value, params)
+            },
+            ParserProp::Known(KnownProp::Contact(value, params)) => {
+                seq!(Contact, value, params)
+            },
+            ParserProp::Known(KnownProp::ExDate(value, params)) => {
+                seq!(ExDate, value, params)
+            },
+            ParserProp::Known(KnownProp::RequestStatus(value, params)) => {
+                seq!(RequestStatus, value, params)
+            },
+            ParserProp::Known(KnownProp::RelatedTo(value, params)) => {
+                seq!(RelatedTo, value, params)
+            },
+            ParserProp::Known(KnownProp::Resources(value, params)) => {
+                seq!(Resources, value, params)
+            },
+            ParserProp::Known(KnownProp::RDate(value, params)) => {
+                seq!(RDate, value, params)
+            },
+            ParserProp::Known(KnownProp::Conference(value, params)) => {
+                seq!(Conference, value, params)
+            },
+            ParserProp::Known(KnownProp::Image(value, params)) => {
+                seq!(Image, value, params)
+            },
+        }
+    }
+
+    fn name<I, E>(input: &mut I) -> Result<(), E>
+    where
+        I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
+        E: ParserError<I>,
+    {
+        Caseless("VEVENT").void().parse_next(input)
+    }
+
+    terminated(begin(name), crlf).parse_next(input)?;
+    let props = StateMachine::new(step).parse_next(input)?;
+    let alarms = repeat(0.., alarm).parse_next(input)?;
+    terminated(end(name), crlf).parse_next(input)?;
+
+    // check mandatory fields
+    if props.get(Key::Known(EventPropName::DtStamp)).is_none() {
+        return Err(E::from_external_error(
+            input,
+            CalendarParseError::MissingProp {
+                prop: PropName::Rfc5545(Rfc5545PropName::DateTimeStart),
+                component: ComponentKind::Event,
+            },
+        ));
+    }
+
+    if props.get(Key::Known(EventPropName::Uid)).is_none() {
+        return Err(E::from_external_error(
+            input,
+            CalendarParseError::MissingProp {
+                prop: PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier),
+                component: ComponentKind::Event,
+            },
+        ));
+    }
+
+    Ok(Event { props, alarms })
 }
 
 /// Parses a [`Todo`].
@@ -244,7 +436,202 @@ where
     <<I as Stream>::Slice as Stream>::Token: AsChar,
     E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
-    todo!()
+    fn step<S>(
+        (prop, unknown_params): ParsedProp<S>,
+        state: &mut TodoTable<S>,
+    ) -> Result<(), CalendarParseError<S>>
+    where
+        S: Hash + PartialEq + Debug + Equiv<LineFoldCaseless> + AsRef<[u8]>,
+    {
+        macro_rules! once {
+            ($name:ident, $long_name:expr, $value:expr, $params:expr) => {
+                try_insert_once!(
+                    state,
+                    Todo,
+                    Key::Known(TodoPropName::$name),
+                    $long_name,
+                    Entry::Known(TodoProp::$name(Prop {
+                        value: $value,
+                        params: $params,
+                        unknown_params
+                    })),
+                )
+            };
+        }
+
+        macro_rules! seq {
+            ($name:ident, $value:expr, $params:expr) => {
+                insert_seq!(
+                    state,
+                    TodoProp,
+                    $name,
+                    Key::Known(TodoPropName::$name),
+                    Prop {
+                        value: $value,
+                        params: $params,
+                        unknown_params,
+                    }
+                )
+            };
+        }
+
+        step_inner! {state, Todo, prop, unknown_params;
+            ParserProp::Known(KnownProp::DtStamp(value)) => {
+                once!(DtStamp, PropName::Rfc5545(Rfc5545PropName::DateTimeStamp), value, ())
+            },
+            ParserProp::Known(KnownProp::Uid(value)) => {
+                once!(Uid, PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier), value, ())
+            },
+            ParserProp::Known(KnownProp::Class(value)) => {
+                once!(Class, PropName::Rfc5545(Rfc5545PropName::Classification), value, ())
+            },
+            ParserProp::Known(KnownProp::DtCompleted(value)) => {
+                once!(Completed, PropName::Rfc5545(Rfc5545PropName::DateTimeCompleted), value, ())
+            },
+            ParserProp::Known(KnownProp::Created(value)) => {
+                once!(Created, PropName::Rfc5545(Rfc5545PropName::DateTimeCreated), value, ())
+            },
+            ParserProp::Known(KnownProp::Description(value, params)) => {
+                once!(Description, PropName::Rfc5545(Rfc5545PropName::Description), value, params)
+            },
+            ParserProp::Known(KnownProp::DtStart(value, params)) => {
+                once!(DtStart, PropName::Rfc5545(Rfc5545PropName::DateTimeStart), value, params)
+            },
+            ParserProp::Known(KnownProp::Geo(value)) => {
+                once!(Geo, PropName::Rfc5545(Rfc5545PropName::GeographicPosition), value, ())
+            },
+            ParserProp::Known(KnownProp::LastModified(value)) => {
+                once!(LastModified, PropName::Rfc5545(Rfc5545PropName::LastModified), value, ())
+            },
+            ParserProp::Known(KnownProp::Location(value, params)) => {
+                once!(Location, PropName::Rfc5545(Rfc5545PropName::Location), value, params)
+            },
+            ParserProp::Known(KnownProp::Organizer(value, params)) => {
+                once!(Organizer, PropName::Rfc5545(Rfc5545PropName::Organizer), value, Box::new(params))
+            },
+            ParserProp::Known(KnownProp::PercentComplete(value)) => {
+                once!(Percent, PropName::Rfc5545(Rfc5545PropName::PercentComplete), value, ())
+            },
+            ParserProp::Known(KnownProp::Priority(value)) => {
+                once!(Priority, PropName::Rfc5545(Rfc5545PropName::Priority), value, ())
+            },
+            ParserProp::Known(KnownProp::RecurrenceId(value, params)) => {
+                once!(RecurId, PropName::Rfc5545(Rfc5545PropName::RecurrenceId), value, params)
+            },
+            ParserProp::Known(KnownProp::Sequence(value)) => {
+                once!(Sequence, PropName::Rfc5545(Rfc5545PropName::SequenceNumber), value, ())
+            },
+            ParserProp::Known(KnownProp::Status(value)) => {
+                let value = match value {
+                    Status::NeedsAction => TodoStatus::NeedsAction,
+                    Status::Completed => TodoStatus::Completed,
+                    Status::InProcess => TodoStatus::InProcess,
+                    Status::Cancelled => TodoStatus::Cancelled,
+                    status => return Err(CalendarParseError::InvalidTodoStatus(status)),
+                };
+
+                once!(Status, PropName::Rfc5545(Rfc5545PropName::Status), value, ())
+            },
+            ParserProp::Known(KnownProp::Summary(value, params)) => {
+                once!(Summary, PropName::Rfc5545(Rfc5545PropName::Summary), value, params)
+            },
+            ParserProp::Known(KnownProp::Url(value)) => {
+                once!(Url, PropName::Rfc5545(Rfc5545PropName::UniformResourceLocator), value, ())
+            },
+            ParserProp::Known(KnownProp::RRule(value)) => {
+                once!(RRule, PropName::Rfc5545(Rfc5545PropName::RecurrenceRule), Box::new(value), ())
+            },
+            ParserProp::Known(KnownProp::Color(value)) => {
+                once!(Color, PropName::Rfc7986(Rfc7986PropName::Color), value, ())
+            },
+            ParserProp::Known(KnownProp::DtDue(value, params)) => {
+                let prop = TodoTerminationProp::Due(Prop { value, params, unknown_params });
+                try_insert_once!(state, Todo, Key::Known(TodoPropName::Termination),
+                    PropName::Rfc5545(Rfc5545PropName::DateTimeDue),
+                    Entry::Known(TodoProp::Termination(prop))
+                )
+            },
+            ParserProp::Known(KnownProp::Duration(value)) => {
+                let prop = TodoTerminationProp::Duration(Prop { value, unknown_params, params: () });
+                try_insert_once!(state, Todo, Key::Known(TodoPropName::Termination),
+                    PropName::Rfc5545(Rfc5545PropName::Duration),
+                    Entry::Known(TodoProp::Termination(prop))
+                )
+            },
+            ParserProp::Known(KnownProp::Attach(value, params)) => {
+                seq!(Attach, value, Box::new(params))
+            },
+            ParserProp::Known(KnownProp::Attendee(value, params)) => {
+                seq!(Attendee, value, Box::new(params))
+            },
+            ParserProp::Known(KnownProp::Categories(value, params)) => {
+                seq!(Categories, value, params)
+            },
+            ParserProp::Known(KnownProp::Comment(value, params)) => {
+                seq!(Comment, value, params)
+            },
+            ParserProp::Known(KnownProp::Contact(value, params)) => {
+                seq!(Contact, value, params)
+            },
+            ParserProp::Known(KnownProp::ExDate(value, params)) => {
+                seq!(ExDate, value, params)
+            },
+            ParserProp::Known(KnownProp::RequestStatus(value, params)) => {
+                seq!(RequestStatus, value, params)
+            },
+            ParserProp::Known(KnownProp::RelatedTo(value, params)) => {
+                seq!(RelatedTo, value, params)
+            },
+            ParserProp::Known(KnownProp::Resources(value, params)) => {
+                seq!(Resources, value, params)
+            },
+            ParserProp::Known(KnownProp::RDate(value, params)) => {
+                seq!(RDate, value, params)
+            },
+            ParserProp::Known(KnownProp::Conference(value, params)) => {
+                seq!(Conference, value, params)
+            },
+            ParserProp::Known(KnownProp::Image(value, params)) => {
+                seq!(Image, value, params)
+            },
+        }
+    }
+
+    fn name<I, E>(input: &mut I) -> Result<(), E>
+    where
+        I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
+        E: ParserError<I>,
+    {
+        Caseless("VTODO").void().parse_next(input)
+    }
+
+    terminated(begin(name), crlf).parse_next(input)?;
+    let props = StateMachine::new(step).parse_next(input)?;
+    let alarms = repeat(0.., alarm).parse_next(input)?;
+    terminated(end(name), crlf).parse_next(input)?;
+
+    // check mandatory fields
+    if props.get(Key::Known(TodoPropName::DtStamp)).is_none() {
+        return Err(E::from_external_error(
+            input,
+            CalendarParseError::MissingProp {
+                prop: PropName::Rfc5545(Rfc5545PropName::DateTimeStart),
+                component: ComponentKind::Todo,
+            },
+        ));
+    }
+
+    if props.get(Key::Known(TodoPropName::Uid)).is_none() {
+        return Err(E::from_external_error(
+            input,
+            CalendarParseError::MissingProp {
+                prop: PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier),
+                component: ComponentKind::Todo,
+            },
+        ));
+    }
+
+    Ok(Todo { props, alarms })
 }
 
 /// Parses a [`Journal`].
@@ -867,10 +1254,21 @@ where
 }
 
 /// Parses an [`OtherComponent`].
-fn other<I, E>(input: &mut I) -> Result<OtherComponent<I::Slice>, E>
+fn other<I, E>(name: I::Slice) -> impl Parser<I, OtherComponent<I::Slice>, E>
 where
-    I: StreamIsPartial + Stream,
-    E: ParserError<I>,
+    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>> + Compare<char>,
+    I::Token: AsChar + Clone,
+    I::Slice: AsBStr
+        + Clone
+        + PartialEq
+        + Eq
+        + SliceLen
+        + Stream
+        + Equiv<LineFoldCaseless>
+        + AsRef<[u8]>
+        + Hash,
+    <<I as Stream>::Slice as Stream>::Token: AsChar,
+    E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
     // NOTE: the grammar for the "other" components (iana/x-name) just says
     // that they shall have at least one content line between the beginning
@@ -878,7 +1276,15 @@ where
     // but what about subcomponents? are they legal? what does libical do
     // here?
 
-    todo!()
+    move |input: &mut I| {
+        empty
+            .value(OtherComponent {
+                name: name.clone(),
+                props: Default::default(),
+                subcomponents: Default::default(),
+            })
+            .parse_next(input)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1019,9 +1425,9 @@ mod tests {
         date,
         model::{
             primitive::{
-                AttachValue, AudioAction, CalAddress, DateTime, DisplayAction, Duration,
-                DurationKind, DurationTime, EmailAction, FormatType, Local, Period, Sign, Text,
-                TriggerRelation, TzId, Uid, Uri, Utc,
+                AttachValue, AudioAction, CalAddress, ClassValue, DateTime, DisplayAction,
+                Duration, DurationKind, DurationTime, EmailAction, FormatType, Local, Period, Sign,
+                Text, TriggerRelation, TzId, Uid, Uri, Utc,
             },
             property::{AttachParams, TriggerParams},
         },
@@ -1039,6 +1445,131 @@ mod tests {
                 )*
             )
         };
+    }
+
+    #[test]
+    fn rfc_5545_example_event_1() {
+        let input = concat_crlf!(
+            "BEGIN:VEVENT",
+            "UID:19970901T130000Z-123401@example.com",
+            "DTSTAMP:19970901T130000Z",
+            "DTSTART:19970903T163000Z",
+            "DTEND:19970903T190000Z",
+            "SUMMARY:Annual Employee Review",
+            "CLASS:PRIVATE",
+            "CATEGORIES:BUSINESS,HUMAN RESOURCES",
+            "END:VEVENT",
+        );
+
+        let (tail, event) = event::<_, ()>.parse_peek(input).unwrap();
+        assert!(tail.is_empty());
+        assert!(event.alarms().is_empty());
+
+        assert_eq!(
+            event.uid(),
+            &Prop::from_value(Uid("19970901T130000Z-123401@example.com"))
+        );
+
+        assert_eq!(
+            event.timestamp(),
+            &Prop::from_value(DateTime {
+                date: date!(1997;9;1),
+                time: time!(13;00;00, Utc)
+            }),
+        );
+
+        assert_eq!(
+            event.start(),
+            Some(&Prop::from_value(
+                DateTime {
+                    date: date!(1997;9;3),
+                    time: time!(16;30;00, Utc)
+                }
+                .into()
+            )),
+        );
+
+        assert_eq!(
+            event.termination(),
+            Some(&EventTerminationProp::End(Prop::from_value(
+                DateTime {
+                    date: date!(1997;9;3),
+                    time: time!(19;00;00, Utc),
+                }
+                .into()
+            )))
+        );
+
+        assert_eq!(
+            event.summary(),
+            Some(&Prop::from_value(Text("Annual Employee Review")))
+        );
+
+        assert_eq!(event.class(), Some(&Prop::from_value(ClassValue::Private)));
+
+        assert_eq!(
+            event.categories(),
+            Some(
+                [Prop::from_value(
+                    [Text("BUSINESS"), Text("HUMAN RESOURCES")].into()
+                )]
+                .as_slice()
+            )
+        );
+    }
+
+    #[test]
+    fn rfc_5545_example_todo_1() {
+        let input = concat_crlf!(
+            "BEGIN:VTODO",
+            "UID:20070313T123432Z-456553@example.com",
+            "DTSTAMP:20070313T123432Z",
+            "DUE;VALUE=DATE:20070501",
+            "SUMMARY:Submit Quebec Income Tax Return for 2006",
+            "CLASS:CONFIDENTIAL",
+            "CATEGORIES:FAMILY,FINANCE",
+            "STATUS:NEEDS-ACTION",
+            "END:VTODO",
+        );
+
+        let (tail, todo) = todo::<_, ()>.parse_peek(input).unwrap();
+        assert!(tail.is_empty());
+        assert!(todo.alarms().is_empty());
+
+        assert_eq!(
+            todo.uid(),
+            &Prop::from_value(Uid("20070313T123432Z-456553@example.com"))
+        );
+
+        assert_eq!(
+            todo.timestamp(),
+            &Prop::from_value(DateTime {
+                date: date!(2007;3;13),
+                time: time!(12;34;32, Utc)
+            })
+        );
+
+        assert_eq!(
+            todo.summary(),
+            Some(&Prop::from_value(Text(
+                "Submit Quebec Income Tax Return for 2006"
+            )))
+        );
+
+        assert_eq!(
+            todo.class(),
+            Some(&Prop::from_value(ClassValue::Confidential))
+        );
+
+        assert_eq!(
+            todo.categories(),
+            Some([Prop::from_value([Text("FAMILY"), Text("FINANCE")].into())].as_slice())
+        );
+
+        assert_eq!(
+            todo.status(),
+            Some(&Prop::from_value(TodoStatus::NeedsAction))
+        );
     }
 
     #[test]
