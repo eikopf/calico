@@ -15,13 +15,17 @@ use crate::{
     model::{
         component::{
             Alarm, Component, Entry, Event, FreeAlarmProp, FreeAlarmPropName,
-            FreeAlarmTable, Key, OffsetProp, OffsetPropName, OffsetTable,
-            OtherComponent, TimeZone, TimeZoneProp, TimeZonePropName,
-            TimeZoneTable, Todo, TzRule, TzRuleKind,
+            FreeAlarmTable, FreeBusy, FreeBusyProp, FreeBusyPropName,
+            FreeBusyTable, Journal, JournalProp, JournalPropName, JournalTable,
+            Key, OffsetProp, OffsetPropName, OffsetTable, OtherComponent,
+            TimeZone, TimeZoneProp, TimeZonePropName, TimeZoneTable, Todo,
+            TzRule, TzRuleKind,
         },
+        primitive::{JournalStatus, Status},
         property::{Prop, TriggerProp},
     },
     parser::{
+        error::ComponentKind,
         escaped::{Equiv, LineFoldCaseless},
         primitive::{ascii_lower, iana_token, x_name},
         property::{
@@ -60,13 +64,11 @@ where
     let kind = terminated(begin(comp_kind), crlf).parse_next(input)?;
 
     let result = match kind {
-        CalCompKind::Event => event.map(Component::Event).parse_next(input),
-        CalCompKind::Todo => todo.map(Component::Todo).parse_next(input),
-        CalCompKind::Journal => todo!(),
-        CalCompKind::FreeBusy => todo!(),
-        CalCompKind::TimeZone => {
-            timezone.map(Component::TimeZone).parse_next(input)
-        }
+        CalCompKind::Event => event.map(Into::into).parse_next(input),
+        CalCompKind::Todo => todo.map(Into::into).parse_next(input),
+        CalCompKind::Journal => journal.map(Into::into).parse_next(input),
+        CalCompKind::FreeBusy => free_busy.map(Into::into).parse_next(input),
+        CalCompKind::TimeZone => timezone.map(Into::into).parse_next(input),
         CalCompKind::Iana(_) => other.map(Component::Iana).parse_next(input),
         CalCompKind::X(_) => other.map(Component::X).parse_next(input),
     }?;
@@ -220,8 +222,22 @@ macro_rules! insert_seq {
 /// Parses an [`Event`].
 fn event<I, E>(input: &mut I) -> Result<Event<I::Slice>, E>
 where
-    I: StreamIsPartial + Stream,
-    E: ParserError<I>,
+    I: StreamIsPartial
+        + Stream
+        + Compare<Caseless<&'static str>>
+        + Compare<char>,
+    I::Token: AsChar + Clone,
+    I::Slice: AsBStr
+        + Clone
+        + PartialEq
+        + Eq
+        + SliceLen
+        + Stream
+        + Equiv<LineFoldCaseless>
+        + AsRef<[u8]>
+        + Hash,
+    <<I as Stream>::Slice as Stream>::Token: AsChar,
+    E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
     todo!()
 }
@@ -229,10 +245,364 @@ where
 /// Parses a [`Todo`].
 fn todo<I, E>(input: &mut I) -> Result<Todo<I::Slice>, E>
 where
-    I: StreamIsPartial + Stream,
-    E: ParserError<I>,
+    I: StreamIsPartial
+        + Stream
+        + Compare<Caseless<&'static str>>
+        + Compare<char>,
+    I::Token: AsChar + Clone,
+    I::Slice: AsBStr
+        + Clone
+        + PartialEq
+        + Eq
+        + SliceLen
+        + Stream
+        + Equiv<LineFoldCaseless>
+        + AsRef<[u8]>
+        + Hash,
+    <<I as Stream>::Slice as Stream>::Token: AsChar,
+    E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
     todo!()
+}
+
+/// Parses a [`Journal`].
+fn journal<I, E>(input: &mut I) -> Result<Journal<I::Slice>, E>
+where
+    I: StreamIsPartial
+        + Stream
+        + Compare<Caseless<&'static str>>
+        + Compare<char>,
+    I::Token: AsChar + Clone,
+    I::Slice: AsBStr
+        + Clone
+        + PartialEq
+        + Eq
+        + SliceLen
+        + Stream
+        + Equiv<LineFoldCaseless>
+        + AsRef<[u8]>
+        + Hash,
+    <<I as Stream>::Slice as Stream>::Token: AsChar,
+    E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
+{
+    fn step<S>(
+        (prop, unknown_params): ParsedProp<S>,
+        state: &mut JournalTable<S>,
+    ) -> Result<(), CalendarParseError<S>>
+    where
+        S: Hash + PartialEq + Debug + Equiv<LineFoldCaseless> + AsRef<[u8]>,
+    {
+        macro_rules! once {
+            ($name:ident, $long_name:expr, $value:expr, $params:expr) => {
+                try_insert_once!(
+                    state,
+                    Journal,
+                    Key::Known(JournalPropName::$name),
+                    $long_name,
+                    Entry::Known(JournalProp::$name(Prop {
+                        value: $value,
+                        params: $params,
+                        unknown_params
+                    })),
+                )
+            };
+        }
+
+        macro_rules! seq {
+            ($name:ident, $value:expr, $params:expr) => {
+                insert_seq!(
+                    state,
+                    JournalProp,
+                    $name,
+                    Key::Known(JournalPropName::$name),
+                    Prop {
+                        value: $value,
+                        params: $params,
+                        unknown_params,
+                    }
+                )
+            };
+        }
+
+        step_inner! {state, Journal, prop, unknown_params;
+            ParserProp::Known(KnownProp::DtStamp(value)) => {
+                once!(DtStamp, PropName::Rfc5545(Rfc5545PropName::DateTimeStamp), value, ())
+            },
+            ParserProp::Known(KnownProp::Uid(value)) => {
+                once!(Uid, PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier), value, ())
+            },
+            ParserProp::Known(KnownProp::Class(value)) => {
+                once!(Class, PropName::Rfc5545(Rfc5545PropName::Classification), value, ())
+            },
+            ParserProp::Known(KnownProp::Created(value)) => {
+                once!(Created, PropName::Rfc5545(Rfc5545PropName::DateTimeCreated), value, ())
+            },
+            ParserProp::Known(KnownProp::DtStart(value, params)) => {
+                once!(DtStart, PropName::Rfc5545(Rfc5545PropName::DateTimeStart), value, params)
+            },
+            ParserProp::Known(KnownProp::LastModified(value)) => {
+                once!(LastModified, PropName::Rfc5545(Rfc5545PropName::LastModified), value, ())
+            },
+            ParserProp::Known(KnownProp::Organizer(value, params)) => {
+                once!(Organizer, PropName::Rfc5545(Rfc5545PropName::Organizer), value, Box::new(params))
+            },
+            ParserProp::Known(KnownProp::RecurrenceId(value, params)) => {
+                once!(RecurId, PropName::Rfc5545(Rfc5545PropName::RecurrenceId), value, params)
+            },
+            ParserProp::Known(KnownProp::Sequence(value)) => {
+                once!(Sequence, PropName::Rfc5545(Rfc5545PropName::SequenceNumber), value, ())
+            },
+            ParserProp::Known(KnownProp::Status(value)) => {
+                let value = match value {
+                    Status::Cancelled => JournalStatus::Cancelled,
+                    Status::Draft => JournalStatus::Draft,
+                    Status::Final => JournalStatus::Final,
+                    status => return Err(CalendarParseError::InvalidJournalStatus(status)),
+                };
+
+                once!(Status, PropName::Rfc5545(Rfc5545PropName::Status), value, ())
+            },
+            ParserProp::Known(KnownProp::Summary(value, params)) => {
+                once!(Summary, PropName::Rfc5545(Rfc5545PropName::Summary), value, params)
+            },
+            ParserProp::Known(KnownProp::Url(value)) => {
+                once!(Url, PropName::Rfc5545(Rfc5545PropName::UniformResourceLocator), value, ())
+            },
+            ParserProp::Known(KnownProp::RRule(value)) => {
+                once!(RRule, PropName::Rfc5545(Rfc5545PropName::RecurrenceRule), Box::new(value), ())
+            },
+            ParserProp::Known(KnownProp::Attach(value, params)) => {
+                seq!(Attach, value, Box::new(params))
+            },
+            ParserProp::Known(KnownProp::Attendee(value, params)) => {
+                seq!(Attendee, value, Box::new(params))
+            },
+            ParserProp::Known(KnownProp::Categories(value, params)) => {
+                seq!(Categories, value, params)
+            },
+            ParserProp::Known(KnownProp::Comment(value, params)) => {
+                seq!(Comment, value, params)
+            },
+            ParserProp::Known(KnownProp::Contact(value, params)) => {
+                seq!(Contact, value, params)
+            },
+            ParserProp::Known(KnownProp::Description(value, params)) => {
+                seq!(Description, value, params)
+            },
+            ParserProp::Known(KnownProp::ExDate(value, params)) => {
+                seq!(ExDate, value, params)
+            },
+            ParserProp::Known(KnownProp::RelatedTo(value, params)) => {
+                seq!(RelatedTo, value, params)
+            },
+            ParserProp::Known(KnownProp::RDate(value, params)) => {
+                seq!(RDate, value, params)
+            },
+            ParserProp::Known(KnownProp::RequestStatus(value, params)) => {
+                seq!(RequestStatus, value, params)
+            },
+        }
+    }
+
+    fn name<I, E>(input: &mut I) -> Result<(), E>
+    where
+        I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
+        E: ParserError<I>,
+    {
+        Caseless("VJOURNAL").void().parse_next(input)
+    }
+
+    terminated(begin(name), crlf).parse_next(input)?;
+    let props = StateMachine::new(step).parse_next(input)?;
+    terminated(end(name), crlf).parse_next(input)?;
+
+    // check mandatory fields
+    if props.get(Key::Known(JournalPropName::DtStamp)).is_none() {
+        return Err(E::from_external_error(
+            input,
+            CalendarParseError::MissingProp {
+                prop: PropName::Rfc5545(Rfc5545PropName::DateTimeStart),
+                component: ComponentKind::Journal,
+            },
+        ));
+    }
+
+    if props.get(Key::Known(JournalPropName::Uid)).is_none() {
+        return Err(E::from_external_error(
+            input,
+            CalendarParseError::MissingProp {
+                prop: PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier),
+                component: ComponentKind::Journal,
+            },
+        ));
+    }
+
+    Ok(Journal { props })
+}
+
+/// Parses a [`FreeBusy`].
+fn free_busy<I, E>(input: &mut I) -> Result<FreeBusy<I::Slice>, E>
+where
+    I: StreamIsPartial
+        + Stream
+        + Compare<Caseless<&'static str>>
+        + Compare<char>,
+    I::Token: AsChar + Clone,
+    I::Slice: AsBStr
+        + Clone
+        + PartialEq
+        + Eq
+        + SliceLen
+        + Stream
+        + Equiv<LineFoldCaseless>
+        + AsRef<[u8]>
+        + Hash,
+    <<I as Stream>::Slice as Stream>::Token: AsChar,
+    E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
+{
+    fn step<S>(
+        (prop, unknown_params): ParsedProp<S>,
+        state: &mut FreeBusyTable<S>,
+    ) -> Result<(), CalendarParseError<S>>
+    where
+        S: Hash + PartialEq + Debug + Equiv<LineFoldCaseless> + AsRef<[u8]>,
+    {
+        step_inner! {state, FreeBusy, prop, unknown_params;
+            ParserProp::Known(KnownProp::DtStamp(value)) => {
+                try_insert_once!(state, FreeBusy, Key::Known(FreeBusyPropName::DtStamp),
+                    PropName::Rfc5545(Rfc5545PropName::DateTimeStamp),
+                    Entry::Known(FreeBusyProp::DtStamp(Prop {
+                        value,
+                        params: (),
+                        unknown_params
+                    })),
+                )
+            },
+            ParserProp::Known(KnownProp::Uid(value)) => {
+                try_insert_once!(state, FreeBusy, Key::Known(FreeBusyPropName::Uid),
+                    PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier),
+                    Entry::Known(FreeBusyProp::Uid(Prop {
+                        value,
+                        params: (),
+                        unknown_params
+                    })),
+                )
+            },
+            ParserProp::Known(KnownProp::Contact(value, params)) => {
+                try_insert_once!(state, FreeBusy, Key::Known(FreeBusyPropName::Contact),
+                    PropName::Rfc5545(Rfc5545PropName::Contact),
+                    Entry::Known(FreeBusyProp::Contact(Prop {
+                        value,
+                        params,
+                        unknown_params
+                    })),
+                )
+            },
+            ParserProp::Known(KnownProp::DtStart(value, params)) => {
+                try_insert_once!(state, FreeBusy, Key::Known(FreeBusyPropName::DtStart),
+                    PropName::Rfc5545(Rfc5545PropName::DateTimeStart),
+                    Entry::Known(FreeBusyProp::DtStart(Prop {
+                        value,
+                        params,
+                        unknown_params
+                    })),
+                )
+            },
+            ParserProp::Known(KnownProp::DtEnd(value, params)) => {
+                try_insert_once!(state, FreeBusy, Key::Known(FreeBusyPropName::DtEnd),
+                    PropName::Rfc5545(Rfc5545PropName::DateTimeEnd),
+                    Entry::Known(FreeBusyProp::DtEnd(Prop {
+                        value,
+                        params,
+                        unknown_params
+                    })),
+                )
+            },
+            ParserProp::Known(KnownProp::Organizer(value, params)) => {
+                try_insert_once!(state, FreeBusy, Key::Known(FreeBusyPropName::Organizer),
+                    PropName::Rfc5545(Rfc5545PropName::Organizer),
+                    Entry::Known(FreeBusyProp::Organizer(Prop {
+                        value,
+                        params: Box::new(params),
+                        unknown_params
+                    })),
+                )
+            },
+            ParserProp::Known(KnownProp::Url(value)) => {
+                try_insert_once!(state, FreeBusy, Key::Known(FreeBusyPropName::Url),
+                    PropName::Rfc5545(Rfc5545PropName::UniformResourceLocator),
+                    Entry::Known(FreeBusyProp::Url(Prop {
+                        value,
+                        params: (),
+                        unknown_params
+                    })),
+                )
+            },
+            ParserProp::Known(KnownProp::Attendee(value, params)) => {
+                insert_seq!(state, FreeBusyProp, Attendee, Key::Known(FreeBusyPropName::Attendee), Prop {
+                    value,
+                    params: Box::new(params),
+                    unknown_params,
+                })
+            },
+            ParserProp::Known(KnownProp::Comment(value, params)) => {
+                insert_seq!(state, FreeBusyProp, Comment, Key::Known(FreeBusyPropName::Comment), Prop {
+                    value,
+                    params,
+                    unknown_params,
+                })
+            },
+            ParserProp::Known(KnownProp::FreeBusy(value, params)) => {
+                insert_seq!(state, FreeBusyProp, FreeBusy, Key::Known(FreeBusyPropName::FreeBusy), Prop {
+                    value,
+                    params,
+                    unknown_params,
+                })
+            },
+            ParserProp::Known(KnownProp::RequestStatus(value, params)) => {
+                insert_seq!(state, FreeBusyProp, RequestStatus, Key::Known(FreeBusyPropName::RequestStatus), Prop {
+                    value,
+                    params,
+                    unknown_params,
+                })
+            },
+        }
+    }
+
+    fn name<I, E>(input: &mut I) -> Result<(), E>
+    where
+        I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
+        E: ParserError<I>,
+    {
+        Caseless("VFREEBUSY").void().parse_next(input)
+    }
+
+    terminated(begin(name), crlf).parse_next(input)?;
+    let props = StateMachine::new(step).parse_next(input)?;
+    terminated(end(name), crlf).parse_next(input)?;
+
+    // check mandatory fields
+    if props.get(Key::Known(FreeBusyPropName::DtStamp)).is_none() {
+        return Err(E::from_external_error(
+            input,
+            CalendarParseError::MissingProp {
+                prop: PropName::Rfc5545(Rfc5545PropName::DateTimeStart),
+                component: ComponentKind::FreeBusy,
+            },
+        ));
+    }
+
+    if props.get(Key::Known(FreeBusyPropName::Uid)).is_none() {
+        return Err(E::from_external_error(
+            input,
+            CalendarParseError::MissingProp {
+                prop: PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier),
+                component: ComponentKind::FreeBusy,
+            },
+        ));
+    }
+
+    Ok(FreeBusy { props })
 }
 
 /// Parses a [`TimeZone`].
@@ -756,7 +1126,8 @@ mod tests {
             primitive::{
                 AttachValue, AudioAction, CalAddress, DateTime, DisplayAction,
                 Duration, DurationKind, DurationTime, EmailAction, FormatType,
-                Local, Sign, Text, TriggerRelation, TzId, Uri, Utc,
+                Local, Period, Sign, Text, TriggerRelation, TzId, Uid, Uri,
+                Utc,
             },
             property::{AttachParams, TriggerParams},
         },
@@ -777,7 +1148,255 @@ mod tests {
     }
 
     #[test]
+    fn rfc_5545_example_journal() {
+        let input = concat_crlf!(
+            "BEGIN:VJOURNAL",
+            "UID:19970901T130000Z-123405@example.com",
+            "DTSTAMP:19970901T130000Z",
+            "DTSTART;VALUE=DATE:19970317",
+            "SUMMARY:Staff meeting minutes",
+            "DESCRIPTION:1. Staff meeting: Participants include Joe\\,",
+            "  Lisa\\, and Bob. Aurora project plans were reviewed.",
+            "  There is currently no budget reserves for this project.",
+            "  Lisa will escalate to management. Next meeting on Tuesday.\\n",
+            " 2. Telephone Conference: ABC Corp. sales representative",
+            "  called to discuss new printer. Promised to get us a demo by",
+            "  Friday.\\n3. Henry Miller (Handsoff Insurance): Car was",
+            "  totaled by tree. Is looking into a loaner car. 555-2323",
+            "  (tel).",
+            "END:VJOURNAL",
+        );
+
+        let (tail, journal) =
+            journal::<_, ()>.parse_peek(input.as_escaped()).unwrap();
+        assert!(tail.is_empty());
+
+        assert_eq!(
+            journal.uid(),
+            &Prop::from_value(Uid(
+                "19970901T130000Z-123405@example.com".as_escaped()
+            ))
+        );
+
+        assert_eq!(
+            journal.timestamp(),
+            &Prop::from_value(DateTime {
+                date: date!(1997;9;1),
+                time: time!(13;00;00, Utc)
+            })
+        );
+
+        assert_eq!(
+            journal.start(),
+            Some(&Prop::from_value(date!(1997;3;17).into()))
+        );
+
+        assert!(journal.summary().is_some());
+        assert!(journal.descriptions().is_some());
+    }
+
+    #[test]
+    fn rfc_5545_example_free_busy_1() {
+        let input = concat_crlf!(
+            "BEGIN:VFREEBUSY",
+            "UID:19970901T082949Z-FA43EF@example.com",
+            "ORGANIZER:mailto:jane_doe@example.com",
+            "ATTENDEE:mailto:john_public@example.com",
+            "DTSTART:19971015T050000Z",
+            "DTEND:19971016T050000Z",
+            "DTSTAMP:19970901T083000Z",
+            "END:VFREEBUSY",
+        );
+
+        let (tail, fb) = free_busy::<_, ()>.parse_peek(input).unwrap();
+        assert!(tail.is_empty());
+
+        assert_eq!(
+            fb.uid(),
+            &Prop::from_value(Uid("19970901T082949Z-FA43EF@example.com"))
+        );
+
+        assert_eq!(
+            fb.organizer(),
+            Some(&Prop::from_value(CalAddress("mailto:jane_doe@example.com")))
+        );
+
+        assert_eq!(
+            fb.attendees(),
+            Some(
+                [Prop::from_value(CalAddress(
+                    "mailto:john_public@example.com"
+                ))]
+                .as_slice()
+            )
+        );
+
+        assert_eq!(
+            fb.start(),
+            Some(&Prop::from_value(
+                DateTime {
+                    date: date!(1997;10;15),
+                    time: time!(5;00;00, Utc)
+                }
+                .into()
+            ))
+        );
+
+        assert_eq!(
+            fb.end(),
+            Some(&Prop::from_value(
+                DateTime {
+                    date: date!(1997;10;16),
+                    time: time!(5;00;00, Utc)
+                }
+                .into()
+            ))
+        );
+
+        assert_eq!(
+            fb.timestamp(),
+            &Prop::from_value(DateTime {
+                date: date!(1997;9;1),
+                time: time!(8;30;00, Utc)
+            })
+        );
+
+        assert!(fb.contact().is_none());
+        assert!(fb.url().is_none());
+        assert!(fb.comments().is_none());
+        assert!(fb.request_statuses().is_none());
+    }
+
+    #[test]
+    fn rfc_5545_example_free_busy_2() {
+        let input = concat_crlf!(
+            "BEGIN:VFREEBUSY",
+            "UID:19970901T095957Z-76A912@example.com",
+            "ORGANIZER:mailto:jane_doe@example.com",
+            "ATTENDEE:mailto:john_public@example.com",
+            "DTSTAMP:19970901T100000Z",
+            "FREEBUSY:19971015T050000Z/PT8H30M,",
+            " 19971015T160000Z/PT5H30M,19971015T223000Z/PT6H30M",
+            "URL:http://example.com/pub/busy/jpublic-01.ifb",
+            "COMMENT:This iCalendar file contains busy time information for",
+            " the next three months.",
+            "END:VFREEBUSY",
+        );
+
+        let (tail, fb) =
+            free_busy::<_, ()>.parse_peek(input.as_escaped()).unwrap();
+        assert!(tail.is_empty());
+
+        assert_eq!(
+            fb.uid(),
+            &Prop::from_value(Uid(
+                "19970901T095957Z-76A912@example.com".as_escaped()
+            ))
+        );
+
+        assert_eq!(
+            fb.organizer(),
+            Some(&Prop::from_value(CalAddress(
+                "mailto:jane_doe@example.com".as_escaped()
+            )))
+        );
+
+        assert_eq!(
+            fb.attendees(),
+            Some(
+                [Prop::from_value(CalAddress(
+                    "mailto:john_public@example.com".as_escaped()
+                ))]
+                .as_slice()
+            )
+        );
+
+        assert_eq!(
+            fb.timestamp(),
+            &Prop::from_value(DateTime {
+                date: date!(1997;9;1),
+                time: time!(10;00;00, Utc)
+            })
+        );
+
+        assert_eq!(
+            fb.free_busy_periods(),
+            Some(
+                [Prop::from_value(
+                    vec![
+                        Period::Start {
+                            start: DateTime {
+                                date: date!(1997;10;15),
+                                time: time!(5;00;00, Utc)
+                            },
+                            duration: Duration {
+                                sign: None,
+                                kind: DurationKind::Time {
+                                    time: DurationTime::HM {
+                                        hours: 8,
+                                        minutes: 30
+                                    }
+                                }
+                            }
+                        },
+                        Period::Start {
+                            start: DateTime {
+                                date: date!(1997;10;15),
+                                time: time!(16;00;00, Utc)
+                            },
+                            duration: Duration {
+                                sign: None,
+                                kind: DurationKind::Time {
+                                    time: DurationTime::HM {
+                                        hours: 5,
+                                        minutes: 30
+                                    }
+                                }
+                            }
+                        },
+                        Period::Start {
+                            start: DateTime {
+                                date: date!(1997;10;15),
+                                time: time!(22;30;00, Utc)
+                            },
+                            duration: Duration {
+                                sign: None,
+                                kind: DurationKind::Time {
+                                    time: DurationTime::HM {
+                                        hours: 6,
+                                        minutes: 30
+                                    }
+                                }
+                            }
+                        },
+                    ]
+                    .into()
+                )]
+                .as_slice()
+            )
+        );
+
+        assert_eq!(
+            fb.url(),
+            Some(&Prop::from_value(Uri(
+                "http://example.com/pub/busy/jpublic-01.ifb".as_escaped()
+            )))
+        );
+
+        assert_eq!(
+            fb.comments(),
+            Some([Prop::from_value(Text("This iCalendar file contains busy time information for\r\n the next three months.".as_escaped()))].as_slice())
+        );
+
+        assert!(fb.start().is_none());
+        assert!(fb.end().is_none());
+        assert!(fb.contact().is_none());
+        assert!(fb.request_statuses().is_none());
+    }
+
+    #[test]
     fn timezone_parser() {
+        // this input is an abbreviated section of the example given in RFC 5545
         let input = concat_crlf!(
             "BEGIN:VTIMEZONE",
             "TZID:America/New_York",

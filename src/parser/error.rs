@@ -3,7 +3,7 @@
 use crate::model::{
     component::TzRuleKind,
     parameter::{KnownParam, StaticParamName},
-    primitive::{GeoComponent, Integer, Sign, ValueType},
+    primitive::{GeoComponent, Integer, Sign, Status, ValueType},
     rrule,
 };
 
@@ -64,6 +64,9 @@ pub enum CalendarParseError<S> {
     DurationWithoutRepeat,
     RepeatWithoutDuration,
     TooManyAttachmentsOnAudioAlarm,
+    InvalidEventStatus(Status),
+    InvalidTodoStatus(Status),
+    InvalidJournalStatus(Status),
 }
 
 /// A component kind, including the static subcomponents.

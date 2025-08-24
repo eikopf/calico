@@ -497,7 +497,7 @@ pub struct Todo<S> {
 /// A VJOURNAL component (RFC 5545 §3.6.3).
 #[derive(Debug, Clone)]
 pub struct Journal<S> {
-    props: JournalTable<S>,
+    pub(crate) props: JournalTable<S>,
 }
 
 impl<S> Journal<S>
@@ -516,7 +516,7 @@ where
         [LastModified, last_modified, last_modified_mut, Prop<S, DateTime<Utc>>],
         [Organizer, organizer, organizer_mut, Prop<S, CalAddress<S>, Box<OrganizerParams<S>>>],
         [RecurId, recurrence_id, recurrence_id_mut, Prop<S, DateTimeOrDate, RecurrenceIdParams<S>>],
-        [Sequence, sequence, sequence_mut, Prop<S, Integer>],
+        [Sequence, sequence_number, sequence_number_mut, Prop<S, Integer>],
         [Status, status, status_mut, Prop<S, JournalStatus>],
         [Summary, summary, summary_mut, Prop<S, Text<S>, TextParams<S>>],
         [Url, url, url_mut, Prop<S, Uri<S>>],
@@ -529,7 +529,7 @@ where
         [Categories, categories, categories_mut, Prop<S, Box<[Text<S>]>, LangParams<S>>],
         [Comment, comments, comments_mut, Prop<S, Text<S>, TextParams<S>>],
         [Contact, contacts, contacts_mut, Prop<S, Text<S>, TextParams<S>>],
-        [Description, descriptions, descriptions_mut, Prop<S, Box<[Text<S>]>, TextParams<S>>],
+        [Description, descriptions, descriptions_mut, Prop<S, Text<S>, TextParams<S>>],
         [ExDate, exception_dates, exception_dates_mut, Prop<S, DateTimeOrDateSeq, DtParams<S>>],
         [RelatedTo, relateds, relateds_mut, Prop<S, Text<S>, RelTypeParams<S>>],
         [RDate, recurrence_dates, recurrence_dates_mut, Prop<S, RDateSeq, DtParams<S>>],
@@ -935,7 +935,7 @@ JournalPropName {
     Categories(PropSeq<S, Box<[Text<S>]>, LangParams<S>>),
     Comment(PropSeq<S, Text<S>, TextParams<S>>),
     Contact(PropSeq<S, Text<S>, TextParams<S>>),
-    Description(PropSeq<S, Box<[Text<S>]>, TextParams<S>>),
+    Description(PropSeq<S, Text<S>, TextParams<S>>),
     ExDate(PropSeq<S, DateTimeOrDateSeq, DtParams<S>>),
     RequestStatus(PropSeq<S, RequestStatus<S>, LangParams<S>>),
     RelatedTo(PropSeq<S, Text<S>, RelTypeParams<S>>),
