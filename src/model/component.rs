@@ -378,8 +378,8 @@ impl<T: Disc, S> Entry<T, S> {
 /// An iCalendar object (RFC 5545 §3.4).
 #[derive(Debug, Clone)]
 pub struct Calendar<S> {
-    props: CalendarTable<S>,
-    components: Vec<Component<S>>,
+    pub(crate) props: CalendarTable<S>,
+    pub(crate) components: Vec<Component<S>>,
 }
 
 impl<S> Calendar<S> {

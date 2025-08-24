@@ -14,11 +14,12 @@ use winnow::{
 use crate::{
     model::{
         component::{
-            Alarm, Component, Entry, Event, EventProp, EventPropName, EventTable, FreeAlarmProp,
-            FreeAlarmPropName, FreeAlarmTable, FreeBusy, FreeBusyProp, FreeBusyPropName,
-            FreeBusyTable, Journal, JournalProp, JournalPropName, JournalTable, Key, OffsetProp,
-            OffsetPropName, OffsetTable, OtherComponent, TimeZone, TimeZoneProp, TimeZonePropName,
-            TimeZoneTable, Todo, TodoProp, TodoPropName, TodoTable, TzRule, TzRuleKind,
+            Alarm, Calendar, CalendarProp, CalendarPropName, CalendarTable, Component, Entry,
+            Event, EventProp, EventPropName, EventTable, FreeAlarmProp, FreeAlarmPropName,
+            FreeAlarmTable, FreeBusy, FreeBusyProp, FreeBusyPropName, FreeBusyTable, Journal,
+            JournalProp, JournalPropName, JournalTable, Key, OffsetProp, OffsetPropName,
+            OffsetTable, OtherComponent, TimeZone, TimeZoneProp, TimeZonePropName, TimeZoneTable,
+            Todo, TodoProp, TodoPropName, TodoTable, TzRule, TzRuleKind,
         },
         primitive::{EventStatus, JournalStatus, Status, TodoStatus},
         property::{EventTerminationProp, Prop, TodoTerminationProp, TriggerProp},
@@ -37,91 +38,6 @@ use super::{
     error::CalendarParseError,
     property::{ParsedProp, property},
 };
-
-/// Parses a [`Component`].
-pub fn component<I, E>(input: &mut I) -> Result<Component<I::Slice>, E>
-where
-    I: StreamIsPartial
-        + Stream
-        + Compare<Caseless<&'static str>>
-        + Compare<Caseless<I::Slice>>
-        + Compare<char>,
-    I::Token: AsChar + Clone,
-    I::Slice: AsBStr
-        + Clone
-        + PartialEq
-        + Eq
-        + SliceLen
-        + Stream
-        + Hash
-        + Equiv<LineFoldCaseless>
-        + AsRef<[u8]>,
-    <<I as Stream>::Slice as Stream>::Token: AsChar,
-    E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
-{
-    // hacky lookahead to figure out which branch to take
-    let kind = peek(begin(comp_kind)).parse_next(input)?;
-
-    let result = match kind {
-        CalCompKind::Event => event.map(Into::into).parse_next(input),
-        CalCompKind::Todo => todo.map(Into::into).parse_next(input),
-        CalCompKind::Journal => journal.map(Into::into).parse_next(input),
-        CalCompKind::FreeBusy => free_busy.map(Into::into).parse_next(input),
-        CalCompKind::TimeZone => timezone.map(Into::into).parse_next(input),
-        CalCompKind::Iana(name) => other(name).map(Component::Iana).parse_next(input),
-        CalCompKind::X(name) => other(name).map(Component::X).parse_next(input),
-    }?;
-
-    Ok(result)
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct StateMachine<S, F> {
-    state: S,
-    step: F,
-}
-
-impl<S, F> StateMachine<S, F> {
-    fn new(step: F) -> Self
-    where
-        S: Default,
-    {
-        Self {
-            state: Default::default(),
-            step,
-        }
-    }
-
-    fn parse_next<I, E>(mut self, input: &mut I) -> Result<S, E>
-    where
-        I: StreamIsPartial + Stream + Compare<Caseless<&'static str>> + Compare<char>,
-        I::Token: AsChar + Clone,
-        I::Slice: AsBStr + Clone + Eq + SliceLen + Stream,
-        <<I as Stream>::Slice as Stream>::Token: AsChar,
-        E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
-        F: FnMut(ParsedProp<I::Slice>, &mut S) -> Result<(), CalendarParseError<I::Slice>>,
-    {
-        loop {
-            let checkpoint = input.checkpoint();
-
-            // if we run into a BEGIN or END line, we're done
-            if let Ok(()) = alt((begin(empty::<I, E>), end(empty::<I, E>))).parse_next(input) {
-                input.reset(&checkpoint);
-                return Ok(self.state);
-            // otherwise reset the input
-            } else {
-                input.reset(&checkpoint);
-            }
-
-            // parse a property and apply the step function
-            let parsed_prop = terminated(property, crlf).parse_next(input)?;
-            match (self.step)(parsed_prop, &mut self.state) {
-                Ok(()) => (),
-                Err(err) => return Err(E::from_external_error(input, err)),
-            }
-        }
-    }
-}
 
 macro_rules! step_inner {
     (
@@ -206,6 +122,231 @@ macro_rules! insert_seq {
             }
         }
     };
+}
+
+pub fn calendar<I, E>(input: &mut I) -> Result<Calendar<I::Slice>, E>
+where
+    I: StreamIsPartial
+        + Stream
+        + Compare<Caseless<&'static str>>
+        + Compare<Caseless<I::Slice>>
+        + Compare<char>,
+    I::Token: AsChar + Clone,
+    I::Slice: AsBStr
+        + Clone
+        + PartialEq
+        + Eq
+        + SliceLen
+        + Stream
+        + Hash
+        + Equiv<LineFoldCaseless>
+        + AsRef<[u8]>,
+    <<I as Stream>::Slice as Stream>::Token: AsChar,
+    E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
+{
+    fn step<S>(
+        (prop, unknown_params): ParsedProp<S>,
+        state: &mut CalendarTable<S>,
+    ) -> Result<(), CalendarParseError<S>>
+    where
+        S: Hash + PartialEq + Debug + Equiv<LineFoldCaseless> + AsRef<[u8]>,
+    {
+        macro_rules! once {
+            ($name:ident, $long_name:expr, $value:expr, $params:expr) => {
+                try_insert_once!(
+                    state,
+                    Calendar,
+                    Key::Known(CalendarPropName::$name),
+                    $long_name,
+                    Entry::Known(CalendarProp::$name(Prop {
+                        value: $value,
+                        params: $params,
+                        unknown_params
+                    })),
+                )
+            };
+        }
+
+        macro_rules! seq {
+            ($name:ident, $value:expr, $params:expr) => {
+                insert_seq!(
+                    state,
+                    CalendarProp,
+                    $name,
+                    Key::Known(CalendarPropName::$name),
+                    Prop {
+                        value: $value,
+                        params: $params,
+                        unknown_params,
+                    }
+                )
+            };
+        }
+
+        step_inner! {state, Calendar, prop, unknown_params;
+            ParserProp::Known(KnownProp::ProdId(value)) => {
+                once!(ProdId, PropName::Rfc5545(Rfc5545PropName::ProductIdentifier), value, ())
+            },
+            ParserProp::Known(KnownProp::Version) => {
+                once!(Version, PropName::Rfc5545(Rfc5545PropName::Version), (), ())
+            },
+            ParserProp::Known(KnownProp::CalScale) => {
+                once!(CalScale, PropName::Rfc5545(Rfc5545PropName::CalendarScale), (), ())
+            },
+            ParserProp::Known(KnownProp::Name(value, params)) => {
+                seq!(Name, value, params)
+            },
+            ParserProp::Known(KnownProp::Uid(value)) => {
+                once!(Uid, PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier), value, ())
+            },
+            ParserProp::Known(KnownProp::LastModified(value)) => {
+                once!(LastModified, PropName::Rfc5545(Rfc5545PropName::LastModified), value, ())
+            },
+            ParserProp::Known(KnownProp::Url(value)) => {
+                once!(Url, PropName::Rfc5545(Rfc5545PropName::UniformResourceLocator), value, ())
+            },
+            ParserProp::Known(KnownProp::RefreshInterval(value)) => {
+                once!(RefreshInterval, PropName::Rfc7986(Rfc7986PropName::RefreshInterval), value, ())
+            },
+            ParserProp::Known(KnownProp::Source(value)) => {
+                once!(Source, PropName::Rfc7986(Rfc7986PropName::Source), value, ())
+            },
+            ParserProp::Known(KnownProp::Color(value)) => {
+                once!(Color, PropName::Rfc7986(Rfc7986PropName::Color), value, ())
+            },
+            ParserProp::Known(KnownProp::Description(value, params)) => {
+                seq!(Description, value, params)
+            },
+            ParserProp::Known(KnownProp::Categories(value, params)) => {
+                seq!(Categories, value, params)
+            },
+            ParserProp::Known(KnownProp::Image(value, params)) => {
+                seq!(Image, value, params)
+            },
+        }
+    }
+
+    fn name<I, E>(input: &mut I) -> Result<(), E>
+    where
+        I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
+        E: ParserError<I>,
+    {
+        Caseless("VCALENDAR").void().parse_next(input)
+    }
+
+    terminated(begin(name), crlf).parse_next(input)?;
+    let props = StateMachine::new(step).parse_next(input)?;
+    let components: Vec<_> = repeat(0.., component).parse_next(input)?;
+    dbg![components.len()];
+    terminated(end(name), crlf).parse_next(input)?;
+
+    // check mandatory fields
+    if props.get(Key::Known(CalendarPropName::ProdId)).is_none() {
+        return Err(E::from_external_error(
+            input,
+            CalendarParseError::MissingProp {
+                prop: PropName::Rfc5545(Rfc5545PropName::ProductIdentifier),
+                component: ComponentKind::Calendar,
+            },
+        ));
+    }
+
+    if props.get(Key::Known(CalendarPropName::Version)).is_none() {
+        return Err(E::from_external_error(
+            input,
+            CalendarParseError::MissingProp {
+                prop: PropName::Rfc5545(Rfc5545PropName::Version),
+                component: ComponentKind::Calendar,
+            },
+        ));
+    }
+
+    Ok(Calendar { props, components })
+}
+
+/// Parses a [`Component`].
+pub fn component<I, E>(input: &mut I) -> Result<Component<I::Slice>, E>
+where
+    I: StreamIsPartial
+        + Stream
+        + Compare<Caseless<&'static str>>
+        + Compare<Caseless<I::Slice>>
+        + Compare<char>,
+    I::Token: AsChar + Clone,
+    I::Slice: AsBStr
+        + Clone
+        + PartialEq
+        + Eq
+        + SliceLen
+        + Stream
+        + Hash
+        + Equiv<LineFoldCaseless>
+        + AsRef<[u8]>,
+    <<I as Stream>::Slice as Stream>::Token: AsChar,
+    E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
+{
+    // hacky lookahead to figure out which branch to take
+    let kind = peek(begin(comp_kind)).parse_next(input)?;
+
+    let result = match kind {
+        CalCompKind::Event => event.map(Into::into).parse_next(input),
+        CalCompKind::Todo => todo.map(Into::into).parse_next(input),
+        CalCompKind::Journal => journal.map(Into::into).parse_next(input),
+        CalCompKind::FreeBusy => free_busy.map(Into::into).parse_next(input),
+        CalCompKind::TimeZone => timezone.map(Into::into).parse_next(input),
+        CalCompKind::Iana(name) => other(name).map(Component::Iana).parse_next(input),
+        CalCompKind::X(name) => other(name).map(Component::X).parse_next(input),
+    }?;
+
+    Ok(result)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct StateMachine<S, F> {
+    state: S,
+    step: F,
+}
+
+impl<S, F> StateMachine<S, F> {
+    fn new(step: F) -> Self
+    where
+        S: Default,
+    {
+        Self {
+            state: Default::default(),
+            step,
+        }
+    }
+
+    fn parse_next<I, E>(mut self, input: &mut I) -> Result<S, E>
+    where
+        I: StreamIsPartial + Stream + Compare<Caseless<&'static str>> + Compare<char>,
+        I::Token: AsChar + Clone,
+        I::Slice: AsBStr + Clone + Eq + SliceLen + Stream,
+        <<I as Stream>::Slice as Stream>::Token: AsChar,
+        E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
+        F: FnMut(ParsedProp<I::Slice>, &mut S) -> Result<(), CalendarParseError<I::Slice>>,
+    {
+        loop {
+            let checkpoint = input.checkpoint();
+
+            // if we run into a BEGIN or END line, we're done
+            if let Ok(()) = alt((begin(empty::<I, E>), end(empty::<I, E>))).parse_next(input) {
+                input.reset(&checkpoint);
+                return Ok(self.state);
+            // otherwise reset the input
+            } else {
+                input.reset(&checkpoint);
+            }
+
+            // parse a property and apply the step function
+            let parsed_prop = terminated(property, crlf).parse_next(input)?;
+            match (self.step)(parsed_prop, &mut self.state) {
+                Ok(()) => (),
+                Err(err) => return Err(E::from_external_error(input, err)),
+            }
+        }
+    }
 }
 
 /// Parses an [`Event`].
@@ -1392,7 +1533,7 @@ where
 }
 
 /// Parses the `BGEIN:<name>` sequence at the start of a component.
-fn begin<I, O, E>(name: impl Parser<I, O, E>) -> impl Parser<I, O, E>
+pub fn begin<I, O, E>(name: impl Parser<I, O, E>) -> impl Parser<I, O, E>
 where
     I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
     E: ParserError<I>,
@@ -1401,7 +1542,7 @@ where
 }
 
 /// Parses the `END:<name>` sequence at the end of a component.
-fn end<I, O, E>(name: impl Parser<I, O, E>) -> impl Parser<I, O, E>
+pub fn end<I, O, E>(name: impl Parser<I, O, E>) -> impl Parser<I, O, E>
 where
     I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
     E: ParserError<I>,
@@ -1411,7 +1552,7 @@ where
 
 /// A version of [`winnow::ascii::crlf`] bounded by `Compare<char>` instead
 /// of `Compare<&'static str>`.
-fn crlf<I, E>(input: &mut I) -> Result<I::Slice, E>
+pub fn crlf<I, E>(input: &mut I) -> Result<I::Slice, E>
 where
     I: StreamIsPartial + Stream + Compare<char>,
     E: ParserError<I>,

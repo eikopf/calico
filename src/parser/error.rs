@@ -72,6 +72,7 @@ pub enum CalendarParseError<S> {
 /// A component kind, including the static subcomponents.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ComponentKind<S> {
+    Calendar,
     Event,
     Todo,
     Journal,
