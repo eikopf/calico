@@ -956,16 +956,13 @@ impl ByRuleName {
             (Self::ByMonth, Freq::Yearly) => Some(ByRuleBehavior::Expand),
             (Self::ByWeekNo, Freq::Yearly) => Some(ByRuleBehavior::Expand),
             (Self::ByWeekNo, _) => None,
-            (
-                Self::ByYearDay,
-                Freq::Secondly | Freq::Minutely | Freq::Hourly,
-            ) => Some(ByRuleBehavior::Limit),
+            (Self::ByYearDay, Freq::Secondly | Freq::Minutely | Freq::Hourly) => {
+                Some(ByRuleBehavior::Limit)
+            }
             (Self::ByYearDay, Freq::Yearly) => Some(ByRuleBehavior::Expand),
             (Self::ByYearDay, _) => None,
             (Self::ByMonthDay, Freq::Weekly) => None,
-            (Self::ByMonthDay, Freq::Monthly | Freq::Yearly) => {
-                Some(ByRuleBehavior::Expand)
-            }
+            (Self::ByMonthDay, Freq::Monthly | Freq::Yearly) => Some(ByRuleBehavior::Expand),
             (Self::ByDay, Freq::Weekly) => Some(ByRuleBehavior::Expand),
             (Self::ByDay, Freq::Monthly) => Some(ByRuleBehavior::Note1),
             (Self::ByDay, Freq::Yearly) => Some(ByRuleBehavior::Note2),
@@ -973,9 +970,7 @@ impl ByRuleName {
                 Some(ByRuleBehavior::Limit)
             }
             (Self::ByHour, _) => Some(ByRuleBehavior::Expand),
-            (Self::ByMinute, Freq::Secondly | Freq::Minutely) => {
-                Some(ByRuleBehavior::Limit)
-            }
+            (Self::ByMinute, Freq::Secondly | Freq::Minutely) => Some(ByRuleBehavior::Limit),
             (Self::ByMinute, _) => Some(ByRuleBehavior::Expand),
             (Self::BySecond, Freq::Secondly) => Some(ByRuleBehavior::Limit),
             (Self::BySecond, _) => Some(ByRuleBehavior::Expand),
@@ -1147,42 +1142,30 @@ mod tests {
     #[test]
     fn month_day_set_index_from_signed_month_day() {
         assert_eq!(
-            MonthDaySetIndex::from_signed_month_day(
-                Sign::Positive,
-                MonthDay::D1
-            )
-            .0
-            .get(),
+            MonthDaySetIndex::from_signed_month_day(Sign::Positive, MonthDay::D1)
+                .0
+                .get(),
             1
         );
 
         assert_eq!(
-            MonthDaySetIndex::from_signed_month_day(
-                Sign::Positive,
-                MonthDay::D31
-            )
-            .0
-            .get(),
+            MonthDaySetIndex::from_signed_month_day(Sign::Positive, MonthDay::D31)
+                .0
+                .get(),
             31
         );
 
         assert_eq!(
-            MonthDaySetIndex::from_signed_month_day(
-                Sign::Negative,
-                MonthDay::D1
-            )
-            .0
-            .get(),
+            MonthDaySetIndex::from_signed_month_day(Sign::Negative, MonthDay::D1)
+                .0
+                .get(),
             31 + 1
         );
 
         assert_eq!(
-            MonthDaySetIndex::from_signed_month_day(
-                Sign::Negative,
-                MonthDay::D31
-            )
-            .0
-            .get(),
+            MonthDaySetIndex::from_signed_month_day(Sign::Negative, MonthDay::D31)
+                .0
+                .get(),
             31 + 31
         );
     }
@@ -1191,18 +1174,9 @@ mod tests {
     fn month_day_set_bit_twiddling() {
         let mut month_day_set = MonthDaySet::default();
 
-        let i1 = MonthDaySetIndex::from_signed_month_day(
-            Sign::Positive,
-            MonthDay::D1,
-        );
-        let i2 = MonthDaySetIndex::from_signed_month_day(
-            Sign::Positive,
-            MonthDay::D25,
-        );
-        let i3 = MonthDaySetIndex::from_signed_month_day(
-            Sign::Negative,
-            MonthDay::D6,
-        );
+        let i1 = MonthDaySetIndex::from_signed_month_day(Sign::Positive, MonthDay::D1);
+        let i2 = MonthDaySetIndex::from_signed_month_day(Sign::Positive, MonthDay::D25);
+        let i3 = MonthDaySetIndex::from_signed_month_day(Sign::Negative, MonthDay::D6);
 
         for i in [i1, i2, i3] {
             assert!(!month_day_set.get(i));

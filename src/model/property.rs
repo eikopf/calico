@@ -5,10 +5,9 @@ use crate::parser::parameter::ParamValue;
 use super::{
     parameter::UnknownParam,
     primitive::{
-        CalAddress, CalendarUserType, DateTime, DateTimeOrDate, DisplayType,
-        Duration, FeatureType, FormatType, FreeBusyType, Language,
-        ParticipationRole, ParticipationStatus, RelationshipType,
-        ThisAndFuture, TriggerRelation, TzId, Uri, Utc,
+        CalAddress, CalendarUserType, DateTime, DateTimeOrDate, DisplayType, Duration, FeatureType,
+        FormatType, FreeBusyType, Language, ParticipationRole, ParticipationStatus,
+        RelationshipType, ThisAndFuture, TriggerRelation, TzId, Uri, Utc,
     },
 };
 

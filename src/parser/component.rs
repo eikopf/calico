@@ -14,12 +14,11 @@ use winnow::{
 use crate::{
     model::{
         component::{
-            Alarm, Component, Entry, Event, FreeAlarmProp, FreeAlarmPropName,
-            FreeAlarmTable, FreeBusy, FreeBusyProp, FreeBusyPropName,
-            FreeBusyTable, Journal, JournalProp, JournalPropName, JournalTable,
-            Key, OffsetProp, OffsetPropName, OffsetTable, OtherComponent,
-            TimeZone, TimeZoneProp, TimeZonePropName, TimeZoneTable, Todo,
-            TzRule, TzRuleKind,
+            Alarm, Component, Entry, Event, FreeAlarmProp, FreeAlarmPropName, FreeAlarmTable,
+            FreeBusy, FreeBusyProp, FreeBusyPropName, FreeBusyTable, Journal, JournalProp,
+            JournalPropName, JournalTable, Key, OffsetProp, OffsetPropName, OffsetTable,
+            OtherComponent, TimeZone, TimeZoneProp, TimeZonePropName, TimeZoneTable, Todo, TzRule,
+            TzRuleKind,
         },
         primitive::{JournalStatus, Status},
         property::{Prop, TriggerProp},
@@ -28,10 +27,7 @@ use crate::{
         error::ComponentKind,
         escaped::{Equiv, LineFoldCaseless},
         primitive::{ascii_lower, iana_token, x_name},
-        property::{
-            KnownProp, Prop as ParserProp, PropName, Rfc5545PropName,
-            UnknownProp,
-        },
+        property::{KnownProp, Prop as ParserProp, PropName, Rfc5545PropName, UnknownProp},
     },
 };
 
@@ -97,26 +93,18 @@ impl<S, F> StateMachine<S, F> {
 
     fn parse_next<I, E>(mut self, input: &mut I) -> Result<S, E>
     where
-        I: StreamIsPartial
-            + Stream
-            + Compare<Caseless<&'static str>>
-            + Compare<char>,
+        I: StreamIsPartial + Stream + Compare<Caseless<&'static str>> + Compare<char>,
         I::Token: AsChar + Clone,
         I::Slice: AsBStr + Clone + Eq + SliceLen + Stream,
         <<I as Stream>::Slice as Stream>::Token: AsChar,
         E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
-        F: FnMut(
-            ParsedProp<I::Slice>,
-            &mut S,
-        ) -> Result<(), CalendarParseError<I::Slice>>,
+        F: FnMut(ParsedProp<I::Slice>, &mut S) -> Result<(), CalendarParseError<I::Slice>>,
     {
         loop {
             let checkpoint = input.checkpoint();
 
             // if we run into a BEGIN or END line, we're done
-            if let Ok(()) = alt((begin(empty::<I, E>), end(empty::<I, E>)))
-                .parse_next(input)
-            {
+            if let Ok(()) = alt((begin(empty::<I, E>), end(empty::<I, E>))).parse_next(input) {
                 input.reset(&checkpoint);
                 return Ok(self.state);
             // otherwise reset the input
@@ -222,10 +210,7 @@ macro_rules! insert_seq {
 /// Parses an [`Event`].
 fn event<I, E>(input: &mut I) -> Result<Event<I::Slice>, E>
 where
-    I: StreamIsPartial
-        + Stream
-        + Compare<Caseless<&'static str>>
-        + Compare<char>,
+    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>> + Compare<char>,
     I::Token: AsChar + Clone,
     I::Slice: AsBStr
         + Clone
@@ -245,10 +230,7 @@ where
 /// Parses a [`Todo`].
 fn todo<I, E>(input: &mut I) -> Result<Todo<I::Slice>, E>
 where
-    I: StreamIsPartial
-        + Stream
-        + Compare<Caseless<&'static str>>
-        + Compare<char>,
+    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>> + Compare<char>,
     I::Token: AsChar + Clone,
     I::Slice: AsBStr
         + Clone
@@ -268,10 +250,7 @@ where
 /// Parses a [`Journal`].
 fn journal<I, E>(input: &mut I) -> Result<Journal<I::Slice>, E>
 where
-    I: StreamIsPartial
-        + Stream
-        + Compare<Caseless<&'static str>>
-        + Compare<char>,
+    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>> + Compare<char>,
     I::Token: AsChar + Clone,
     I::Slice: AsBStr
         + Clone
@@ -443,10 +422,7 @@ where
 /// Parses a [`FreeBusy`].
 fn free_busy<I, E>(input: &mut I) -> Result<FreeBusy<I::Slice>, E>
 where
-    I: StreamIsPartial
-        + Stream
-        + Compare<Caseless<&'static str>>
-        + Compare<char>,
+    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>> + Compare<char>,
     I::Token: AsChar + Clone,
     I::Slice: AsBStr
         + Clone
@@ -608,10 +584,7 @@ where
 /// Parses a [`TimeZone`].
 fn timezone<I, E>(input: &mut I) -> Result<TimeZone<I::Slice>, E>
 where
-    I: StreamIsPartial
-        + Stream
-        + Compare<Caseless<&'static str>>
-        + Compare<char>,
+    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>> + Compare<char>,
     I::Token: AsChar + Clone,
     I::Slice: AsBStr
         + Clone
@@ -752,10 +725,7 @@ where
 
     fn rule<I, E>(input: &mut I) -> Result<TzRule<I::Slice>, E>
     where
-        I: StreamIsPartial
-            + Stream
-            + Compare<Caseless<&'static str>>
-            + Compare<char>,
+        I: StreamIsPartial + Stream + Compare<Caseless<&'static str>> + Compare<char>,
         I::Token: AsChar + Clone,
         I::Slice: AsBStr
             + Clone
@@ -801,9 +771,7 @@ where
             return Err(E::from_external_error(
                 input,
                 CalendarParseError::MissingProp {
-                    prop: PropName::Rfc5545(
-                        Rfc5545PropName::TimeZoneOffsetFrom,
-                    ),
+                    prop: PropName::Rfc5545(Rfc5545PropName::TimeZoneOffsetFrom),
                     component: kind.into(),
                 },
             ));
@@ -815,8 +783,7 @@ where
         }
     }
 
-    terminated(begin(CalCompKind::TimeZone.parser()), crlf)
-        .parse_next(input)?;
+    terminated(begin(CalCompKind::TimeZone.parser()), crlf).parse_next(input)?;
     let props = StateMachine::new(tz_step).parse_next(input)?;
     let subcomponents = repeat(1.., rule).parse_next(input)?;
     terminated(end(CalCompKind::TimeZone.parser()), crlf).parse_next(input)?;
@@ -829,10 +796,7 @@ where
 
 fn alarm<I, E>(input: &mut I) -> Result<Alarm<I::Slice>, E>
 where
-    I: StreamIsPartial
-        + Stream
-        + Compare<Caseless<&'static str>>
-        + Compare<char>,
+    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>> + Compare<char>,
     I::Token: AsChar + Clone,
     I::Slice: AsBStr
         + Clone
@@ -999,10 +963,7 @@ impl<S> CalCompKind<S> {
     /// BEGIN line as a parser when encountering the END line.
     fn parser<I, E>(&self) -> impl Parser<I, (), E>
     where
-        I: StreamIsPartial
-            + Stream
-            + Compare<Caseless<S>>
-            + Compare<Caseless<&'static str>>,
+        I: StreamIsPartial + Stream + Compare<Caseless<S>> + Compare<Caseless<&'static str>>,
         I::Token: AsChar + Clone,
         S: std::fmt::Debug + Clone,
         E: ParserError<I>,
@@ -1010,15 +971,9 @@ impl<S> CalCompKind<S> {
         move |input: &mut I| match self {
             CalCompKind::Event => Caseless("VEVENT").void().parse_next(input),
             CalCompKind::Todo => Caseless("VTODO").void().parse_next(input),
-            CalCompKind::Journal => {
-                Caseless("VJOURNAL").void().parse_next(input)
-            }
-            CalCompKind::FreeBusy => {
-                Caseless("VFREEBUSY").void().parse_next(input)
-            }
-            CalCompKind::TimeZone => {
-                Caseless("VTIMEZONE").void().parse_next(input)
-            }
+            CalCompKind::Journal => Caseless("VJOURNAL").void().parse_next(input),
+            CalCompKind::FreeBusy => Caseless("VFREEBUSY").void().parse_next(input),
+            CalCompKind::TimeZone => Caseless("VTIMEZONE").void().parse_next(input),
             CalCompKind::Iana(name) | CalCompKind::X(name) => {
                 literal(Caseless(name.clone())).void().parse_next(input)
             }
@@ -1029,10 +984,7 @@ impl<S> CalCompKind<S> {
 /// Parses a [`CalCompKind`].
 fn comp_kind<I, E>(input: &mut I) -> Result<CalCompKind<I::Slice>, E>
 where
-    I: StreamIsPartial
-        + Stream
-        + Compare<char>
-        + Compare<Caseless<&'static str>>,
+    I: StreamIsPartial + Stream + Compare<char> + Compare<Caseless<&'static str>>,
     I::Token: AsChar + Clone,
     E: ParserError<I>,
 {
@@ -1124,10 +1076,9 @@ mod tests {
         date,
         model::{
             primitive::{
-                AttachValue, AudioAction, CalAddress, DateTime, DisplayAction,
-                Duration, DurationKind, DurationTime, EmailAction, FormatType,
-                Local, Period, Sign, Text, TriggerRelation, TzId, Uid, Uri,
-                Utc,
+                AttachValue, AudioAction, CalAddress, DateTime, DisplayAction, Duration,
+                DurationKind, DurationTime, EmailAction, FormatType, Local, Period, Sign, Text,
+                TriggerRelation, TzId, Uid, Uri, Utc,
             },
             property::{AttachParams, TriggerParams},
         },
@@ -1167,15 +1118,12 @@ mod tests {
             "END:VJOURNAL",
         );
 
-        let (tail, journal) =
-            journal::<_, ()>.parse_peek(input.as_escaped()).unwrap();
+        let (tail, journal) = journal::<_, ()>.parse_peek(input.as_escaped()).unwrap();
         assert!(tail.is_empty());
 
         assert_eq!(
             journal.uid(),
-            &Prop::from_value(Uid(
-                "19970901T130000Z-123405@example.com".as_escaped()
-            ))
+            &Prop::from_value(Uid("19970901T130000Z-123405@example.com".as_escaped()))
         );
 
         assert_eq!(
@@ -1283,15 +1231,12 @@ mod tests {
             "END:VFREEBUSY",
         );
 
-        let (tail, fb) =
-            free_busy::<_, ()>.parse_peek(input.as_escaped()).unwrap();
+        let (tail, fb) = free_busy::<_, ()>.parse_peek(input.as_escaped()).unwrap();
         assert!(tail.is_empty());
 
         assert_eq!(
             fb.uid(),
-            &Prop::from_value(Uid(
-                "19970901T095957Z-76A912@example.com".as_escaped()
-            ))
+            &Prop::from_value(Uid("19970901T095957Z-76A912@example.com".as_escaped()))
         );
 
         assert_eq!(
@@ -1515,8 +1460,7 @@ mod tests {
             "END:VALARM",
         );
 
-        let (tail, alarm) =
-            alarm::<_, ()>.parse_peek(input.as_escaped()).unwrap();
+        let (tail, alarm) = alarm::<_, ()>.parse_peek(input.as_escaped()).unwrap();
         assert!(tail.is_empty());
 
         let Alarm::Audio(alarm) = alarm else { panic!() };
@@ -1534,8 +1478,7 @@ mod tests {
             alarm.attachment(),
             Some(&Prop {
                 value: AttachValue::Uri(Uri(
-                    "ftp://example.com/pub/\r\n sounds/bell-01.aud"
-                        .as_escaped()
+                    "ftp://example.com/pub/\r\n sounds/bell-01.aud".as_escaped()
                 )),
                 params: AttachParams {
                     format_type: Some(FormatType {
@@ -1573,8 +1516,7 @@ mod tests {
             "END:VALARM",
         );
 
-        let (tail, alarm) =
-            alarm::<_, ()>.parse_peek(input.as_escaped()).unwrap();
+        let (tail, alarm) = alarm::<_, ()>.parse_peek(input.as_escaped()).unwrap();
         assert!(tail.is_empty());
 
         let Alarm::Display(alarm) = alarm else {
@@ -1596,8 +1538,7 @@ mod tests {
         assert_eq!(
             alarm.description(),
             &Prop::from_value(Text(
-                "Breakfast meeting with executive\\n\r\n team at 8:30 AM EST."
-                    .as_escaped()
+                "Breakfast meeting with executive\\n\r\n team at 8:30 AM EST.".as_escaped()
             ))
         );
 
@@ -1630,8 +1571,7 @@ mod tests {
             "END:VALARM",
         );
 
-        let (tail, alarm) =
-            alarm::<_, ()>.parse_peek(input.as_escaped()).unwrap();
+        let (tail, alarm) = alarm::<_, ()>.parse_peek(input.as_escaped()).unwrap();
         assert!(tail.is_empty());
 
         let Alarm::Email(alarm) = alarm else { panic!() };
@@ -1668,8 +1608,7 @@ mod tests {
         assert_eq!(
             alarm.summary(),
             &Prop::from_value(Text(
-                "*** REMINDER: SEND AGENDA FOR WEEKLY STAFF MEETING ***"
-                    .as_escaped()
+                "*** REMINDER: SEND AGENDA FOR WEEKLY STAFF MEETING ***".as_escaped()
             ))
         );
 
@@ -1683,8 +1622,7 @@ mod tests {
             Some(
                 [Prop {
                     value: AttachValue::Uri(Uri(
-                        "http://example.com/\r\n templates/agenda.doc"
-                            .as_escaped()
+                        "http://example.com/\r\n templates/agenda.doc".as_escaped()
                     )),
                     params: AttachParams {
                         format_type: Some(FormatType {
@@ -1742,14 +1680,12 @@ mod tests {
     #[test]
     fn begin_parser() {
         assert_eq!(
-            begin::<_, _, ()>(Caseless("vtodo").take())
-                .parse_peek("BEGIN:VTODO"),
+            begin::<_, _, ()>(Caseless("vtodo").take()).parse_peek("BEGIN:VTODO"),
             Ok(("", "VTODO"))
         );
 
         assert_eq!(
-            begin::<_, _, ()>(Caseless("VEVENT").take())
-                .parse_peek("begin:vevent"),
+            begin::<_, _, ()>(Caseless("VEVENT").take()).parse_peek("begin:vevent"),
             Ok(("", "vevent"))
         );
     }
@@ -1762,8 +1698,7 @@ mod tests {
         );
 
         assert_eq!(
-            end::<_, _, ()>(Caseless("VFREEBUSY").take())
-                .parse_peek("end:vfreebusy"),
+            end::<_, _, ()>(Caseless("VFREEBUSY").take()).parse_peek("end:vfreebusy"),
             Ok(("", "vfreebusy"))
         );
     }

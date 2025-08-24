@@ -668,13 +668,9 @@ impl Priority {
     pub const fn into_class(self) -> Option<PriorityClass> {
         match self {
             Self::Zero => None,
-            Self::A1 | Self::A2 | Self::A3 | Self::B1 => {
-                Some(PriorityClass::High)
-            }
+            Self::A1 | Self::A2 | Self::A3 | Self::B1 => Some(PriorityClass::High),
             Self::B2 => Some(PriorityClass::Medium),
-            Self::B3 | Self::C1 | Self::C2 | Self::C3 => {
-                Some(PriorityClass::Low)
-            }
+            Self::B3 | Self::C1 | Self::C2 | Self::C3 => Some(PriorityClass::Low),
         }
     }
 }
@@ -829,11 +825,7 @@ pub struct RequestStatus<S> {
 
 /// A status code for the REQUEST-STATUS property (RFC 5545 §3.8.8.3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct RequestStatusCode<T = u8>(
-    pub(crate) T,
-    pub(crate) T,
-    pub(crate) Option<T>,
-);
+pub struct RequestStatusCode<T = u8>(pub(crate) T, pub(crate) T, pub(crate) Option<T>);
 
 impl<T> From<(T, T)> for RequestStatusCode<T> {
     fn from((a, b): (T, T)) -> Self {

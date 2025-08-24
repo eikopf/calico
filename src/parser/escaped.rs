@@ -4,8 +4,8 @@ use winnow::{
     ascii::Caseless,
     error::Needed,
     stream::{
-        AsBStr, AsBytes, Checkpoint, Compare, CompareResult, Offset, SliceLen,
-        Stream, StreamIsPartial,
+        AsBStr, AsBytes, Checkpoint, Compare, CompareResult, Offset, SliceLen, Stream,
+        StreamIsPartial,
     },
 };
 
@@ -27,8 +27,7 @@ where
 {
     fn equiv(&self, other: Rhs, _: LineFold) -> bool {
         let mut lhs = self.as_ref().as_escaped().iter_offsets().map(|(_, x)| x);
-        let mut rhs =
-            other.as_ref().as_escaped().iter_offsets().map(|(_, x)| x);
+        let mut rhs = other.as_ref().as_escaped().iter_offsets().map(|(_, x)| x);
 
         loop {
             match (lhs.next(), rhs.next()) {
@@ -51,8 +50,7 @@ where
 {
     fn equiv(&self, other: Rhs, _: LineFoldCaseless) -> bool {
         let mut lhs = self.as_ref().as_escaped().iter_offsets().map(|(_, x)| x);
-        let mut rhs =
-            other.as_ref().as_escaped().iter_offsets().map(|(_, x)| x);
+        let mut rhs = other.as_ref().as_escaped().iter_offsets().map(|(_, x)| x);
 
         loop {
             match (lhs.next(), rhs.next()) {
@@ -307,9 +305,7 @@ impl<'a> Compare<char> for Escaped<'a> {
 impl<'a> Compare<Caseless<u8>> for Escaped<'a> {
     fn compare(&self, t: Caseless<u8>) -> CompareResult {
         match self.iter_offsets().next() {
-            Some((size, c)) if t.0.eq_ignore_ascii_case(&c) => {
-                CompareResult::Ok(size)
-            }
+            Some((size, c)) if t.0.eq_ignore_ascii_case(&c) => CompareResult::Ok(size),
             Some(_) => CompareResult::Error,
             None => CompareResult::Incomplete,
         }
@@ -364,11 +360,7 @@ fn split_fold_prefix(input: &[u8]) -> (&[u8], &[u8]) {
 
     let i = input
         .chunks_exact(3)
-        .position(|xs| {
-            !(xs[0] == b'\r'
-                && xs[1] == b'\n'
-                && (xs[2] == b'\t' || xs[2] == b' '))
-        })
+        .position(|xs| !(xs[0] == b'\r' && xs[1] == b'\n' && (xs[2] == b'\t' || xs[2] == b' ')))
         .map(|i| i * 3)
         .unwrap_or(input.len() - input.len() % 3);
 
@@ -399,17 +391,14 @@ mod tests {
         assert!(!"abc".equiv("abcde", LineFoldCaseless));
         assert!(!"abcdef".equiv("abcde", LineFoldCaseless));
         assert!("abcde".equiv("ab\r\n C\r\n\tde", LineFoldCaseless));
-        assert!(
-            "abcde".equiv("aB\r\n c\r\n\tde".as_escaped(), LineFoldCaseless)
-        );
+        assert!("abcde".equiv("aB\r\n c\r\n\tde".as_escaped(), LineFoldCaseless));
     }
 
     #[test]
     fn compare_str_caseless() {
         let input = Escaped("\r\n\ta\r\n b\r\n\tcd\r\n\te".as_bytes());
         let res: Result<_, ()> =
-            (Caseless("A"), Caseless("B"), Caseless("C"), Caseless("D"))
-                .parse_peek(input);
+            (Caseless("A"), Caseless("B"), Caseless("C"), Caseless("D")).parse_peek(input);
 
         assert!(res.is_ok());
 
@@ -429,10 +418,7 @@ mod tests {
         );
 
         let res: Result<_, ()> = ('a', 'b', 'c', 'd', 'e').parse_peek(input);
-        assert_eq!(
-            res,
-            Ok((Escaped("".as_bytes()), ('a', 'b', 'c', 'd', 'e')))
-        );
+        assert_eq!(res, Ok((Escaped("".as_bytes()), ('a', 'b', 'c', 'd', 'e'))));
     }
 
     #[test]

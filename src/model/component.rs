@@ -17,18 +17,16 @@ use super::{
     css::Css3Color,
     parameter::KnownParam,
     primitive::{
-        AlarmAction, AttachValue, AudioAction, CalAddress, ClassValue,
-        CompletionPercentage, DateTime, DateTimeOrDate, DateTimeOrDateSeq,
-        DisplayAction, Duration, EmailAction, EventStatus, Geo, ImageData,
-        Integer, JournalStatus, Method, Period, Priority, RDateSeq,
-        RequestStatus, Status, Text, TimeTransparency, TodoStatus, TzId, Uid,
-        Uri, Utc, UtcOffset, Value,
+        AlarmAction, AttachValue, AudioAction, CalAddress, ClassValue, CompletionPercentage,
+        DateTime, DateTimeOrDate, DateTimeOrDateSeq, DisplayAction, Duration, EmailAction,
+        EventStatus, Geo, ImageData, Integer, JournalStatus, Method, Period, Priority, RDateSeq,
+        RequestStatus, Status, Text, TimeTransparency, TodoStatus, TzId, Uid, Uri, Utc, UtcOffset,
+        Value,
     },
     property::{
-        AttachParams, AttendeeParams, ConfParams, DtParams,
-        EventTerminationProp, FBTypeParams, ImageParams, LangParams,
-        OrganizerParams, Prop, RecurrenceIdParams, RelTypeParams, TextParams,
-        TodoTerminationProp, TriggerProp,
+        AttachParams, AttendeeParams, ConfParams, DtParams, EventTerminationProp, FBTypeParams,
+        ImageParams, LangParams, OrganizerParams, Prop, RecurrenceIdParams, RelTypeParams,
+        TextParams, TodoTerminationProp, TriggerProp,
     },
     rrule::RRule,
 };
@@ -649,9 +647,7 @@ pub enum Alarm<S> {
 
 macro_rules! dur_rep_accessors {
     ($prop_type:ident, $prop_name:ident) => {
-        pub fn duration_and_repeat(
-            &self,
-        ) -> Option<(&Prop<S, Duration>, &Prop<S, Integer>)> {
+        pub fn duration_and_repeat(&self) -> Option<(&Prop<S, Duration>, &Prop<S, Integer>)> {
             match self.props.get(Key::Known($prop_name::DurRep)) {
                 Some(Entry::Known($prop_type::DurRep(d, r))) => Some((d, r)),
                 Some(_) => unreachable!(),
@@ -1181,9 +1177,7 @@ where
                         let p = attachments.remove(0);
                         props.insert(Entry::Known(AudioAlarmProp::Attach(p)));
                     } else if attachments.len() > 1 {
-                        return Err(
-                            CalendarParseError::TooManyAttachmentsOnAudioAlarm,
-                        );
+                        return Err(CalendarParseError::TooManyAttachmentsOnAudioAlarm);
                     }
                 }
 
@@ -1230,9 +1224,7 @@ where
                 })));
 
                 // insert description
-                props.insert(Entry::Known(DisplayAlarmProp::Description(
-                    description,
-                )));
+                props.insert(Entry::Known(DisplayAlarmProp::Description(description)));
 
                 // insert trigger
                 props.insert(Entry::Known(DisplayAlarmProp::Trigger(trigger)));
@@ -1298,9 +1290,7 @@ where
                     params: (),
                     unknown_params: action.unknown_params,
                 })));
-                props.insert(Entry::Known(EmailAlarmProp::Description(
-                    description,
-                )));
+                props.insert(Entry::Known(EmailAlarmProp::Description(description)));
                 props.insert(Entry::Known(EmailAlarmProp::Trigger(trigger)));
                 props.insert(Entry::Known(EmailAlarmProp::Summary(summary)));
                 props.insert(Entry::Known(EmailAlarmProp::Attendee(attendees)));

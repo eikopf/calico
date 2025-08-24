@@ -5,8 +5,7 @@ use winnow::{
     Parser,
     ascii::{Caseless, digit0, digit1},
     combinator::{
-        alt, delimited, empty, fail, opt, preceded, repeat, separated_pair,
-        terminated, trace,
+        alt, delimited, empty, fail, opt, preceded, repeat, separated_pair, terminated, trace,
     },
     error::{FromExternalError, ParserError},
     stream::{AsBStr, AsChar, Compare, SliceLen, Stream, StreamIsPartial},
@@ -16,21 +15,19 @@ use winnow::{
 use crate::model::{
     css::Css3Color,
     primitive::{
-        AlarmAction, BinaryText, CalAddress, CalendarUserType, ClassValue,
-        CompletionPercentage, Date, DateTime, DateTimeOrDate, DisplayType,
-        Duration, DurationKind, DurationTime, Encoding, FeatureType, Float,
-        FormatType, FreeBusyType, Geo, GeoComponent, Integer, IsoWeek,
-        Language, Method, ParticipationRole, ParticipationStatus, Period,
-        Priority, RawTime, RelationshipType, RequestStatusCode, Sign, Status,
-        Text, Time, TimeFormat, TimeTransparency, TriggerRelation, TzId, Uid,
-        Uri, Utc, UtcOffset, ValueType,
+        AlarmAction, BinaryText, CalAddress, CalendarUserType, ClassValue, CompletionPercentage,
+        Date, DateTime, DateTimeOrDate, DisplayType, Duration, DurationKind, DurationTime,
+        Encoding, FeatureType, Float, FormatType, FreeBusyType, Geo, GeoComponent, Integer,
+        IsoWeek, Language, Method, ParticipationRole, ParticipationStatus, Period, Priority,
+        RawTime, RelationshipType, RequestStatusCode, Sign, Status, Text, Time, TimeFormat,
+        TimeTransparency, TriggerRelation, TzId, Uid, Uri, Utc, UtcOffset, ValueType,
     },
 };
 
 use super::error::{
     CalendarParseError, InvalidCompletionPercentageError, InvalidDateError,
-    InvalidDurationTimeError, InvalidGeoError, InvalidIntegerError,
-    InvalidPriorityError, InvalidRawTimeError, InvalidUtcOffsetError,
+    InvalidDurationTimeError, InvalidGeoError, InvalidIntegerError, InvalidPriorityError,
+    InvalidRawTimeError, InvalidUtcOffsetError,
 };
 
 /// Parses a [`RequestStatusCode`].
@@ -55,10 +52,7 @@ where
 /// Parses an [`AlarmAction`].
 pub fn alarm_action<I, E>(input: &mut I) -> Result<AlarmAction<I::Slice>, E>
 where
-    I: StreamIsPartial
-        + Stream
-        + Compare<Caseless<&'static str>>
-        + Compare<char>,
+    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>> + Compare<char>,
     I::Token: AsChar + Clone,
     AlarmAction<I::Slice>: Clone,
     E: ParserError<I>,
@@ -99,10 +93,7 @@ where
 /// Parses a [`FeatureType`].
 pub fn feature_type<I, E>(input: &mut I) -> Result<FeatureType<I::Slice>, E>
 where
-    I: StreamIsPartial
-        + Stream
-        + Compare<Caseless<&'static str>>
-        + Compare<char>,
+    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>> + Compare<char>,
     <I as Stream>::Token: AsChar + Clone,
     FeatureType<I::Slice>: Clone,
     E: ParserError<I>,
@@ -124,10 +115,7 @@ where
 /// Parses a [`DisplayType`].
 pub fn display_type<I, E>(input: &mut I) -> Result<DisplayType<I::Slice>, E>
 where
-    I: Stream
-        + StreamIsPartial
-        + Compare<Caseless<&'static str>>
-        + Compare<char>,
+    I: Stream + StreamIsPartial + Compare<Caseless<&'static str>> + Compare<char>,
     I::Token: AsChar + Clone,
     DisplayType<I::Slice>: Clone,
     E: ParserError<I>,
@@ -212,9 +200,7 @@ where
 }
 
 /// Parses a [`CalAddress`].
-pub fn cal_address<I, E, const ESCAPED: bool>(
-    input: &mut I,
-) -> Result<CalAddress<I::Slice>, E>
+pub fn cal_address<I, E, const ESCAPED: bool>(input: &mut I) -> Result<CalAddress<I::Slice>, E>
 where
     I: StreamIsPartial + Stream + Compare<char>,
     I::Token: AsChar + Clone,
@@ -244,8 +230,7 @@ where
         I::Token: AsChar + Clone,
         E: ParserError<I>,
     {
-        one_of(('!', '#'..=';', '=', '?'..='Z', '[', ']', '_', 'a'..='z'))
-            .parse_next(input)
+        one_of(('!', '#'..=';', '=', '?'..='Z', '[', ']', '_', 'a'..='z')).parse_next(input)
     }
 
     /// Accepts a subset of textual escapes if ESCAPED is true.
@@ -284,8 +269,7 @@ where
         I::Token: AsChar + Clone,
         E: ParserError<I>,
     {
-        one_of(('0'..='9', 'a'..='z', 'A'..='Z', '+', '/', '='))
-            .parse_next(input)
+        one_of(('0'..='9', 'a'..='z', 'A'..='Z', '+', '/', '=')).parse_next(input)
     }
 
     (
@@ -302,10 +286,7 @@ where
 
 pub fn class_value<I, E>(input: &mut I) -> Result<ClassValue<I::Slice>, E>
 where
-    I: StreamIsPartial
-        + Stream
-        + Compare<Caseless<&'static str>>
-        + Compare<char>,
+    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>> + Compare<char>,
     I::Token: AsChar + Clone,
     ClassValue<I::Slice>: Clone,
     E: ParserError<I>,
@@ -321,14 +302,9 @@ where
 }
 
 /// Parses a calendar user type value (RFC 5545 §3.2.3).
-pub fn calendar_user_type<I, E>(
-    input: &mut I,
-) -> Result<CalendarUserType<I::Slice>, E>
+pub fn calendar_user_type<I, E>(input: &mut I) -> Result<CalendarUserType<I::Slice>, E>
 where
-    I: StreamIsPartial
-        + Stream
-        + Compare<Caseless<&'static str>>
-        + Compare<char>,
+    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>> + Compare<char>,
     I::Token: AsChar + Clone,
     CalendarUserType<I::Slice>: Clone,
     E: ParserError<I>,
@@ -406,10 +382,7 @@ where
 /// Parses a [`FreeBusyType`].
 pub fn free_busy_type<I, E>(input: &mut I) -> Result<FreeBusyType<I::Slice>, E>
 where
-    I: StreamIsPartial
-        + Stream
-        + Compare<Caseless<&'static str>>
-        + Compare<char>,
+    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>> + Compare<char>,
     I::Token: AsChar + Clone,
     FreeBusyType<I::Slice>: Clone,
     E: ParserError<I>,
@@ -445,14 +418,9 @@ where
 }
 
 /// Parses a [`ParticipationStatus`].
-pub fn participation_status<I, E>(
-    input: &mut I,
-) -> Result<ParticipationStatus<I::Slice>, E>
+pub fn participation_status<I, E>(input: &mut I) -> Result<ParticipationStatus<I::Slice>, E>
 where
-    I: StreamIsPartial
-        + Stream
-        + Compare<Caseless<&'static str>>
-        + Compare<char>,
+    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>> + Compare<char>,
     I::Token: AsChar + Clone,
     ParticipationStatus<I::Slice>: Clone,
     E: ParserError<I>,
@@ -472,9 +440,7 @@ where
 }
 
 /// Parses a [`TriggerRelation`].
-pub fn alarm_trigger_relationship<I, E>(
-    input: &mut I,
-) -> Result<TriggerRelation, E>
+pub fn alarm_trigger_relationship<I, E>(input: &mut I) -> Result<TriggerRelation, E>
 where
     I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
     E: ParserError<I>,
@@ -487,14 +453,9 @@ where
 }
 
 /// Parses a [`RelationshipType`].
-pub fn relationship_type<I, E>(
-    input: &mut I,
-) -> Result<RelationshipType<I::Slice>, E>
+pub fn relationship_type<I, E>(input: &mut I) -> Result<RelationshipType<I::Slice>, E>
 where
-    I: StreamIsPartial
-        + Stream
-        + Compare<Caseless<&'static str>>
-        + Compare<char>,
+    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>> + Compare<char>,
     I::Token: AsChar + Clone,
     RelationshipType<I::Slice>: Clone,
     E: ParserError<I>,
@@ -510,14 +471,9 @@ where
 }
 
 /// Parses a [`ParticipationRole`].
-pub fn participation_role<I, E>(
-    input: &mut I,
-) -> Result<ParticipationRole<I::Slice>, E>
+pub fn participation_role<I, E>(input: &mut I) -> Result<ParticipationRole<I::Slice>, E>
 where
-    I: StreamIsPartial
-        + Stream
-        + Compare<Caseless<&'static str>>
-        + Compare<char>,
+    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>> + Compare<char>,
     I::Token: AsChar + Clone,
     ParticipationRole<I::Slice>: Clone,
     E: ParserError<I>,
@@ -536,10 +492,7 @@ where
 /// Parses a [`ValueType`].
 pub fn value_type<I, E>(input: &mut I) -> Result<ValueType<I::Slice>, E>
 where
-    I: StreamIsPartial
-        + Stream
-        + Compare<Caseless<&'static str>>
-        + Compare<char>,
+    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>> + Compare<char>,
     I::Token: AsChar + Clone,
     ValueType<I::Slice>: Clone,
     E: ParserError<I>,
@@ -694,19 +647,13 @@ where
         .parse_next(input)?;
 
         match components {
-            (Some(hours), Some(minutes), Some(seconds)) => {
-                Ok(DurationTime::HMS {
-                    hours,
-                    minutes,
-                    seconds,
-                })
-            }
-            (Some(hours), Some(minutes), None) => {
-                Ok(DurationTime::HM { hours, minutes })
-            }
-            (None, Some(minutes), Some(seconds)) => {
-                Ok(DurationTime::MS { minutes, seconds })
-            }
+            (Some(hours), Some(minutes), Some(seconds)) => Ok(DurationTime::HMS {
+                hours,
+                minutes,
+                seconds,
+            }),
+            (Some(hours), Some(minutes), None) => Ok(DurationTime::HM { hours, minutes }),
+            (None, Some(minutes), Some(seconds)) => Ok(DurationTime::MS { minutes, seconds }),
             (Some(hours), None, None) => Ok(DurationTime::H { hours }),
             (None, Some(minutes), None) => Ok(DurationTime::M { minutes }),
             (None, None, Some(seconds)) => Ok(DurationTime::S { seconds }),
@@ -715,9 +662,10 @@ where
 
                 Err(E::from_external_error(
                     input,
-                    CalendarParseError::InvalidDurationTime(
-                        InvalidDurationTimeError { hours, seconds },
-                    ),
+                    CalendarParseError::InvalidDurationTime(InvalidDurationTimeError {
+                        hours,
+                        seconds,
+                    }),
                 ))
             }
         }
@@ -730,8 +678,7 @@ where
             time.map(|time| DurationKind::Time { time }),
             separated_pair(lz_dec_uint, 'D', opt(time))
                 .map(|(days, time)| DurationKind::Date { days, time }),
-            terminated(lz_dec_uint, 'W')
-                .map(|weeks| DurationKind::Week { weeks }),
+            terminated(lz_dec_uint, 'W').map(|weeks| DurationKind::Week { weeks }),
         )),
     )
     .map(|(sign, kind)| Duration { sign, kind })
@@ -739,9 +686,7 @@ where
 }
 
 /// Parses a [`DateTimeOrDate<TimeFormat>`].
-pub fn datetime_or_date<I, E>(
-    input: &mut I,
-) -> Result<DateTimeOrDate<TimeFormat>, E>
+pub fn datetime_or_date<I, E>(input: &mut I) -> Result<DateTimeOrDate<TimeFormat>, E>
 where
     I: StreamIsPartial + Stream + Compare<char>,
     <I as Stream>::Token: AsChar + Clone,
@@ -842,11 +787,7 @@ where
 
             Err(E::from_external_error(
                 input,
-                CalendarParseError::InvalidDate(InvalidDateError {
-                    year,
-                    month,
-                    day,
-                }),
+                CalendarParseError::InvalidDate(InvalidDateError { year, month, day }),
             ))
         }
     }
@@ -881,9 +822,7 @@ where
     if hours >= 24 {
         return Err(E::from_external_error(
             input,
-            CalendarParseError::InvalidUtcOffset(
-                InvalidUtcOffsetError::BadHours(hours),
-            ),
+            CalendarParseError::InvalidUtcOffset(InvalidUtcOffsetError::BadHours(hours)),
         ));
     }
 
@@ -892,9 +831,7 @@ where
     if minutes >= 60 {
         return Err(E::from_external_error(
             input,
-            CalendarParseError::InvalidUtcOffset(
-                InvalidUtcOffsetError::BadMinutes(minutes),
-            ),
+            CalendarParseError::InvalidUtcOffset(InvalidUtcOffsetError::BadMinutes(minutes)),
         ));
     }
 
@@ -903,28 +840,20 @@ where
     if let Some(seconds @ 60..) = seconds {
         return Err(E::from_external_error(
             input,
-            CalendarParseError::InvalidUtcOffset(
-                InvalidUtcOffsetError::BadSeconds(seconds),
-            ),
+            CalendarParseError::InvalidUtcOffset(InvalidUtcOffsetError::BadSeconds(seconds)),
         ));
     }
 
     match seconds {
-        Some(0) | None
-            if hours == 0 && minutes == 0 && sign == Sign::Negative =>
-        {
+        Some(0) | None if hours == 0 && minutes == 0 && sign == Sign::Negative => {
             Err(E::from_external_error(
                 input,
-                CalendarParseError::InvalidUtcOffset(
-                    InvalidUtcOffsetError::NegativeZero,
-                ),
+                CalendarParseError::InvalidUtcOffset(InvalidUtcOffsetError::NegativeZero),
             ))
         }
         Some(seconds @ 60..) => Err(E::from_external_error(
             input,
-            CalendarParseError::InvalidUtcOffset(
-                InvalidUtcOffsetError::BadSeconds(seconds),
-            ),
+            CalendarParseError::InvalidUtcOffset(InvalidUtcOffsetError::BadSeconds(seconds)),
         )),
         _ => Ok(UtcOffset {
             sign,
@@ -1057,16 +986,12 @@ where
     I::Token: AsChar + Clone,
     E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
-    let (a, b) =
-        (one_of('0'..='9'), opt(one_of('0'..='9'))).parse_next(input)?;
+    let (a, b) = (one_of('0'..='9'), opt(one_of('0'..='9'))).parse_next(input)?;
 
     let a = unsafe { a.as_char().to_digit(10).unwrap_unchecked() };
 
     let value = match b {
-        Some(t) => {
-            10 * (a as u8)
-                + unsafe { t.as_char().to_digit(10).unwrap_unchecked() as u8 }
-        }
+        Some(t) => 10 * (a as u8) + unsafe { t.as_char().to_digit(10).unwrap_unchecked() as u8 },
         None => a as u8,
     };
 
@@ -1108,9 +1033,7 @@ where
 }
 
 /// Parses a [`CompletionPercentage`].
-pub fn completion_percentage<I, E>(
-    input: &mut I,
-) -> Result<CompletionPercentage, E>
+pub fn completion_percentage<I, E>(input: &mut I) -> Result<CompletionPercentage, E>
 where
     I: StreamIsPartial + Stream + Compare<char>,
     I::Token: AsChar + Clone,
@@ -1123,9 +1046,9 @@ where
         pct @ 0..=100 => Ok(CompletionPercentage(pct as u8)),
         other => Err(E::from_external_error(
             input,
-            CalendarParseError::InvalidCompletionPercentage(
-                InvalidCompletionPercentageError(other),
-            ),
+            CalendarParseError::InvalidCompletionPercentage(InvalidCompletionPercentageError(
+                other,
+            )),
         )),
     }
 }
@@ -1153,56 +1076,45 @@ where
         if magnitude > 180 {
             return Err(E::from_external_error(
                 input,
-                CalendarParseError::InvalidGeo(
-                    InvalidGeoError::IntegralTooLarge(magnitude),
-                ),
+                CalendarParseError::InvalidGeo(InvalidGeoError::IntegralTooLarge(magnitude)),
             ));
         }
 
         let integral = i32::from(magnitude);
 
-        let fraction: i32 =
-            opt(delimited('.', take_while(0..=6, '0'..='9'), digit0))
-                .parse_next(input)?
-                .map(|mut digits| {
-                    let mut total = 0;
+        let fraction: i32 = opt(delimited('.', take_while(0..=6, '0'..='9'), digit0))
+            .parse_next(input)?
+            .map(|mut digits| {
+                let mut total = 0;
 
-                    while let Some(d) = digits.next_token() {
-                        // SAFETY: the parser above guarantees that this char
-                        // will be a valid ascii digit
-                        let value = unsafe {
-                            d.as_char().to_digit(10).unwrap_unchecked() as i32
-                        };
+                while let Some(d) = digits.next_token() {
+                    // SAFETY: the parser above guarantees that this char
+                    // will be a valid ascii digit
+                    let value = unsafe { d.as_char().to_digit(10).unwrap_unchecked() as i32 };
 
-                        total = total * 10i32 + value;
-                    }
+                    total = total * 10i32 + value;
+                }
 
-                    total
-                })
-                .unwrap_or_default();
+                total
+            })
+            .unwrap_or_default();
 
-        let value = (sign.unwrap_or_default() as i32)
-            * (integral * 10i32.pow(6) + fraction);
+        let value = (sign.unwrap_or_default() as i32) * (integral * 10i32.pow(6) + fraction);
 
         Ok(GeoComponent(value))
     }
 
-    let (lat, lon) =
-        separated_pair(geo_component, ';', geo_component).parse_next(input)?;
+    let (lat, lon) = separated_pair(geo_component, ';', geo_component).parse_next(input)?;
 
     if !(-90_000_000..=90_000_000).contains(&lat.0) {
         Err(E::from_external_error(
             input,
-            CalendarParseError::InvalidGeo(InvalidGeoError::LatOutOfBounds(
-                lat,
-            )),
+            CalendarParseError::InvalidGeo(InvalidGeoError::LatOutOfBounds(lat)),
         ))
     } else if !(-180_000_000..=180_000_000).contains(&lon.0) {
         Err(E::from_external_error(
             input,
-            CalendarParseError::InvalidGeo(InvalidGeoError::LonOutOfBounds(
-                lon,
-            )),
+            CalendarParseError::InvalidGeo(InvalidGeoError::LonOutOfBounds(lon)),
         ))
     } else {
         Ok(Geo { lat, lon })
@@ -1215,8 +1127,7 @@ where
     I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
     E: ParserError<I>,
 {
-    alt((Caseless("TRUE").value(true), Caseless("FALSE").value(false)))
-        .parse_next(input)
+    alt((Caseless("TRUE").value(true), Caseless("FALSE").value(false))).parse_next(input)
 }
 
 pub fn integer<I, E>(input: &mut I) -> Result<Integer, E>
@@ -1258,8 +1169,7 @@ where
     I: StreamIsPartial + Stream + Compare<char>,
     E: ParserError<I>,
 {
-    alt(('+'.value(Sign::Positive), '-'.value(Sign::Negative)))
-        .parse_next(input)
+    alt(('+'.value(Sign::Positive), '-'.value(Sign::Negative))).parse_next(input)
 }
 
 pub fn color<I, E>(input: &mut I) -> Result<Css3Color, E>
@@ -1363,14 +1273,10 @@ where
                     'a' => tail!("lmon", C::DarkSalmon),
                     'e' => tail!("agreen", C::DarkSeaGreen),
                     // slateblue | slategray | slategrey
-                    'l' => match preceded(Caseless("ate"), ascii_lower)
-                        .parse_next(input)?
-                    {
+                    'l' => match preceded(Caseless("ate"), ascii_lower).parse_next(input)? {
                         'b' => tail!("lue", C::DarkSlateBlue),
                         // slategray | slategrey
-                        'g' => match preceded(Caseless("r"), ascii_lower)
-                            .parse_next(input)?
-                        {
+                        'g' => match preceded(Caseless("r"), ascii_lower).parse_next(input)? {
                             'a' => tail!("y", C::DarkSlateGray),
                             'e' => tail!("y", C::DarkSlateGrey),
                             _ => fail.parse_next(input),
@@ -1385,21 +1291,17 @@ where
             }
         }
         // deeppink | deepskyblue
-        ['d', 'e', 'e'] => {
-            match preceded(Caseless("p"), ascii_lower).parse_next(input)? {
-                'p' => tail!("ink", C::DeepPink),
-                's' => tail!("kyblue", C::DeepSkyBlue),
-                _ => fail.parse_next(input),
-            }
-        }
+        ['d', 'e', 'e'] => match preceded(Caseless("p"), ascii_lower).parse_next(input)? {
+            'p' => tail!("ink", C::DeepPink),
+            's' => tail!("kyblue", C::DeepSkyBlue),
+            _ => fail.parse_next(input),
+        },
         // dimgray | dimgrey
-        ['d', 'i', 'm'] => {
-            match preceded(Caseless("gr"), ascii_lower).parse_next(input)? {
-                'a' => tail!("y", C::DimGray),
-                'e' => tail!("y", C::DimGrey),
-                _ => fail.parse_next(input),
-            }
-        }
+        ['d', 'i', 'm'] => match preceded(Caseless("gr"), ascii_lower).parse_next(input)? {
+            'a' => tail!("y", C::DimGray),
+            'e' => tail!("y", C::DimGrey),
+            _ => fail.parse_next(input),
+        },
         ['d', 'o', 'd'] => tail!("gerblue", C::DodgerBlue),
         ['f', 'i', 'r'] => tail!("ebrick", C::FireBrick),
         ['f', 'l', 'o'] => tail!("ralwhite", C::FloralWhite),
@@ -1419,13 +1321,11 @@ where
         ['h', 'o', 'n'] => tail!("eydew", C::HoneyDew),
         ['h', 'o', 't'] => tail!("pink", C::HotPink),
         // indianred | indigo
-        ['i', 'n', 'd'] => {
-            match preceded(Caseless("i"), ascii_lower).parse_next(input)? {
-                'a' => tail!("nred", C::IndianRed),
-                'g' => tail!("o", C::Indigo),
-                _ => fail.parse_next(input),
-            }
-        }
+        ['i', 'n', 'd'] => match preceded(Caseless("i"), ascii_lower).parse_next(input)? {
+            'a' => tail!("nred", C::IndianRed),
+            'g' => tail!("o", C::Indigo),
+            _ => fail.parse_next(input),
+        },
         ['i', 'v', 'o'] => tail!("ry", C::Ivory),
         ['k', 'h', 'a'] => tail!("ki", C::Khaki),
         // lavender | lavenderblush
@@ -1467,9 +1367,7 @@ where
                     'e' => tail!("agreen", C::LightSeaGreen),
                     'k' => tail!("yblue", C::LightSkyBlue),
                     // slategray | slategrey
-                    'l' => match preceded(Caseless("ategr"), ascii_lower)
-                        .parse_next(input)?
-                    {
+                    'l' => match preceded(Caseless("ategr"), ascii_lower).parse_next(input)? {
                         'a' => tail!("y", C::LightSlateGray),
                         'e' => tail!("y", C::LightSlateGrey),
                         _ => fail.parse_next(input),
@@ -1562,9 +1460,7 @@ where
             match preceded(Caseless("te"), ascii_lower).parse_next(input)? {
                 'b' => tail!("lue", C::SlateBlue),
                 // slategray | slategrey
-                'g' => match preceded(Caseless("r"), ascii_lower)
-                    .parse_next(input)?
-                {
+                'g' => match preceded(Caseless("r"), ascii_lower).parse_next(input)? {
                     'a' => tail!("y", C::SlateGray),
                     'e' => tail!("y", C::SlateGrey),
                     _ => fail.parse_next(input),
@@ -1800,9 +1696,7 @@ mod tests {
         // these examples are from RFC 3986 §3
         assert!(
             uri::<_, (), false>
-                .parse_peek(
-                    "foo://example.com:8042/over/there?name=ferret#nose"
-                )
+                .parse_peek("foo://example.com:8042/over/there?name=ferret#nose")
                 .is_ok()
         );
         assert!(
@@ -2120,9 +2014,7 @@ mod tests {
                 .parse_peek("19970\r\n\t714T\r\n 045015".as_escaped())
                 .is_ok_and(|(_tail, dt)| {
                     dt == DateTime {
-                        date: Date(
-                            NaiveDate::from_ymd_opt(1997, 7, 14).unwrap(),
-                        ),
+                        date: Date(NaiveDate::from_ymd_opt(1997, 7, 14).unwrap()),
                         time: Time {
                             raw: RawTime {
                                 hours: 4,
@@ -2339,8 +2231,7 @@ mod tests {
         );
 
         assert_eq!(
-            bool_caseless::<_, ()>
-                .parse_peek(Escaped("fals\r\n\te".as_bytes())),
+            bool_caseless::<_, ()>.parse_peek(Escaped("fals\r\n\te".as_bytes())),
             Ok(("".as_escaped(), false))
         );
     }
@@ -2368,22 +2259,15 @@ mod tests {
         );
 
         assert_eq!(
-            float::<_, ()>
-                .parse_peek("1000\r\n\t000.00\r\n 00001".as_escaped()),
+            float::<_, ()>.parse_peek("1000\r\n\t000.00\r\n 00001".as_escaped()),
             Ok((
                 "".as_escaped(),
                 Float("1000\r\n\t000.00\r\n 00001".as_escaped())
             )),
         );
 
-        assert_eq!(
-            float::<_, ()>.parse_peek("1.333"),
-            Ok(("", Float("1.333")))
-        );
-        assert_eq!(
-            float::<_, ()>.parse_peek("-3.14"),
-            Ok(("", Float("-3.14")))
-        );
+        assert_eq!(float::<_, ()>.parse_peek("1.333"), Ok(("", Float("1.333"))));
+        assert_eq!(float::<_, ()>.parse_peek("-3.14"), Ok(("", Float("-3.14"))));
         assert_eq!(float::<_, ()>.parse_peek("12."), Ok((".", Float("12"))));
         assert!(float::<_, ()>.parse_peek("+.002").is_err());
     }

@@ -15,12 +15,10 @@ use crate::{
     model::{
         primitive::{Month, Weekday},
         rrule::{
-            ByMonthDayRule, ByPeriodDayRules, ByRuleName, CoreByRules, Freq,
-            FreqByRules, Hour, HourSet, Interval, Minute, MinuteSet, MonthDay,
-            MonthDaySet, MonthDaySetIndex, MonthSet, Part, PartName, RRule,
-            Second, SecondSet, Termination, WeekNoSet, WeekNoSetIndex,
-            WeekdayNum, YearDayNum, YearlyByRules,
-            weekday_num_set::WeekdayNumSet,
+            ByMonthDayRule, ByPeriodDayRules, ByRuleName, CoreByRules, Freq, FreqByRules, Hour,
+            HourSet, Interval, Minute, MinuteSet, MonthDay, MonthDaySet, MonthDaySetIndex,
+            MonthSet, Part, PartName, RRule, Second, SecondSet, Termination, WeekNoSet,
+            WeekNoSetIndex, WeekdayNum, YearDayNum, YearlyByRules, weekday_num_set::WeekdayNumSet,
         },
     },
     parser::primitive::{digit, iso_week_index, lz_dec_uint, sign},
@@ -31,10 +29,7 @@ use super::{error::CalendarParseError, primitive::datetime_or_date};
 /// Parses an [`RRule`].
 pub fn rrule<I, E>(input: &mut I) -> Result<RRule, E>
 where
-    I: StreamIsPartial
-        + Stream
-        + Compare<Caseless<&'static str>>
-        + Compare<char>,
+    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>> + Compare<char>,
     I::Slice: AsBStr,
     I::Token: AsChar + Clone,
     E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
@@ -62,8 +57,7 @@ where
         fn try_accept<I, E>(&mut self, input: &I, part: Part) -> Result<(), E>
         where
             I: Stream,
-            E: ParserError<I>
-                + FromExternalError<I, CalendarParseError<I::Slice>>,
+            E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
         {
             let part_name = PartName::from(&part);
 
@@ -222,8 +216,7 @@ where
         fn finalize<I, E>(self, input: &I) -> Result<RRule, E>
         where
             I: Stream,
-            E: ParserError<I>
-                + FromExternalError<I, CalendarParseError<I::Slice>>,
+            E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
         {
             let State {
                 by_month,
@@ -298,9 +291,7 @@ where
                     })),
                 },
                 Some(freq @ Freq::Daily) => match (by_week_no, by_year_day) {
-                    (None, None) => {
-                        Ok(FreqByRules::Daily(ByMonthDayRule { by_month_day }))
-                    }
+                    (None, None) => Ok(FreqByRules::Daily(ByMonthDayRule { by_month_day })),
                     (Some(_), _) => Err(E::from_external_error(
                         input,
                         CalendarParseError::UnexpectedByRule {
@@ -316,36 +307,32 @@ where
                         },
                     )),
                 },
-                Some(freq @ Freq::Weekly) => {
-                    match (by_week_no, by_year_day, by_month_day) {
-                        (None, None, None) => Ok(FreqByRules::Weekly),
-                        (Some(_), _, _) => Err(E::from_external_error(
-                            input,
-                            CalendarParseError::UnexpectedByRule {
-                                freq,
-                                by_rule: ByRuleName::ByWeekNo,
-                            },
-                        )),
-                        (_, Some(_), _) => Err(E::from_external_error(
-                            input,
-                            CalendarParseError::UnexpectedByRule {
-                                freq,
-                                by_rule: ByRuleName::ByYearDay,
-                            },
-                        )),
-                        (_, _, Some(_)) => Err(E::from_external_error(
-                            input,
-                            CalendarParseError::UnexpectedByRule {
-                                freq,
-                                by_rule: ByRuleName::ByMonthDay,
-                            },
-                        )),
-                    }
-                }
+                Some(freq @ Freq::Weekly) => match (by_week_no, by_year_day, by_month_day) {
+                    (None, None, None) => Ok(FreqByRules::Weekly),
+                    (Some(_), _, _) => Err(E::from_external_error(
+                        input,
+                        CalendarParseError::UnexpectedByRule {
+                            freq,
+                            by_rule: ByRuleName::ByWeekNo,
+                        },
+                    )),
+                    (_, Some(_), _) => Err(E::from_external_error(
+                        input,
+                        CalendarParseError::UnexpectedByRule {
+                            freq,
+                            by_rule: ByRuleName::ByYearDay,
+                        },
+                    )),
+                    (_, _, Some(_)) => Err(E::from_external_error(
+                        input,
+                        CalendarParseError::UnexpectedByRule {
+                            freq,
+                            by_rule: ByRuleName::ByMonthDay,
+                        },
+                    )),
+                },
                 Some(freq @ Freq::Monthly) => match (by_week_no, by_year_day) {
-                    (None, None) => Ok(FreqByRules::Monthly(ByMonthDayRule {
-                        by_month_day,
-                    })),
+                    (None, None) => Ok(FreqByRules::Monthly(ByMonthDayRule { by_month_day })),
                     (Some(_), _) => Err(E::from_external_error(
                         input,
                         CalendarParseError::UnexpectedByRule {
@@ -397,10 +384,7 @@ where
 /// Parses a [`Part`].
 pub fn part<I, E>(input: &mut I) -> Result<Part, E>
 where
-    I: StreamIsPartial
-        + Stream
-        + Compare<Caseless<&'static str>>
-        + Compare<char>,
+    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>> + Compare<char>,
     I::Slice: AsBStr,
     I::Token: AsChar + Clone,
     E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
@@ -437,8 +421,7 @@ where
             Part::ByHour(set)
         }
         PartName::ByDay => {
-            let weekday_nums =
-                separated(1.., weekday_num, ',').parse_next(input)?;
+            let weekday_nums = separated(1.., weekday_num, ',').parse_next(input)?;
             Part::ByDay(weekday_nums)
         }
         PartName::ByMonthDay => {
@@ -537,8 +520,7 @@ where
     I::Token: AsChar + Clone,
     E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
-    let (sign, a, b) = (opt(sign), digit::<I, E, 10>, opt(digit::<I, E, 10>))
-        .parse_next(input)?;
+    let (sign, a, b) = (opt(sign), digit::<I, E, 10>, opt(digit::<I, E, 10>)).parse_next(input)?;
 
     let index = match b {
         Some(b) => a * 10 + b,
@@ -590,8 +572,7 @@ where
     I::Token: AsChar + Clone,
     E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
-    let (ordinal, weekday) =
-        (opt((opt(sign), iso_week_index)), weekday).parse_next(input)?;
+    let (ordinal, weekday) = (opt((opt(sign), iso_week_index)), weekday).parse_next(input)?;
 
     let ordinal = ordinal.map(|(sign, week)| (sign.unwrap_or_default(), week));
 
@@ -606,9 +587,7 @@ where
     E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
     (opt(sign), iso_week_index)
-        .map(|(sign, week)| {
-            WeekNoSetIndex::from_signed_week(sign.unwrap_or_default(), week)
-        })
+        .map(|(sign, week)| WeekNoSetIndex::from_signed_week(sign.unwrap_or_default(), week))
         .parse_next(input)
 }
 
@@ -619,8 +598,7 @@ where
     I::Token: AsChar + Clone,
     E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
-    let (a, b) =
-        (digit::<I, E, 10>, opt(digit::<I, E, 10>)).parse_next(input)?;
+    let (a, b) = (digit::<I, E, 10>, opt(digit::<I, E, 10>)).parse_next(input)?;
 
     let value = match b {
         Some(b) => 10 * a + b,
@@ -643,8 +621,7 @@ where
     I::Token: AsChar + Clone,
     E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
-    let (a, b) =
-        (digit::<I, E, 10>, opt(digit::<I, E, 10>)).parse_next(input)?;
+    let (a, b) = (digit::<I, E, 10>, opt(digit::<I, E, 10>)).parse_next(input)?;
 
     let index = match b {
         Some(b) => 10 * a + b,
@@ -667,8 +644,7 @@ where
     I::Token: AsChar + Clone,
     E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
-    let (a, b) =
-        (digit::<I, E, 10>, opt(digit::<I, E, 10>)).parse_next(input)?;
+    let (a, b) = (digit::<I, E, 10>, opt(digit::<I, E, 10>)).parse_next(input)?;
 
     let index = match b {
         Some(b) => 10 * a + b,
@@ -691,8 +667,7 @@ where
     I::Token: AsChar + Clone,
     E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
-    let (a, b) =
-        (digit::<I, E, 10>, opt(digit::<I, E, 10>)).parse_next(input)?;
+    let (a, b) = (digit::<I, E, 10>, opt(digit::<I, E, 10>)).parse_next(input)?;
 
     let index = match b {
         Some(b) => 10 * a + b,
@@ -715,9 +690,7 @@ where
     I::Token: AsChar + Clone,
     E: ParserError<I>,
 {
-    match (any.map(AsChar::as_char), any.map(AsChar::as_char))
-        .parse_next(input)?
-    {
+    match (any.map(AsChar::as_char), any.map(AsChar::as_char)).parse_next(input)? {
         ('m' | 'M', 'o' | 'O') => Ok(Weekday::Monday),
         ('t' | 'T', 'u' | 'U') => Ok(Weekday::Tuesday),
         ('w' | 'W', 'e' | 'E') => Ok(Weekday::Wednesday),
@@ -783,8 +756,7 @@ mod tests {
         });
 
         let mut year_day_num_set = BTreeSet::new();
-        year_day_num_set
-            .insert(YearDayNum::from_signed_index(Sign::Negative, 1).unwrap());
+        year_day_num_set.insert(YearDayNum::from_signed_index(Sign::Negative, 1).unwrap());
 
         assert_eq!(
             core_by_rules,
@@ -803,8 +775,7 @@ mod tests {
     #[test]
     fn rrule_parser_rfc_5545_page_45() {
         // input is from RFC 5545, page 45
-        let input =
-            "FREQ=YEARLY;INTERVAL=2;BYMONTH=1;BYDAY=SU;BYHOUR=8,9;BYMINUTE=30";
+        let input = "FREQ=YEARLY;INTERVAL=2;BYMONTH=1;BYDAY=SU;BYHOUR=8,9;BYMINUTE=30";
         let (tail, rule) = rrule::<_, ()>.parse_peek(input).unwrap();
         assert!(tail.is_empty());
 
@@ -853,10 +824,8 @@ mod tests {
     #[test]
     fn part_parser_rfc_5545_page_45() -> Result<(), ()> {
         // input is from RFC 5545, page 45
-        let input =
-            "FREQ=YEARLY;INTERVAL=2;BYMONTH=1;BYDAY=SU;BYHOUR=8,9;BYMINUTE=30";
-        let (tail, parts): (_, Vec<_>) =
-            separated(1.., part, ';').parse_peek(input)?;
+        let input = "FREQ=YEARLY;INTERVAL=2;BYMONTH=1;BYDAY=SU;BYHOUR=8,9;BYMINUTE=30";
+        let (tail, parts): (_, Vec<_>) = separated(1.., part, ';').parse_peek(input)?;
         assert!(tail.is_empty());
 
         let mut month_set = MonthSet::default();
@@ -892,8 +861,7 @@ mod tests {
     fn part_parser_rfc_5545_page_43() -> Result<(), ()> {
         // input is from RFC 5545, page 43
         let input = "FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1";
-        let (tail, parts): (_, Vec<_>) =
-            separated(1.., part, ';').parse_peek(input)?;
+        let (tail, parts): (_, Vec<_>) = separated(1.., part, ';').parse_peek(input)?;
 
         assert!(tail.is_empty());
 
@@ -907,9 +875,7 @@ mod tests {
         }
 
         let mut by_set_pos_set = BTreeSet::default();
-        let _ = by_set_pos_set.insert(
-            YearDayNum::from_signed_index(Sign::Negative, 1).ok_or(())?,
-        );
+        let _ = by_set_pos_set.insert(YearDayNum::from_signed_index(Sign::Negative, 1).ok_or(())?);
 
         let expected_parts = vec![
             Part::Freq(Freq::Monthly),
@@ -1098,10 +1064,7 @@ mod tests {
             month_day_num::<_, ()>.parse_peek("+1"),
             Ok((
                 "",
-                MonthDaySetIndex::from_signed_month_day(
-                    Sign::Positive,
-                    MonthDay::D1
-                )
+                MonthDaySetIndex::from_signed_month_day(Sign::Positive, MonthDay::D1)
             ))
         );
 
@@ -1109,10 +1072,7 @@ mod tests {
             month_day_num::<_, ()>.parse_peek("+01"),
             Ok((
                 "",
-                MonthDaySetIndex::from_signed_month_day(
-                    Sign::Positive,
-                    MonthDay::D1
-                )
+                MonthDaySetIndex::from_signed_month_day(Sign::Positive, MonthDay::D1)
             ))
         );
 
@@ -1120,10 +1080,7 @@ mod tests {
             month_day_num::<_, ()>.parse_peek("-16"),
             Ok((
                 "",
-                MonthDaySetIndex::from_signed_month_day(
-                    Sign::Negative,
-                    MonthDay::D16
-                )
+                MonthDaySetIndex::from_signed_month_day(Sign::Negative, MonthDay::D16)
             ))
         );
     }
@@ -1179,15 +1136,9 @@ mod tests {
 
     #[test]
     fn weekday_parser() {
-        assert_eq!(
-            weekday::<_, ()>.parse_peek("SU"),
-            Ok(("", Weekday::Sunday))
-        );
+        assert_eq!(weekday::<_, ()>.parse_peek("SU"), Ok(("", Weekday::Sunday)));
 
-        assert_eq!(
-            weekday::<_, ()>.parse_peek("mO"),
-            Ok(("", Weekday::Monday))
-        );
+        assert_eq!(weekday::<_, ()>.parse_peek("mO"), Ok(("", Weekday::Monday)));
 
         assert_eq!(
             weekday::<_, ()>.parse_peek("Tu"),
@@ -1204,10 +1155,7 @@ mod tests {
             Ok(("", Weekday::Thursday))
         );
 
-        assert_eq!(
-            weekday::<_, ()>.parse_peek("fR"),
-            Ok(("", Weekday::Friday))
-        );
+        assert_eq!(weekday::<_, ()>.parse_peek("fR"), Ok(("", Weekday::Friday)));
 
         assert_eq!(
             weekday::<_, ()>.parse_peek("sa"),

@@ -18,9 +18,7 @@
 use winnow::{
     Parser,
     ascii::Caseless,
-    combinator::{
-        alt, delimited, opt, preceded, repeat, separated, terminated,
-    },
+    combinator::{alt, delimited, opt, preceded, repeat, separated, terminated},
     error::ParserError,
     stream::{AsChar, Compare, SliceLen, Stream, StreamIsPartial},
     token::none_of,
@@ -29,19 +27,15 @@ use winnow::{
 use crate::{
     model::{
         parameter::{
-            KnownParam, Param, ParamName, Rfc5545ParamName, Rfc7986ParamName,
-            StaticParamName, UnknownParam,
+            KnownParam, Param, ParamName, Rfc5545ParamName, Rfc7986ParamName, StaticParamName,
+            UnknownParam,
         },
-        primitive::{
-            CalAddress, CalendarUserType, FreeBusyType, ParticipationStatus,
-            TzId, Uri,
-        },
+        primitive::{CalAddress, CalendarUserType, FreeBusyType, ParticipationStatus, TzId, Uri},
     },
     parser::primitive::{
-        alarm_trigger_relationship, ascii_lower, bool_caseless, feature_type,
-        format_type, free_busy_type, inline_encoding, language,
-        participation_role, participation_status, relationship_type, uri,
-        value_type,
+        alarm_trigger_relationship, ascii_lower, bool_caseless, feature_type, format_type,
+        free_busy_type, inline_encoding, language, participation_role, participation_status,
+        relationship_type, uri, value_type,
     },
 };
 
@@ -50,10 +44,7 @@ use super::primitive::{calendar_user_type, display_type, iana_token, x_name};
 /// Parses a [`Param`].
 pub fn parameter<I, E>(input: &mut I) -> Result<Param<I::Slice>, E>
 where
-    I: StreamIsPartial
-        + Stream
-        + Compare<Caseless<&'static str>>
-        + Compare<char>,
+    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>> + Compare<char>,
     I::Token: AsChar + Clone,
     I::Slice: Clone + SliceLen,
     E: ParserError<I>,
@@ -71,17 +62,14 @@ where
         delimited('"', uri::<_, _, true>, '"').parse_next(input)
     }
 
-    fn quoted_addresses<I, E>(
-        input: &mut I,
-    ) -> Result<Box<[CalAddress<I::Slice>]>, E>
+    fn quoted_addresses<I, E>(input: &mut I) -> Result<Box<[CalAddress<I::Slice>]>, E>
     where
         I: StreamIsPartial + Stream + Compare<char>,
         I::Token: AsChar + Clone,
         E: ParserError<I>,
     {
         let uris: Vec<_> =
-            separated(1.., quoted_uri.map(|Uri(uri)| CalAddress(uri)), ',')
-                .parse_next(input)?;
+            separated(1.., quoted_uri.map(|Uri(uri)| CalAddress(uri)), ',').parse_next(input)?;
         Ok(uris.into_boxed_slice())
     }
 
@@ -89,16 +77,14 @@ where
 
     match name {
         ParamName::Iana(name) => {
-            let value: Vec<_> =
-                separated(1.., param_value, ',').parse_next(input)?;
+            let value: Vec<_> = separated(1.., param_value, ',').parse_next(input)?;
             Ok(Param::Unknown(UnknownParam::Iana {
                 name,
                 value: value.into_boxed_slice(),
             }))
         }
         ParamName::X(name) => {
-            let value: Vec<_> =
-                separated(1.., param_value, ',').parse_next(input)?;
+            let value: Vec<_> = separated(1.., param_value, ',').parse_next(input)?;
             Ok(Param::Unknown(UnknownParam::X {
                 name,
                 value: value.into_boxed_slice(),
@@ -153,18 +139,14 @@ where
                 .map(KnownParam::PartStatus)
                 .map(Param::Known)
                 .parse_next(input),
-            Rfc5545ParamName::RecurrenceIdentifierRange => {
-                Caseless("THISANDFUTURE")
-                    .value(KnownParam::RecurrenceIdentifierRange)
-                    .map(Param::Known)
-                    .parse_next(input)
-            }
-            Rfc5545ParamName::AlarmTriggerRelationship => {
-                alarm_trigger_relationship
-                    .map(KnownParam::AlarmTrigger)
-                    .map(Param::Known)
-                    .parse_next(input)
-            }
+            Rfc5545ParamName::RecurrenceIdentifierRange => Caseless("THISANDFUTURE")
+                .value(KnownParam::RecurrenceIdentifierRange)
+                .map(Param::Known)
+                .parse_next(input),
+            Rfc5545ParamName::AlarmTriggerRelationship => alarm_trigger_relationship
+                .map(KnownParam::AlarmTrigger)
+                .map(Param::Known)
+                .parse_next(input),
             Rfc5545ParamName::RelationshipType => relationship_type
                 .map(KnownParam::RelType)
                 .map(Param::Known)
@@ -218,19 +200,13 @@ where
 /// Parses a [`ParamName`].
 pub fn param_name<I, E>(input: &mut I) -> Result<ParamName<I::Slice>, E>
 where
-    I: StreamIsPartial
-        + Stream
-        + Compare<Caseless<&'static str>>
-        + Compare<char>,
+    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>> + Compare<char>,
     I::Token: AsChar + Clone,
     E: ParserError<I>,
 {
     fn static_name<I>(input: &mut I) -> Result<StaticParamName, ()>
     where
-        I: StreamIsPartial
-            + Stream
-            + Compare<Caseless<&'static str>>
-            + Compare<char>,
+        I: StreamIsPartial + Stream + Compare<Caseless<&'static str>> + Compare<char>,
         I::Token: AsChar + Clone,
     {
         use Rfc5545ParamName as PN5545;
@@ -254,9 +230,7 @@ where
             // DELEGATED-FROM | DELEGATED-TO | DIR | DISPLAY
             'd' => match ascii_lower.parse_next(input)? {
                 // DELEGATED-FROM | DELEGATED-TO
-                'e' => match preceded(Caseless("legated-"), ascii_lower)
-                    .parse_next(input)?
-                {
+                'e' => match preceded(Caseless("legated-"), ascii_lower).parse_next(input)? {
                     'f' => tail!("rom", Rfc5545(PN5545::Delegators)),
                     't' => tail!("o", Rfc5545(PN5545::Delegatees)),
                     _ => Err(()),
@@ -283,22 +257,18 @@ where
                 _ => Err(()),
             },
             // LABEL | LANGUAGE
-            'l' => {
-                match preceded(Caseless("a"), ascii_lower).parse_next(input)? {
-                    'b' => tail!("el", Rfc7986(PN7986::Label)),
-                    'n' => tail!("guage", Rfc5545(PN5545::Language)),
-                    _ => Err(()),
-                }
-            }
+            'l' => match preceded(Caseless("a"), ascii_lower).parse_next(input)? {
+                'b' => tail!("el", Rfc7986(PN7986::Label)),
+                'n' => tail!("guage", Rfc5545(PN5545::Language)),
+                _ => Err(()),
+            },
             'm' => tail!("ember", Rfc5545(PN5545::GroupOrListMembership)),
             'p' => tail!("artstat", Rfc5545(PN5545::ParticipationStatus)),
             // RANGE | RELATED | RELTYPE | ROLE | RSVP
             'r' => match ascii_lower.parse_next(input)? {
                 'a' => tail!("nge", Rfc5545(PN5545::RecurrenceIdentifierRange)),
                 // RELATED | RELTYPE
-                'e' => match preceded(Caseless("l"), ascii_lower)
-                    .parse_next(input)?
-                {
+                'e' => match preceded(Caseless("l"), ascii_lower).parse_next(input)? {
                     'a' => {
                         tail!("ted", Rfc5545(PN5545::AlarmTriggerRelationship))
                     }
@@ -323,8 +293,7 @@ where
         Ok(StaticParamName::Rfc7986(name)) => Ok(ParamName::Rfc7986(name)),
         Err(()) => {
             input.reset(&checkpoint);
-            alt((x_name.map(ParamName::X), iana_token.map(ParamName::Iana)))
-                .parse_next(input)
+            alt((x_name.map(ParamName::X), iana_token.map(ParamName::Iana))).parse_next(input)
         }
     }
 }
@@ -429,9 +398,7 @@ where
 mod tests {
     use crate::model::{
         parameter::KnownParam,
-        primitive::{
-            DisplayType, Encoding, FeatureType, TriggerRelation, ValueType,
-        },
+        primitive::{DisplayType, Encoding, FeatureType, TriggerRelation, ValueType},
     };
 
     use super::*;
@@ -493,9 +460,7 @@ mod tests {
             );
         }
 
-        for input in
-            ["ENCODING=base", "ENCODING=bit", "ENCODING=64", "ENCODING=8"]
-        {
+        for input in ["ENCODING=base", "ENCODING=bit", "ENCODING=64", "ENCODING=8"] {
             assert!(parameter::<_, ()>.parse_peek(input).is_err());
         }
     }
@@ -517,9 +482,7 @@ mod tests {
             ));
         }
 
-        for input in
-            ["FMTTYPE=", "FMTTYPE=missing slash", "FMTTYPE=back\\slash"]
-        {
+        for input in ["FMTTYPE=", "FMTTYPE=missing slash", "FMTTYPE=back\\slash"] {
             assert!(parameter::<_, ()>.parse_peek(input).is_err());
         }
     }
