@@ -443,104 +443,71 @@ where
     where
         S: Hash + PartialEq + Debug + Equiv<LineFoldCaseless> + AsRef<[u8]>,
     {
+        macro_rules! once {
+            ($name:ident, $long_name:expr, $value:expr, $params:expr) => {
+                try_insert_once!(
+                    state,
+                    FreeBusy,
+                    Key::Known(FreeBusyPropName::$name),
+                    $long_name,
+                    Entry::Known(FreeBusyProp::$name(Prop {
+                        value: $value,
+                        params: $params,
+                        unknown_params
+                    })),
+                )
+            };
+        }
+
+        macro_rules! seq {
+            ($name:ident, $value:expr, $params:expr) => {
+                insert_seq!(
+                    state,
+                    FreeBusyProp,
+                    $name,
+                    Key::Known(FreeBusyPropName::$name),
+                    Prop {
+                        value: $value,
+                        params: $params,
+                        unknown_params,
+                    }
+                )
+            };
+        }
+
         step_inner! {state, FreeBusy, prop, unknown_params;
             ParserProp::Known(KnownProp::DtStamp(value)) => {
-                try_insert_once!(state, FreeBusy, Key::Known(FreeBusyPropName::DtStamp),
-                    PropName::Rfc5545(Rfc5545PropName::DateTimeStamp),
-                    Entry::Known(FreeBusyProp::DtStamp(Prop {
-                        value,
-                        params: (),
-                        unknown_params
-                    })),
-                )
+                once!(DtStamp, PropName::Rfc5545(Rfc5545PropName::DateTimeStamp), value, ())
             },
             ParserProp::Known(KnownProp::Uid(value)) => {
-                try_insert_once!(state, FreeBusy, Key::Known(FreeBusyPropName::Uid),
-                    PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier),
-                    Entry::Known(FreeBusyProp::Uid(Prop {
-                        value,
-                        params: (),
-                        unknown_params
-                    })),
-                )
+                once!(Uid, PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier), value, ())
             },
             ParserProp::Known(KnownProp::Contact(value, params)) => {
-                try_insert_once!(state, FreeBusy, Key::Known(FreeBusyPropName::Contact),
-                    PropName::Rfc5545(Rfc5545PropName::Contact),
-                    Entry::Known(FreeBusyProp::Contact(Prop {
-                        value,
-                        params,
-                        unknown_params
-                    })),
-                )
+                once!(Contact, PropName::Rfc5545(Rfc5545PropName::Contact), value, params)
             },
             ParserProp::Known(KnownProp::DtStart(value, params)) => {
-                try_insert_once!(state, FreeBusy, Key::Known(FreeBusyPropName::DtStart),
-                    PropName::Rfc5545(Rfc5545PropName::DateTimeStart),
-                    Entry::Known(FreeBusyProp::DtStart(Prop {
-                        value,
-                        params,
-                        unknown_params
-                    })),
-                )
+                once!(DtStart, PropName::Rfc5545(Rfc5545PropName::DateTimeStart), value, params)
             },
             ParserProp::Known(KnownProp::DtEnd(value, params)) => {
-                try_insert_once!(state, FreeBusy, Key::Known(FreeBusyPropName::DtEnd),
-                    PropName::Rfc5545(Rfc5545PropName::DateTimeEnd),
-                    Entry::Known(FreeBusyProp::DtEnd(Prop {
-                        value,
-                        params,
-                        unknown_params
-                    })),
-                )
+                once!(DtEnd, PropName::Rfc5545(Rfc5545PropName::DateTimeEnd), value, params)
             },
             ParserProp::Known(KnownProp::Organizer(value, params)) => {
-                try_insert_once!(state, FreeBusy, Key::Known(FreeBusyPropName::Organizer),
-                    PropName::Rfc5545(Rfc5545PropName::Organizer),
-                    Entry::Known(FreeBusyProp::Organizer(Prop {
-                        value,
-                        params: Box::new(params),
-                        unknown_params
-                    })),
-                )
+                once!(Organizer, PropName::Rfc5545(Rfc5545PropName::Organizer), value, Box::new(params))
             },
             ParserProp::Known(KnownProp::Url(value)) => {
-                try_insert_once!(state, FreeBusy, Key::Known(FreeBusyPropName::Url),
-                    PropName::Rfc5545(Rfc5545PropName::UniformResourceLocator),
-                    Entry::Known(FreeBusyProp::Url(Prop {
-                        value,
-                        params: (),
-                        unknown_params
-                    })),
-                )
+                once!(Url, PropName::Rfc5545(Rfc5545PropName::UniformResourceLocator), value, ())
             },
             ParserProp::Known(KnownProp::Attendee(value, params)) => {
-                insert_seq!(state, FreeBusyProp, Attendee, Key::Known(FreeBusyPropName::Attendee), Prop {
-                    value,
-                    params: Box::new(params),
-                    unknown_params,
-                })
+                seq!(Attendee, value, Box::new(params))
             },
             ParserProp::Known(KnownProp::Comment(value, params)) => {
-                insert_seq!(state, FreeBusyProp, Comment, Key::Known(FreeBusyPropName::Comment), Prop {
-                    value,
-                    params,
-                    unknown_params,
-                })
+                seq!(Comment, value, params)
             },
             ParserProp::Known(KnownProp::FreeBusy(value, params)) => {
-                insert_seq!(state, FreeBusyProp, FreeBusy, Key::Known(FreeBusyPropName::FreeBusy), Prop {
-                    value,
-                    params,
-                    unknown_params,
-                })
+                seq!(FreeBusy, value, params)
             },
             ParserProp::Known(KnownProp::RequestStatus(value, params)) => {
-                insert_seq!(state, FreeBusyProp, RequestStatus, Key::Known(FreeBusyPropName::RequestStatus), Prop {
-                    value,
-                    params,
-                    unknown_params,
-                })
+                seq!(RequestStatus, value, params)
             },
         }
     }
@@ -605,36 +572,31 @@ where
     where
         S: Hash + PartialEq + Debug + Equiv<LineFoldCaseless> + AsRef<[u8]>,
     {
+        macro_rules! once {
+            ($name:ident, $long_name:expr, $value:expr) => {
+                try_insert_once!(
+                    state,
+                    TimeZone,
+                    Key::Known(TimeZonePropName::$name),
+                    $long_name,
+                    Entry::Known(TimeZoneProp::$name(Prop {
+                        value: $value,
+                        params: (),
+                        unknown_params
+                    })),
+                )
+            };
+        }
+
         step_inner! {state, TimeZone, prop, unknown_params;
-            ParserProp::Known(KnownProp::TzId(tz_id)) => {
-                try_insert_once!(state, TimeZone, Key::Known(TimeZonePropName::TzId),
-                    PropName::Rfc5545(Rfc5545PropName::TimeZoneIdentifier),
-                    Entry::Known(TimeZoneProp::TzId(Prop {
-                        value: tz_id,
-                        params: (),
-                        unknown_params
-                    })),
-                )
+            ParserProp::Known(KnownProp::TzId(value)) => {
+                once!(TzId, PropName::Rfc5545(Rfc5545PropName::TimeZoneIdentifier), value)
             },
-            ParserProp::Known(KnownProp::LastModified(dt)) => {
-                try_insert_once!(state, TimeZone, Key::Known(TimeZonePropName::LastModified),
-                    PropName::Rfc5545(Rfc5545PropName::LastModified),
-                    Entry::Known(TimeZoneProp::LastModified(Prop {
-                        value: dt,
-                        params: (),
-                        unknown_params
-                    })),
-                )
+            ParserProp::Known(KnownProp::LastModified(value)) => {
+                once!(LastModified, PropName::Rfc5545(Rfc5545PropName::LastModified), value)
             },
-            ParserProp::Known(KnownProp::TzUrl(tz_url)) => {
-                try_insert_once!(state, TimeZone, Key::Known(TimeZonePropName::TzUrl),
-                    PropName::Rfc5545(Rfc5545PropName::TimeZoneUrl),
-                    Entry::Known(TimeZoneProp::TzUrl(Prop {
-                        value: tz_url,
-                        params: (),
-                        unknown_params
-                    })),
-                )
+            ParserProp::Known(KnownProp::TzUrl(value)) => {
+                once!(TzUrl, PropName::Rfc5545(Rfc5545PropName::TimeZoneUrl), value)
             }
         }
     }
@@ -646,67 +608,59 @@ where
     where
         S: Hash + PartialEq + Debug + Equiv<LineFoldCaseless> + AsRef<[u8]>,
     {
+        macro_rules! once {
+            ($name:ident, $long_name:expr, $value:expr, $params:expr) => {
+                try_insert_once!(
+                    state,
+                    StandardOrDaylight,
+                    Key::Known(OffsetPropName::$name),
+                    $long_name,
+                    Entry::Known(OffsetProp::$name(Prop {
+                        value: $value,
+                        params: $params,
+                        unknown_params
+                    })),
+                )
+            };
+        }
+
+        macro_rules! seq {
+            ($name:ident, $value:expr, $params:expr) => {
+                insert_seq!(
+                    state,
+                    OffsetProp,
+                    $name,
+                    Key::Known(OffsetPropName::$name),
+                    Prop {
+                        value: $value,
+                        params: $params,
+                        unknown_params,
+                    }
+                )
+            };
+        }
+
         step_inner! {state, StandardOrDaylight, prop, unknown_params;
             ParserProp::Known(KnownProp::DtStart(value, params)) => {
-                try_insert_once!(state, StandardOrDaylight, Key::Known(OffsetPropName::DtStart),
-                    PropName::Rfc5545(Rfc5545PropName::DateTimeStart),
-                    Entry::Known(OffsetProp::DtStart(Prop {
-                        value,
-                        params,
-                        unknown_params
-                    })),
-                )
+                once!(DtStart, PropName::Rfc5545(Rfc5545PropName::DateTimeStart), value, params)
             },
             ParserProp::Known(KnownProp::TzOffsetTo(value)) => {
-                try_insert_once!(state, StandardOrDaylight, Key::Known(OffsetPropName::TzOffsetTo),
-                    PropName::Rfc5545(Rfc5545PropName::TimeZoneOffsetTo),
-                    Entry::Known(OffsetProp::TzOffsetTo(Prop {
-                        value,
-                        params: (),
-                        unknown_params
-                    })),
-                )
+                once!(TzOffsetTo, PropName::Rfc5545(Rfc5545PropName::TimeZoneOffsetTo), value, ())
             },
             ParserProp::Known(KnownProp::TzOffsetFrom(value)) => {
-                try_insert_once!(state, StandardOrDaylight, Key::Known(OffsetPropName::TzOffsetFrom),
-                    PropName::Rfc5545(Rfc5545PropName::TimeZoneOffsetFrom),
-                    Entry::Known(OffsetProp::TzOffsetFrom(Prop {
-                        value,
-                        params: (),
-                        unknown_params
-                    })),
-                )
+                once!(TzOffsetFrom, PropName::Rfc5545(Rfc5545PropName::TimeZoneOffsetFrom), value, ())
             },
             ParserProp::Known(KnownProp::RRule(value)) => {
-                try_insert_once!(state, StandardOrDaylight, Key::Known(OffsetPropName::RRule),
-                    PropName::Rfc5545(Rfc5545PropName::RecurrenceRule),
-                    Entry::Known(OffsetProp::RRule(Prop {
-                        value: Box::new(value),
-                        params: (),
-                        unknown_params
-                    })),
-                )
+                once!(RRule, PropName::Rfc5545(Rfc5545PropName::RecurrenceRule), Box::new(value), ())
             },
             ParserProp::Known(KnownProp::Comment(value, params)) => {
-                insert_seq!(state, OffsetProp, Comment, Key::Known(OffsetPropName::Comment), Prop {
-                    value,
-                    params,
-                    unknown_params,
-                })
+                seq!(Comment, value, params)
             },
             ParserProp::Known(KnownProp::RDate(value, params)) => {
-                insert_seq!(state, OffsetProp, RDate, Key::Known(OffsetPropName::RDate), Prop {
-                    value,
-                    params,
-                    unknown_params,
-                })
+                seq!(RDate, value, params)
             },
             ParserProp::Known(KnownProp::TzName(value, params)) => {
-                insert_seq!(state, OffsetProp, TzName, Key::Known(OffsetPropName::TzName), Prop {
-                    value,
-                    params,
-                    unknown_params,
-                })
+                seq!(TzName, value, params)
             },
         }
     }
@@ -817,26 +771,44 @@ where
     where
         S: Hash + PartialEq + Debug + Equiv<LineFoldCaseless> + AsRef<[u8]>,
     {
+        macro_rules! once {
+            ($name:ident, $long_name:expr, $value:expr, $params:expr) => {
+                try_insert_once!(
+                    state,
+                    Alarm,
+                    Key::Known(FreeAlarmPropName::$name),
+                    $long_name,
+                    Entry::Known(FreeAlarmProp::$name(Prop {
+                        value: $value,
+                        params: $params,
+                        unknown_params
+                    })),
+                )
+            };
+        }
+
+        macro_rules! seq {
+            ($name:ident, $value:expr, $params:expr) => {
+                insert_seq!(
+                    state,
+                    FreeAlarmProp,
+                    $name,
+                    Key::Known(FreeAlarmPropName::$name),
+                    Prop {
+                        value: $value,
+                        params: $params,
+                        unknown_params,
+                    }
+                )
+            };
+        }
+
         step_inner! {state, Alarm, prop, unknown_params;
             ParserProp::Known(KnownProp::Action(value)) => {
-                try_insert_once!(state, Alarm, Key::Known(FreeAlarmPropName::Action),
-                    PropName::Rfc5545(Rfc5545PropName::Action),
-                    Entry::Known(FreeAlarmProp::Action(Prop {
-                        value,
-                        params: (),
-                        unknown_params
-                    })),
-                )
+                once!(Action, PropName::Rfc5545(Rfc5545PropName::Action), value, ())
             },
             ParserProp::Known(KnownProp::Description(value, params)) => {
-                try_insert_once!(state, Alarm, Key::Known(FreeAlarmPropName::Description),
-                    PropName::Rfc5545(Rfc5545PropName::Description),
-                    Entry::Known(FreeAlarmProp::Description(Prop {
-                        value,
-                        params,
-                        unknown_params
-                    })),
-                )
+                once!(Description, PropName::Rfc5545(Rfc5545PropName::Description), value, params)
             },
             ParserProp::Known(KnownProp::TriggerRelative(value, params)) => {
                 try_insert_once!(state, Alarm, Key::Known(FreeAlarmPropName::Trigger),
@@ -859,48 +831,19 @@ where
                 )
             },
             ParserProp::Known(KnownProp::Summary(value, params)) => {
-                try_insert_once!(state, Alarm, Key::Known(FreeAlarmPropName::Summary),
-                    PropName::Rfc5545(Rfc5545PropName::Summary),
-                    Entry::Known(FreeAlarmProp::Summary(Prop {
-                        value,
-                        params,
-                        unknown_params
-                    })),
-                )
+                once!(Summary, PropName::Rfc5545(Rfc5545PropName::Summary), value, params)
             },
             ParserProp::Known(KnownProp::Duration(value)) => {
-                try_insert_once!(state, Alarm, Key::Known(FreeAlarmPropName::Duration),
-                    PropName::Rfc5545(Rfc5545PropName::Duration),
-                    Entry::Known(FreeAlarmProp::Duration(Prop {
-                        value,
-                        params: (),
-                        unknown_params
-                    })),
-                )
+                once!(Duration, PropName::Rfc5545(Rfc5545PropName::Duration), value, ())
             },
             ParserProp::Known(KnownProp::Repeat(value)) => {
-                try_insert_once!(state, Alarm, Key::Known(FreeAlarmPropName::Repeat),
-                    PropName::Rfc5545(Rfc5545PropName::RepeatCount),
-                    Entry::Known(FreeAlarmProp::Repeat(Prop {
-                        value,
-                        params: (),
-                        unknown_params
-                    })),
-                )
+                once!(Repeat, PropName::Rfc5545(Rfc5545PropName::RepeatCount), value, ())
             },
             ParserProp::Known(KnownProp::Attendee(value, params)) => {
-                insert_seq!(state, FreeAlarmProp, Attendee, Key::Known(FreeAlarmPropName::Attendee), Prop {
-                    value,
-                    params: Box::new(params),
-                    unknown_params,
-                })
+                seq!(Attendee, value, Box::new(params))
             },
             ParserProp::Known(KnownProp::Attach(value, params)) => {
-                insert_seq!(state, FreeAlarmProp, Attach, Key::Known(FreeAlarmPropName::Attach), Prop {
-                    value,
-                    params,
-                    unknown_params,
-                })
+                seq!(Attach, value, params)
             },
         }
     }
