@@ -318,6 +318,26 @@ impl<'a> Compare<Caseless<char>> for Escaped<'a> {
     }
 }
 
+impl<'a, 'b> Compare<Caseless<Escaped<'b>>> for Escaped<'a> {
+    fn compare(&self, t: Caseless<Escaped<'b>>) -> CompareResult {
+        let mut lhs = self.iter_offsets();
+        let mut rhs = t.0.iter_offsets().map(|(_, t)| t);
+
+        loop {
+            match (lhs.next(), rhs.next()) {
+                (None, None) => break CompareResult::Ok(self.len()),
+                (None, Some(_)) => break CompareResult::Incomplete,
+                (Some((offset, _)), None) => break CompareResult::Ok(offset),
+                (Some((_, l)), Some(r)) => {
+                    if !l.eq_ignore_ascii_case(&r) {
+                        break CompareResult::Error;
+                    }
+                }
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct IterOffsets<'a> {
     offset: usize,
@@ -369,7 +389,10 @@ fn split_fold_prefix(input: &[u8]) -> (&[u8], &[u8]) {
 
 #[cfg(test)]
 mod tests {
-    use winnow::{Parser, token::take};
+    use winnow::{
+        Parser,
+        token::{literal, take},
+    };
 
     use super::*;
 
@@ -392,6 +415,18 @@ mod tests {
         assert!(!"abcdef".equiv("abcde", LineFoldCaseless));
         assert!("abcde".equiv("ab\r\n C\r\n\tde", LineFoldCaseless));
         assert!("abcde".equiv("aB\r\n c\r\n\tde".as_escaped(), LineFoldCaseless));
+    }
+
+    #[test]
+    fn compare_escaped_caseless() {
+        assert_eq!(
+            "abc".as_escaped().compare(Caseless("ABC".as_escaped())),
+            CompareResult::Ok(3)
+        );
+
+        let input = "\r\n\ta\r\n b\r\n\tcd\r\n\te".as_escaped();
+        let res: Result<_, ()> = literal(Caseless("ABCD".as_escaped())).parse_peek(input);
+        assert!(res.is_ok());
     }
 
     #[test]
