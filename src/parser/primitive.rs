@@ -1,6 +1,5 @@
 //! Parsers for primitive (i.e. terminal) grammar elements.
 
-use chrono::NaiveDate;
 use winnow::{
     Parser,
     ascii::{Caseless, digit0, digit1},
@@ -780,8 +779,8 @@ where
         })
         .parse_next(input)?;
 
-    match NaiveDate::from_ymd_opt(year.into(), month.into(), day.into()) {
-        Some(date) => Ok(Date(date)),
+    match Date::from_ymd_opt(year, month, day) {
+        Some(date) => Ok(date),
         None => {
             input.reset(&checkpoint);
 
@@ -1539,6 +1538,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    use crate::date;
     use crate::parser::escaped::{AsEscaped, Escaped};
 
     use super::*;
@@ -2014,7 +2014,7 @@ mod tests {
                 .parse_peek("19970\r\n\t714T\r\n 045015".as_escaped())
                 .is_ok_and(|(_tail, dt)| {
                     dt == DateTime {
-                        date: Date(NaiveDate::from_ymd_opt(1997, 7, 14).unwrap()),
+                        date: date!(1997;7;14),
                         time: Time {
                             raw: RawTime {
                                 hours: 4,
@@ -2037,11 +2037,11 @@ mod tests {
     #[test]
     fn date_parser() {
         assert!(date::<_, ()>.parse_peek("19970714").is_ok());
-        assert!(date::<_, ()>.parse_peek("20150229").is_err());
+        assert!(date::<_, ()>.parse_peek("20150229").is_ok()); // this day isn't real!
 
         assert_eq!(
             date::<_, ()>.parse_peek("20040620"),
-            Ok(("", Date(NaiveDate::from_ymd_opt(2004, 6, 20).unwrap())))
+            Ok(("", date!(2004;6;20)))
         );
     }
 

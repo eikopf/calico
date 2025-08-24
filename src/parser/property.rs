@@ -2142,15 +2142,15 @@ pub enum Rfc7986PropName {
 #[cfg(test)]
 mod tests {
     use crate::{
+        date,
         model::primitive::{
-            Date, DurationKind, DurationTime, GeoComponent, ParticipationRole, ParticipationStatus,
+            DurationKind, DurationTime, GeoComponent, ParticipationRole, ParticipationStatus,
             RawTime, Sign, Time, TimeFormat,
         },
         parser::{escaped::AsEscaped, parameter::ParamValue},
     };
 
     use super::*;
-    use chrono::NaiveDate;
     use winnow::{Parser, ascii::crlf, combinator::terminated};
 
     // PROPERTY PARSING TESTS
@@ -2199,7 +2199,7 @@ mod tests {
         assert_eq!(
             iter.next(),
             Some(Prop::Known(KnownProp::DtStamp(DateTime {
-                date: Date(NaiveDate::from_ymd_opt(1996, 7, 4).unwrap()),
+                date: date!(1996;7;4),
                 time: Time {
                     raw: RawTime {
                         hours: 12,
@@ -2605,10 +2605,7 @@ mod tests {
             panic!()
         };
 
-        assert_eq!(
-            datetime.date.0,
-            NaiveDate::from_ymd_opt(1996, 4, 1).unwrap()
-        );
+        assert_eq!(datetime.date, date!(1996;4;1));
         assert_eq!(
             datetime.time.raw,
             RawTime {
@@ -2636,7 +2633,7 @@ mod tests {
         assert_eq!(
             value,
             DateTimeOrDate::DateTime(DateTime {
-                date: Date(NaiveDate::from_ymd_opt(1996, 4, 1).unwrap()),
+                date: date!(1996;4;1),
                 time: Time {
                     raw: RawTime {
                         hours: 15,
@@ -2662,10 +2659,7 @@ mod tests {
         };
 
         assert!(params.tz_id.is_none());
-        assert_eq!(
-            value,
-            DateTimeOrDate::Date(Date(NaiveDate::from_ymd_opt(1998, 7, 4).unwrap()))
-        );
+        assert_eq!(value, date!(1998;7;4).into());
     }
 
     #[test]
@@ -2684,7 +2678,7 @@ mod tests {
         assert_eq!(
             value,
             DateTimeOrDate::DateTime(DateTime {
-                date: Date(NaiveDate::from_ymd_opt(1998, 4, 30).unwrap()),
+                date: date!(1998;4;30),
                 time: Time {
                     raw: RawTime {
                         hours: 0,
@@ -2713,7 +2707,7 @@ mod tests {
         assert_eq!(
             value,
             DateTimeOrDate::DateTime(DateTime {
-                date: Date(NaiveDate::from_ymd_opt(1998, 1, 18).unwrap()),
+                date: date!(1998;1;18),
                 time: Time {
                     raw: RawTime {
                         hours: 7,
@@ -2793,7 +2787,7 @@ mod tests {
             periods.as_ref(),
             [Period::Start {
                 start: DateTime {
-                    date: Date(NaiveDate::from_ymd_opt(1997, 3, 8).unwrap()),
+                    date: date!(1997;3;8),
                     time: Time {
                         raw: RawTime {
                             hours: 16,
@@ -2835,7 +2829,7 @@ mod tests {
             [
                 Period::Start {
                     start: DateTime {
-                        date: Date(NaiveDate::from_ymd_opt(1997, 3, 8).unwrap()),
+                        date: date!(1997;3;8),
                         time: Time {
                             raw: RawTime {
                                 hours: 16,
@@ -2854,7 +2848,7 @@ mod tests {
                 },
                 Period::Start {
                     start: DateTime {
-                        date: Date(NaiveDate::from_ymd_opt(1997, 3, 8).unwrap()),
+                        date: date!(1997;3;8),
                         time: Time {
                             raw: RawTime {
                                 hours: 20,
@@ -2895,7 +2889,7 @@ mod tests {
             [
                 Period::Start {
                     start: DateTime {
-                        date: Date(NaiveDate::from_ymd_opt(1997, 3, 8).unwrap()),
+                        date: date!(1997;3;8),
                         time: Time {
                             raw: RawTime {
                                 hours: 16,
@@ -2914,7 +2908,7 @@ mod tests {
                 },
                 Period::Start {
                     start: DateTime {
-                        date: Date(NaiveDate::from_ymd_opt(1997, 3, 8).unwrap()),
+                        date: date!(1997;3;8),
                         time: Time {
                             raw: RawTime {
                                 hours: 20,
@@ -2933,7 +2927,7 @@ mod tests {
                 },
                 Period::Explicit {
                     start: DateTime {
-                        date: Date(NaiveDate::from_ymd_opt(1997, 3, 8).unwrap()),
+                        date: date!(1997;3;8),
                         time: Time {
                             raw: RawTime {
                                 hours: 23,
@@ -2944,7 +2938,7 @@ mod tests {
                         },
                     },
                     end: DateTime {
-                        date: Date(NaiveDate::from_ymd_opt(1997, 3, 9).unwrap()),
+                        date: date!(1997;3;9),
                         time: Time {
                             raw: RawTime {
                                 hours: 0,
@@ -3333,7 +3327,7 @@ mod tests {
 
         assert!(params.tz_id.is_none());
         assert!(params.recurrence_identifier_range.is_none());
-        assert_eq!(date, Date(NaiveDate::from_ymd_opt(1996, 4, 1).unwrap()));
+        assert_eq!(date, date!(1996;4;1));
     }
 
     #[test]
@@ -3354,7 +3348,7 @@ mod tests {
         assert_eq!(
             dt,
             DateTime {
-                date: Date(NaiveDate::from_ymd_opt(1996, 1, 20).unwrap()),
+                date: date!(1996;1;20),
                 time: Time {
                     raw: RawTime {
                         hours: 12,

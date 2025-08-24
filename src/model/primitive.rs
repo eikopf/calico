@@ -16,8 +16,6 @@
 
 use std::num::NonZero;
 
-use chrono::NaiveDate;
-
 use super::rrule::RRule;
 
 /// The INTEGER type as defined in RFC 5545 §3.3.8.
@@ -125,7 +123,32 @@ pub struct DateTime<F = TimeFormat> {
 
 /// A DATE value (RFC 5545, §3.3.4).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Date(pub(crate) NaiveDate);
+pub struct Date {
+    pub(crate) year: u16,
+    pub(crate) month: NonZero<u8>,
+    pub(crate) day: NonZero<u8>,
+}
+
+impl Date {
+    /// Constructs a [`Date`] from a year, month (1-indexed), and day (1-indexed). The month may
+    /// not exceed 12, and the day may not exceed 31. The year should not exceed 9999, but this is
+    /// not explicitly checked here.
+    pub const fn from_ymd_opt(year: u16, month: u8, day: u8) -> Option<Self> {
+        if month > 12 || day > 31 {
+            return None;
+        }
+
+        let Some(month) = NonZero::new(month) else {
+            return None;
+        };
+
+        let Some(day) = NonZero::new(day) else {
+            return None;
+        };
+
+        Some(Self { year, month, day })
+    }
+}
 
 /// A TIME value (RFC 5545, §3.3.12).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -870,13 +893,11 @@ macro_rules! utc_offset {
 }
 
 /// Constructs a [`Date`] from input of the form `yyyy;MM;dd`. Will panic if
-/// the given date is invalid according to [`chrono::NaiveDate::from_ymd_opt`].
+/// the given date is invalid according to [`Date::from_ymd_opt`].
 #[macro_export]
 macro_rules! date {
     ($year:expr ; $month:expr ; $day:expr) => {
-        $crate::model::primitive::Date(
-            ::chrono::NaiveDate::from_ymd_opt($year, $month, $day).unwrap(),
-        )
+        $crate::model::primitive::Date::from_ymd_opt($year, $month, $day).unwrap()
     };
 }
 
@@ -897,8 +918,6 @@ macro_rules! time {
 
 #[cfg(test)]
 mod tests {
-    use chrono::Datelike;
-
     use super::*;
 
     #[test]
@@ -921,7 +940,7 @@ mod tests {
         let xmas_2003 = date!(2003;12;25);
         let silvester_1957 = date!(1957;12;31);
 
-        assert_eq!(xmas_2003.0.month(), silvester_1957.0.month());
+        assert_eq!(xmas_2003.month, silvester_1957.month);
     }
 
     #[test]
