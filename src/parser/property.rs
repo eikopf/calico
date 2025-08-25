@@ -16,9 +16,9 @@ use crate::{
         primitive::{
             AlarmAction, AttachValue, CalAddress, ClassValue, CompletionPercentage, DateTime,
             DateTimeOrDate, DateTimeOrDateSeq, Duration, Encoding, FormatType, FreeBusyType, Geo,
-            ImageData, Integer, Language, Method, Period, Priority, RDateSeq, RelationshipType,
-            RequestStatus, Status, Text, ThisAndFuture, TimeTransparency, TriggerRelation, TzId,
-            Uid, Uri, Utc, UtcOffset, Value, ValueType,
+            ImageData, Integer, Language, Method, Period, Priority, ProximityValue, RDateSeq,
+            RelationshipType, RequestStatus, Status, Text, ThisAndFuture, TimeTransparency,
+            TriggerRelation, TzId, Uid, Uri, Utc, UtcOffset, Value, ValueType,
         },
         property::{
             AttachParams, AttendeeParams, ConfParams, DtParams, FBTypeParams, ImageParams,
@@ -33,8 +33,8 @@ use crate::{
         primitive::{
             alarm_action, ascii_lower, cal_address, class_value, color, completion_percentage,
             datetime_utc, duration, float, geo, gregorian, iana_token, integer, method, period,
-            priority, status, status_code, text, time_transparency, tz_id, uid, utc_offset, v2_0,
-            x_name,
+            priority, proximity_value, status, status_code, text, time_transparency, tz_id, uid,
+            utc_offset, v2_0, x_name,
         },
         rrule::rrule,
     },
@@ -142,6 +142,9 @@ pub enum KnownProp<S> {
     Color(Css3Color),
     Image(ImageData<S>, ImageParams<S>),
     Conference(Uri<S>, ConfParams<S>),
+    // RFC 9074 PROPERTIES
+    Acknowledged(DateTime<Utc>),
+    Proximity(ProximityValue<S>),
 }
 
 impl<S> KnownProp<S> {
@@ -149,6 +152,7 @@ impl<S> KnownProp<S> {
         use PropName::*;
         use Rfc5545PropName as PN5545;
         use Rfc7986PropName as PN7986;
+        use Rfc9074PropName as PN9074;
 
         match self {
             KnownProp::CalScale => Rfc5545(PN5545::CalendarScale),
@@ -204,6 +208,8 @@ impl<S> KnownProp<S> {
             KnownProp::Color(..) => Rfc7986(PN7986::Color),
             KnownProp::Image(..) => Rfc7986(PN7986::Image),
             KnownProp::Conference(..) => Rfc7986(PN7986::Conference),
+            KnownProp::Acknowledged(..) => Rfc9074(PN9074::Acknowledged),
+            KnownProp::Proximity(..) => Rfc9074(PN9074::Proximity),
         }
     }
 }
@@ -1791,6 +1797,26 @@ where
                 unknown_params,
             )
         }
+        PropName::Rfc9074(prop @ Rfc9074PropName::Acknowledged) => {
+            let (value, (), (), unknown_params) = parse_property(
+                input,
+                trivial_step(PropName::Rfc9074(prop)),
+                only::<I>(ValueType::DateTime),
+                datetime_utc,
+            )?;
+
+            (Prop::Known(KnownProp::Acknowledged(value)), unknown_params)
+        }
+        PropName::Rfc9074(prop @ Rfc9074PropName::Proximity) => {
+            let (value, (), (), unknown_params) = parse_property(
+                input,
+                trivial_step(PropName::Rfc9074(prop)),
+                only::<I>(ValueType::Text),
+                proximity_value,
+            )?;
+
+            (Prop::Known(KnownProp::Proximity(value)), unknown_params)
+        }
         PropName::Iana(name) => {
             let ((), value_type, params, unknown_params) = parse_property(
                 input,
@@ -1828,12 +1854,12 @@ where
     })
 }
 
-/// A property name, which may be statically known from RFC 5545 or RFC 7986, or
-/// otherwise may be some arbitrary [`iana_token`].
+/// A property name.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PropName<S> {
     Rfc5545(Rfc5545PropName),
     Rfc7986(Rfc7986PropName),
+    Rfc9074(Rfc9074PropName),
     Iana(S),
     X(S),
 }
@@ -1849,6 +1875,7 @@ where
     use PropName::*;
     use Rfc5545PropName as PN5545;
     use Rfc7986PropName as PN7986;
+    use Rfc9074PropName as PN9074;
 
     let checkpoint = input.checkpoint();
 
@@ -1871,7 +1898,12 @@ where
 
         match ascii_lower.parse_next(input)? {
             'a' => match ascii_lower.parse_next(input)? {
-                'c' => tail!("tion", Rfc5545(PN5545::Action)),
+                //'c' => tail!("tion", Rfc5545(PN5545::Action)),
+                'c' => match ascii_lower.parse_next(input)? {
+                    't' => tail!("ion", Rfc5545(PN5545::Action)),
+                    'k' => tail!("nowledged", Rfc9074(PN9074::Acknowledged)),
+                    _ => Err(()),
+                },
                 't' => match preceded(Caseless("t"), ascii_lower).parse_next(input)? {
                     'a' => tail!("ch", Rfc5545(PN5545::Attachment)),
                     'e' => tail!("ndee", Rfc5545(PN5545::Attendee)),
@@ -1939,10 +1971,14 @@ where
                 'e' => {
                     tail!("rcent-complete", Rfc5545(PN5545::PercentComplete))
                 }
-                // PRIORITY | PRODID
+                // PRIORITY | PRODID | PROXIMITY
                 'r' => match ascii_lower.parse_next(input)? {
                     'i' => tail!("ority", Rfc5545(PN5545::Priority)),
-                    'o' => tail!("did", Rfc5545(PN5545::ProductIdentifier)),
+                    'o' => match ascii_lower.parse_next(input)? {
+                        'd' => tail!("id", Rfc5545(PN5545::ProductIdentifier)),
+                        'x' => tail!("imity", Rfc9074(PN9074::Proximity)),
+                        _ => Err(()),
+                    },
                     _ => Err(()),
                 },
                 _ => Err(()),
@@ -2137,6 +2173,14 @@ pub enum Rfc7986PropName {
     Image,
     /// RFC 7986 §5.11 (CONFERENCE)
     Conference,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Rfc9074PropName {
+    /// RFC 9074 §6 (ACKNOWLEDGED)
+    Acknowledged,
+    /// RFC 9074 §8.1 (PROXIMITY)
+    Proximity,
 }
 
 #[cfg(test)]

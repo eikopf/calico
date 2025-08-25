@@ -5,7 +5,7 @@ use std::hash::{BuildHasher, Hash, Hasher, RandomState};
 use hashbrown::{HashTable, hash_table::Entry as TableEntry};
 
 use crate::{
-    model::primitive::UnknownAction,
+    model::primitive::{ProximityValue, UnknownAction},
     parser::{
         error::{CalendarParseError, ComponentKind},
         escaped::{Equiv, LineFoldCaseless},
@@ -787,6 +787,9 @@ pub enum TzRuleKind {
     Daylight,
 }
 
+// TODO: VALARM should admit a tail of the VLOCATION components when the PROXIMITY property is
+// present (RFC 9074 §8).
+
 /// A VALARM component (RFC 5545 §3.6.6).
 #[derive(Debug, Clone)]
 pub enum Alarm<S> {
@@ -794,6 +797,26 @@ pub enum Alarm<S> {
     Display(DisplayAlarm<S>),
     Email(EmailAlarm<S>),
     Other(OtherAlarm<S>),
+}
+
+impl<S> Alarm<S> {
+    pub fn subcomponents(&self) -> &[ExtComponent<S>] {
+        match self {
+            Alarm::Audio(alarm) => alarm.subcomponents(),
+            Alarm::Display(alarm) => alarm.subcomponents(),
+            Alarm::Email(alarm) => alarm.subcomponents(),
+            Alarm::Other(alarm) => alarm.subcomponents(),
+        }
+    }
+
+    pub fn subcomponents_mut(&mut self) -> &mut Vec<ExtComponent<S>> {
+        match self {
+            Alarm::Audio(alarm) => alarm.subcomponents_mut(),
+            Alarm::Display(alarm) => alarm.subcomponents_mut(),
+            Alarm::Email(alarm) => alarm.subcomponents_mut(),
+            Alarm::Other(alarm) => alarm.subcomponents_mut(),
+        }
+    }
 }
 
 macro_rules! dur_rep_accessors {
@@ -812,6 +835,17 @@ macro_rules! dur_rep_accessors {
 #[derive(Debug, Clone)]
 pub struct AudioAlarm<S> {
     props: AudioAlarmTable<S>,
+    subcomponents: Vec<ExtComponent<S>>,
+}
+
+impl<S> AudioAlarm<S> {
+    pub fn subcomponents(&self) -> &[ExtComponent<S>] {
+        &self.subcomponents
+    }
+
+    pub fn subcomponents_mut(&mut self) -> &mut Vec<ExtComponent<S>> {
+        &mut self.subcomponents
+    }
 }
 
 impl<S> AudioAlarm<S>
@@ -825,6 +859,9 @@ where
 
     optional_accessors! {AudioAlarmProp, AudioAlarmPropName;
         [Attach, attachment, attachment_mut, Prop<S, AttachValue<S>, AttachParams<S>>],
+        [Uid, uid, uid_mut, Prop<S, Uid<S>>],
+        [Acknowledged, acknowleded, acknowleded_mut, Prop<S, DateTime<Utc>>],
+        [Proximity, proximity, proximity_mut, Prop<S, ProximityValue<S>>],
     }
 
     dur_rep_accessors!(AudioAlarmProp, AudioAlarmPropName);
@@ -834,6 +871,17 @@ where
 #[derive(Debug, Clone)]
 pub struct DisplayAlarm<S> {
     props: DisplayAlarmTable<S>,
+    subcomponents: Vec<ExtComponent<S>>,
+}
+
+impl<S> DisplayAlarm<S> {
+    pub fn subcomponents(&self) -> &[ExtComponent<S>] {
+        &self.subcomponents
+    }
+
+    pub fn subcomponents_mut(&mut self) -> &mut Vec<ExtComponent<S>> {
+        &mut self.subcomponents
+    }
 }
 
 impl<S> DisplayAlarm<S>
@@ -846,6 +894,12 @@ where
         [Trigger, trigger, trigger_mut, TriggerProp<S>],
     }
 
+    optional_accessors! {DisplayAlarmProp, DisplayAlarmPropName;
+        [Uid, uid, uid_mut, Prop<S, Uid<S>>],
+        [Acknowledged, acknowleded, acknowleded_mut, Prop<S, DateTime<Utc>>],
+        [Proximity, proximity, proximity_mut, Prop<S, ProximityValue<S>>],
+    }
+
     dur_rep_accessors!(DisplayAlarmProp, DisplayAlarmPropName);
 }
 
@@ -853,6 +907,17 @@ where
 #[derive(Debug, Clone)]
 pub struct EmailAlarm<S> {
     props: EmailAlarmTable<S>,
+    subcomponents: Vec<ExtComponent<S>>,
+}
+
+impl<S> EmailAlarm<S> {
+    pub fn subcomponents(&self) -> &[ExtComponent<S>] {
+        &self.subcomponents
+    }
+
+    pub fn subcomponents_mut(&mut self) -> &mut Vec<ExtComponent<S>> {
+        &mut self.subcomponents
+    }
 }
 
 impl<S> EmailAlarm<S>
@@ -864,6 +929,12 @@ where
         [Description, description, description_mut, Prop<S, Text<S>, TextParams<S>>],
         [Trigger, trigger, trigger_mut, TriggerProp<S>],
         [Summary, summary, summary_mut, Prop<S, Text<S>, TextParams<S>>],
+    }
+
+    optional_accessors! {EmailAlarmProp, EmailAlarmPropName;
+        [Uid, uid, uid_mut, Prop<S, Uid<S>>],
+        [Acknowledged, acknowleded, acknowleded_mut, Prop<S, DateTime<Utc>>],
+        [Proximity, proximity, proximity_mut, Prop<S, ProximityValue<S>>],
     }
 
     seq_accessors! {EmailAlarmProp, EmailAlarmPropName;
@@ -878,6 +949,17 @@ where
 #[derive(Debug, Clone)]
 pub struct OtherAlarm<S> {
     props: OtherAlarmTable<S>,
+    subcomponents: Vec<ExtComponent<S>>,
+}
+
+impl<S> OtherAlarm<S> {
+    pub fn subcomponents(&self) -> &[ExtComponent<S>] {
+        &self.subcomponents
+    }
+
+    pub fn subcomponents_mut(&mut self) -> &mut Vec<ExtComponent<S>> {
+        &mut self.subcomponents
+    }
 }
 
 impl<S> OtherAlarm<S>
@@ -891,12 +973,25 @@ where
         [Summary, summary, summary_mut, Prop<S, Text<S>, TextParams<S>>],
     }
 
+    optional_accessors! {OtherAlarmProp, OtherAlarmPropName;
+        [Uid, uid, uid_mut, Prop<S, Uid<S>>],
+        [Acknowledged, acknowleded, acknowleded_mut, Prop<S, DateTime<Utc>>],
+        [Proximity, proximity, proximity_mut, Prop<S, ProximityValue<S>>],
+    }
+
     seq_accessors! {OtherAlarmProp, OtherAlarmPropName;
         [Attendee, attendees, attendees_mut, Prop<S, CalAddress<S>, Box<AttendeeParams<S>>>],
         [Attach, attachments, attachments_mut, Prop<S, AttachValue<S>, AttachParams<S>>],
     }
 
     dur_rep_accessors!(OtherAlarmProp, OtherAlarmPropName);
+}
+
+/// An arbitrary component which may have any properties and subcomponents.
+#[derive(Debug, Clone)]
+pub enum ExtComponent<S> {
+    Iana(OtherComponent<S>),
+    X(OtherComponent<S>),
 }
 
 /// An arbitrary component which may have any properties and subcomponents.
@@ -1197,8 +1292,12 @@ AudioAlarmPropName {
     Trigger(TriggerProp<S>),
 
     // optional fields
+    Uid(Prop<S, Uid<S>>), // RFC 9074 §4
+    Acknowledged(Prop<S, DateTime<Utc>>), // RFC 9074 §6
+    Proximity(Prop<S, ProximityValue<S>>), // RFC 9074 §8.1
     DurRep(Prop<S, Duration>, Prop<S, Integer>), // the product of DURATION and REPEAT
-    Attach(Prop<S, AttachValue<S>, AttachParams<S>>)
+    Attach(Prop<S, AttachValue<S>, AttachParams<S>>),
+    RelatedTo(PropSeq<S, Text<S>, RelTypeParams<S>>) // RFC 9074 §5
 }}
 
 table! {
@@ -1217,7 +1316,11 @@ DisplayAlarmPropName {
     Trigger(TriggerProp<S>),
 
     // optional fields
-    DurRep(Prop<S, Duration>, Prop<S, Integer>) // the product of DURATION and REPEAT
+    Uid(Prop<S, Uid<S>>), // RFC 9074 §4
+    Acknowledged(Prop<S, DateTime<Utc>>), // RFC 9074 §6
+    Proximity(Prop<S, ProximityValue<S>>), // RFC 9074 §8.1
+    DurRep(Prop<S, Duration>, Prop<S, Integer>), // the product of DURATION and REPEAT
+    RelatedTo(PropSeq<S, Text<S>, RelTypeParams<S>>) // RFC 9074 §5
 }}
 
 table! {
@@ -1237,11 +1340,15 @@ EmailAlarmPropName {
     Summary(Prop<S, Text<S>, TextParams<S>>),
 
     // optional fields
+    Uid(Prop<S, Uid<S>>), // RFC 9074 §4
+    Acknowledged(Prop<S, DateTime<Utc>>), // RFC 9074 §6
+    Proximity(Prop<S, ProximityValue<S>>), // RFC 9074 §8.1
     DurRep(Prop<S, Duration>, Prop<S, Integer>), // the product of DURATION and REPEAT
 
     // free multiplicity fields
     Attendee(PropSeq<S, CalAddress<S>, Box<AttendeeParams<S>>>),
-    Attach(PropSeq<S, AttachValue<S>, AttachParams<S>>)
+    Attach(PropSeq<S, AttachValue<S>, AttachParams<S>>),
+    RelatedTo(PropSeq<S, Text<S>, RelTypeParams<S>>) // RFC 9074 §5
 }}
 
 table! {
@@ -1259,13 +1366,17 @@ OtherAlarmPropName {
     Trigger(TriggerProp<S>),
 
     // optional fields
+    Uid(Prop<S, Uid<S>>), // RFC 9074 §4
+    Acknowledged(Prop<S, DateTime<Utc>>), // RFC 9074 §6
+    Proximity(Prop<S, ProximityValue<S>>), // RFC 9074 §8.1
     Description(Prop<S, Text<S>, TextParams<S>>),
     DurRep(Prop<S, Duration>, Prop<S, Integer>), // the product of DURATION and REPEAT
     Summary(Prop<S, Text<S>, TextParams<S>>),
 
     // free multiplicity fields
     Attendee(PropSeq<S, CalAddress<S>, Box<AttendeeParams<S>>>),
-    Attach(PropSeq<S, AttachValue<S>, AttachParams<S>>)
+    Attach(PropSeq<S, AttachValue<S>, AttachParams<S>>),
+    RelatedTo(PropSeq<S, Text<S>, RelTypeParams<S>>) // RFC 9074 §5
 }}
 
 // NOTE: the FreeAlarm* types exist exclusively to manage state during
@@ -1283,16 +1394,23 @@ impl<S> FreeAlarmTable<S>
 where
     S: Hash + PartialEq + Equiv<LineFoldCaseless> + AsRef<[u8]>,
 {
-    pub fn try_into_alarm(mut self) -> Result<Alarm<S>, CalendarParseError<S>> {
+    pub fn try_into_alarm(
+        mut self,
+        subcomponents: Vec<ExtComponent<S>>,
+    ) -> Result<Alarm<S>, CalendarParseError<S>> {
         remove_fields! {self, FreeAlarmProp, FreeAlarmPropName;
-            [let action      =      Action],
-            [let trigger     =     Trigger],
-            [let description = Description],
-            [let duration    =    Duration],
-            [let repeat      =      Repeat],
-            [let summary     =     Summary],
-            [let attendees   =    Attendee],
-            [let attachments =      Attach],
+            [let action      =       Action],
+            [let trigger     =      Trigger],
+            [let description =  Description],
+            [let duration    =     Duration],
+            [let repeat      =       Repeat],
+            [let uid         =          Uid],
+            [let ack         = Acknowledged],
+            [let prox        =    Proximity],
+            [let summary     =      Summary],
+            [let attendees   =     Attendee],
+            [let attachments =       Attach],
+            [let relateds    =    RelatedTo],
         }
 
         // check mandatory fields
@@ -1341,6 +1459,22 @@ where
                     props.insert(Entry::Known(AudioAlarmProp::DurRep(d, r)));
                 }
 
+                if let Some(uid) = uid {
+                    props.insert(Entry::Known(AudioAlarmProp::Uid(uid)));
+                }
+
+                if let Some(ack) = ack {
+                    props.insert(Entry::Known(AudioAlarmProp::Acknowledged(ack)));
+                }
+
+                if let Some(prox) = prox {
+                    props.insert(Entry::Known(AudioAlarmProp::Proximity(prox)));
+                }
+
+                if let Some(relateds) = relateds {
+                    props.insert(Entry::Known(AudioAlarmProp::RelatedTo(relateds)));
+                }
+
                 // insert attachment if single
                 if let Some(mut attachments) = attachments {
                     if attachments.len() == 1 {
@@ -1373,7 +1507,10 @@ where
                     });
                 }
 
-                Ok(Alarm::Audio(AudioAlarm { props }))
+                Ok(Alarm::Audio(AudioAlarm {
+                    props,
+                    subcomponents,
+                }))
             }
             AlarmAction::Display => {
                 let mut props = DisplayAlarmTable::new();
@@ -1404,6 +1541,22 @@ where
                     props.insert(Entry::Known(DisplayAlarmProp::DurRep(d, r)));
                 }
 
+                if let Some(uid) = uid {
+                    props.insert(Entry::Known(DisplayAlarmProp::Uid(uid)));
+                }
+
+                if let Some(ack) = ack {
+                    props.insert(Entry::Known(DisplayAlarmProp::Acknowledged(ack)));
+                }
+
+                if let Some(prox) = prox {
+                    props.insert(Entry::Known(DisplayAlarmProp::Proximity(prox)));
+                }
+
+                if let Some(relateds) = relateds {
+                    props.insert(Entry::Known(DisplayAlarmProp::RelatedTo(relateds)));
+                }
+
                 if summary.is_some() {
                     return Err(CalendarParseError::UnexpectedProp {
                         prop: PropName::Rfc5545(Rfc5545PropName::Summary),
@@ -1425,7 +1578,10 @@ where
                     });
                 }
 
-                Ok(Alarm::Display(DisplayAlarm { props }))
+                Ok(Alarm::Display(DisplayAlarm {
+                    props,
+                    subcomponents,
+                }))
             }
             AlarmAction::Email => {
                 let mut props = EmailAlarmTable::new();
@@ -1470,11 +1626,30 @@ where
                     props.insert(Entry::Known(EmailAlarmProp::DurRep(d, r)));
                 }
 
+                if let Some(uid) = uid {
+                    props.insert(Entry::Known(EmailAlarmProp::Uid(uid)));
+                }
+
+                if let Some(ack) = ack {
+                    props.insert(Entry::Known(EmailAlarmProp::Acknowledged(ack)));
+                }
+
+                if let Some(prox) = prox {
+                    props.insert(Entry::Known(EmailAlarmProp::Proximity(prox)));
+                }
+
                 if let Some(p) = attachments {
                     props.insert(Entry::Known(EmailAlarmProp::Attach(p)));
                 }
 
-                Ok(Alarm::Email(EmailAlarm { props }))
+                if let Some(relateds) = relateds {
+                    props.insert(Entry::Known(EmailAlarmProp::RelatedTo(relateds)));
+                }
+
+                Ok(Alarm::Email(EmailAlarm {
+                    props,
+                    subcomponents,
+                }))
             }
             AlarmAction::Iana(name) => {
                 let mut props = OtherAlarmTable::new();
@@ -1498,6 +1673,18 @@ where
                     props.insert(Entry::Known(OtherAlarmProp::DurRep(d, r)));
                 }
 
+                if let Some(uid) = uid {
+                    props.insert(Entry::Known(OtherAlarmProp::Uid(uid)));
+                }
+
+                if let Some(ack) = ack {
+                    props.insert(Entry::Known(OtherAlarmProp::Acknowledged(ack)));
+                }
+
+                if let Some(prox) = prox {
+                    props.insert(Entry::Known(OtherAlarmProp::Proximity(prox)));
+                }
+
                 if let Some(p) = summary {
                     props.insert(Entry::Known(OtherAlarmProp::Summary(p)));
                 }
@@ -1510,7 +1697,10 @@ where
                     props.insert(Entry::Known(OtherAlarmProp::Attach(p)));
                 }
 
-                Ok(Alarm::Other(OtherAlarm { props }))
+                Ok(Alarm::Other(OtherAlarm {
+                    props,
+                    subcomponents,
+                }))
             }
             AlarmAction::X(name) => {
                 let mut props = OtherAlarmTable::new();
@@ -1534,6 +1724,18 @@ where
                     props.insert(Entry::Known(OtherAlarmProp::DurRep(d, r)));
                 }
 
+                if let Some(uid) = uid {
+                    props.insert(Entry::Known(OtherAlarmProp::Uid(uid)));
+                }
+
+                if let Some(ack) = ack {
+                    props.insert(Entry::Known(OtherAlarmProp::Acknowledged(ack)));
+                }
+
+                if let Some(prox) = prox {
+                    props.insert(Entry::Known(OtherAlarmProp::Proximity(prox)));
+                }
+
                 if let Some(p) = summary {
                     props.insert(Entry::Known(OtherAlarmProp::Summary(p)));
                 }
@@ -1546,7 +1748,10 @@ where
                     props.insert(Entry::Known(OtherAlarmProp::Attach(p)));
                 }
 
-                Ok(Alarm::Other(OtherAlarm { props }))
+                Ok(Alarm::Other(OtherAlarm {
+                    props,
+                    subcomponents,
+                }))
             }
         }
     }
@@ -1562,6 +1767,9 @@ FreeAlarmPropName {
     Trigger(TriggerProp<S>),
 
     // optional fields
+    Uid(Prop<S, Uid<S>>), // RFC 9074 §4
+    Acknowledged(Prop<S, DateTime<Utc>>), // RFC 9074 §6
+    Proximity(Prop<S, ProximityValue<S>>), // RFC 9074 §8.1
     Description(Prop<S, Text<S>, TextParams<S>>),
     Duration(Prop<S, Duration>),
     Repeat(Prop<S, Integer>),
@@ -1569,7 +1777,8 @@ FreeAlarmPropName {
 
     // free multiplicity fields
     Attendee(PropSeq<S, CalAddress<S>, Box<AttendeeParams<S>>>),
-    Attach(PropSeq<S, AttachValue<S>, AttachParams<S>>)
+    Attach(PropSeq<S, AttachValue<S>, AttachParams<S>>),
+    RelatedTo(PropSeq<S, Text<S>, RelTypeParams<S>>) // RFC 9074 §5
 }}
 
 // NOTE: the following is a catch-all type for the properties on iana and

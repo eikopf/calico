@@ -18,8 +18,8 @@ use crate::model::{
         Date, DateTime, DateTimeOrDate, DisplayType, Duration, DurationKind, DurationTime,
         Encoding, FeatureType, Float, FormatType, FreeBusyType, Geo, GeoComponent, Integer,
         IsoWeek, Language, Method, ParticipationRole, ParticipationStatus, Period, Priority,
-        RawTime, RelationshipType, RequestStatusCode, Sign, Status, Text, Time, TimeFormat,
-        TimeTransparency, TriggerRelation, TzId, Uid, Uri, Utc, UtcOffset, ValueType,
+        ProximityValue, RawTime, RelationshipType, RequestStatusCode, Sign, Status, Text, Time,
+        TimeFormat, TimeTransparency, TriggerRelation, TzId, Uid, Uri, Utc, UtcOffset, ValueType,
     },
 };
 
@@ -462,9 +462,29 @@ where
     alt((
         Caseless("SIBLING").value(RelationshipType::Sibling),
         Caseless("PARENT").value(RelationshipType::Parent),
+        Caseless("SNOOZE").value(RelationshipType::Snooze),
         Caseless("CHILD").value(RelationshipType::Child),
         x_name.map(RelationshipType::X),
         iana_token.map(RelationshipType::Iana),
+    ))
+    .parse_next(input)
+}
+
+/// Parses a [`ProximityValue`].
+pub fn proximity_value<I, E>(input: &mut I) -> Result<ProximityValue<I::Slice>, E>
+where
+    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>> + Compare<char>,
+    I::Token: AsChar + Clone,
+    ProximityValue<I::Slice>: Clone,
+    E: ParserError<I>,
+{
+    alt((
+        Caseless("DISCONNECT").value(ProximityValue::Disconnect),
+        Caseless("CONNECT").value(ProximityValue::Connect),
+        Caseless("ARRIVE").value(ProximityValue::Arrive),
+        Caseless("DEPART").value(ProximityValue::Depart),
+        x_name.map(ProximityValue::X),
+        iana_token.map(ProximityValue::Iana),
     ))
     .parse_next(input)
 }

@@ -181,7 +181,7 @@ pub enum Rfc7986ParamName {
     Label,
 }
 
-/// A property parameter name from RFC 5545, RFC 7986, or an arbitrary token.
+/// A property parameter name.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ParamName<S> {
     Rfc5545(Rfc5545ParamName),

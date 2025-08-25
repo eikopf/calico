@@ -15,11 +15,11 @@ use crate::{
     model::{
         component::{
             Alarm, Calendar, CalendarProp, CalendarPropName, CalendarTable, Component, Entry,
-            Event, EventProp, EventPropName, EventTable, FreeAlarmProp, FreeAlarmPropName,
-            FreeAlarmTable, FreeBusy, FreeBusyProp, FreeBusyPropName, FreeBusyTable, Journal,
-            JournalProp, JournalPropName, JournalTable, Key, OffsetProp, OffsetPropName,
-            OffsetTable, OtherComponent, TimeZone, TimeZoneProp, TimeZonePropName, TimeZoneTable,
-            Todo, TodoProp, TodoPropName, TodoTable, TzRule, TzRuleKind,
+            Event, EventProp, EventPropName, EventTable, ExtComponent, FreeAlarmProp,
+            FreeAlarmPropName, FreeAlarmTable, FreeBusy, FreeBusyProp, FreeBusyPropName,
+            FreeBusyTable, Journal, JournalProp, JournalPropName, JournalTable, Key, OffsetProp,
+            OffsetPropName, OffsetTable, OtherComponent, TimeZone, TimeZoneProp, TimeZonePropName,
+            TimeZoneTable, Todo, TodoProp, TodoPropName, TodoTable, TzRule, TzRuleKind,
         },
         primitive::{EventStatus, JournalStatus, Status, TodoStatus},
         property::{EventTerminationProp, Prop, TodoTerminationProp, TriggerProp},
@@ -29,7 +29,8 @@ use crate::{
         escaped::{Equiv, LineFoldCaseless},
         primitive::{ascii_lower, iana_token, x_name},
         property::{
-            KnownProp, Prop as ParserProp, PropName, Rfc5545PropName, Rfc7986PropName, UnknownProp,
+            KnownProp, Prop as ParserProp, PropName, Rfc5545PropName, Rfc7986PropName,
+            Rfc9074PropName, UnknownProp,
         },
     },
 };
@@ -352,7 +353,11 @@ impl<S, F> StateMachine<S, F> {
 /// Parses an [`Event`].
 fn event<I, E>(input: &mut I) -> Result<Event<I::Slice>, E>
 where
-    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>> + Compare<char>,
+    I: StreamIsPartial
+        + Stream
+        + Compare<Caseless<&'static str>>
+        + Compare<Caseless<I::Slice>>
+        + Compare<char>,
     I::Token: AsChar + Clone,
     I::Slice: AsBStr
         + Clone
@@ -563,7 +568,11 @@ where
 /// Parses a [`Todo`].
 fn todo<I, E>(input: &mut I) -> Result<Todo<I::Slice>, E>
 where
-    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>> + Compare<char>,
+    I: StreamIsPartial
+        + Stream
+        + Compare<Caseless<&'static str>>
+        + Compare<Caseless<I::Slice>>
+        + Compare<char>,
     I::Token: AsChar + Clone,
     I::Slice: AsBStr
         + Clone
@@ -1278,7 +1287,11 @@ where
 
 fn alarm<I, E>(input: &mut I) -> Result<Alarm<I::Slice>, E>
 where
-    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>> + Compare<char>,
+    I: StreamIsPartial
+        + Stream
+        + Compare<Caseless<&'static str>>
+        + Compare<Caseless<I::Slice>>
+        + Compare<char>,
     I::Token: AsChar + Clone,
     I::Slice: AsBStr
         + Clone
@@ -1367,11 +1380,23 @@ where
             ParserProp::Known(KnownProp::Repeat(value)) => {
                 once!(Repeat, PropName::Rfc5545(Rfc5545PropName::RepeatCount), value, ())
             },
+            ParserProp::Known(KnownProp::Uid(value)) => {
+                once!(Uid, PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier), value, ())
+            },
+            ParserProp::Known(KnownProp::Acknowledged(value)) => {
+                once!(Acknowledged, PropName::Rfc9074(Rfc9074PropName::Acknowledged), value, ())
+            },
+            ParserProp::Known(KnownProp::Proximity(value)) => {
+                once!(Proximity, PropName::Rfc9074(Rfc9074PropName::Proximity), value, ())
+            },
             ParserProp::Known(KnownProp::Attendee(value, params)) => {
                 seq!(Attendee, value, Box::new(params))
             },
             ParserProp::Known(KnownProp::Attach(value, params)) => {
                 seq!(Attach, value, params)
+            },
+            ParserProp::Known(KnownProp::RelatedTo(value, params)) => {
+                seq!(RelatedTo, value, params)
             },
         }
     }
@@ -1386,18 +1411,69 @@ where
 
     terminated(begin(name), crlf).parse_next(input)?;
     let raw_table = StateMachine::new(step).parse_next(input)?;
+    let subcomponents = repeat(0.., other_with_name).parse_next(input)?;
     terminated(end(name), crlf).parse_next(input)?;
 
-    match raw_table.try_into_alarm() {
+    match raw_table.try_into_alarm(subcomponents) {
         Ok(alarm) => Ok(alarm),
         Err(err) => Err(E::from_external_error(input, err)),
     }
 }
 
+/// A version of [`other`] that handles the BEGIN and END lines.
+fn other_with_name<I, E>(input: &mut I) -> Result<ExtComponent<I::Slice>, E>
+where
+    I: StreamIsPartial
+        + Stream
+        + Compare<Caseless<&'static str>>
+        + Compare<Caseless<I::Slice>>
+        + Compare<char>,
+    I::Token: AsChar + Clone,
+    I::Slice: AsBStr
+        + Clone
+        + PartialEq
+        + Eq
+        + SliceLen
+        + Stream
+        + Equiv<LineFoldCaseless>
+        + AsRef<[u8]>
+        + Hash,
+    <<I as Stream>::Slice as Stream>::Token: AsChar,
+    E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
+{
+    enum Name<S> {
+        Iana(S),
+        X(S),
+    }
+
+    let name = peek(begin(alt((
+        x_name.map(Name::X),
+        iana_token.map(Name::Iana),
+    ))))
+    .parse_next(input)?;
+
+    let constr = match name {
+        Name::Iana(_) => ExtComponent::Iana,
+        Name::X(_) => ExtComponent::X,
+    };
+
+    let component = other(match name {
+        Name::Iana(name) => name,
+        Name::X(name) => name,
+    })
+    .parse_next(input)?;
+
+    Ok(constr(component))
+}
+
 /// Parses an [`OtherComponent`].
 fn other<I, E>(name: I::Slice) -> impl Parser<I, OtherComponent<I::Slice>, E>
 where
-    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>> + Compare<char>,
+    I: StreamIsPartial
+        + Stream
+        + Compare<Caseless<&'static str>>
+        + Compare<Caseless<I::Slice>>
+        + Compare<char>,
     I::Token: AsChar + Clone,
     I::Slice: AsBStr
         + Clone
@@ -1418,13 +1494,11 @@ where
     // here?
 
     move |input: &mut I| {
-        empty
-            .value(OtherComponent {
-                name: name.clone(),
-                props: Default::default(),
-                subcomponents: Default::default(),
-            })
-            .parse_next(input)
+        terminated(begin(literal(Caseless(name.clone()))), crlf).parse_next(input)?;
+        // TODO: parse content lines
+        terminated(end(literal(Caseless(name.clone()))), crlf).parse_next(input)?;
+
+        todo!()
     }
 }
 

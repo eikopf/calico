@@ -426,6 +426,19 @@ pub enum RelationshipType<S> {
     Parent,
     Child,
     Sibling,
+    /// RFC 9074 §7.1.
+    Snooze,
+    Iana(S),
+    X(S),
+}
+
+/// A proximity value (RFC 9074 §8.1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProximityValue<S> {
+    Arrive,
+    Depart,
+    Connect,
+    Disconnect,
     Iana(S),
     X(S),
 }
