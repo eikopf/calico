@@ -4,7 +4,7 @@ description = "A parser, printer, and data model for iCalendar."
 repository = "https://github.com/eikopf/calico"
 keywords = ["icalendar", "ical", "ics", "calendar", "rfc5545"]
 categories = ["date-and-time", "encoding", "parser-implementations"]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 license = "MIT"
 
