@@ -1,7 +1,12 @@
 [package]
 name = "calico"
+description = "A parser, printer, and data model for iCalendar."
+repository = "https://github.com/eikopf/calico"
+keywords = ["icalendar", "ical", "ics", "calendar", "rfc5545"]
+categories = ["date-and-time", "encoding", "parser-implementations"]
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
 
 [dependencies]
 hashbrown = "0.15.5"
