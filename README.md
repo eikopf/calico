@@ -16,6 +16,7 @@
     - [RFC 6638](https://www.rfc-editor.org/rfc/rfc6638)
     - [RFC 6868](https://www.rfc-editor.org/rfc/rfc6868)
     - [RFC 7265](https://www.rfc-editor.org/rfc/rfc7265)
+    - [RFC 7529](https://www.rfc-editor.org/rfc/rfc7529)
     - [RFC 7808](https://www.rfc-editor.org/rfc/rfc7808)
     - [RFC 7953](https://www.rfc-editor.org/rfc/rfc7953)
     - [RFC 8607](https://www.rfc-editor.org/rfc/rfc8607)
