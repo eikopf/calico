@@ -1,3 +1,11 @@
 # `calico`
 
-`calico` is an implementation of the iCalendar data model described in [RFC 5545](https://www.rfc-editor.org/rfc/rfc5545) and [RFC 7986](https://www.rfc-editor.org/rfc/rfc7986), as well as a corresponding parser and printer.
+`calico` is a parser, printer, and data model for the iCalendar format.
+
+# RFC Support
+- Full Support
+    - [RFC 5545](https://www.rfc-editor.org/rfc/rfc5545)
+    - [RFC 7986](https://www.rfc-editor.org/rfc/rfc7986)
+    - [RFC 9074](https://www.rfc-editor.org/rfc/rfc9074)
+- Incomplete Support
+    - [RFC 9073](https://www.rfc-editor.org/rfc/rfc9073)
