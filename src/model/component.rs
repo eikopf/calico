@@ -83,7 +83,7 @@ macro_rules! enum_with_names {
 macro_rules! table {
     ($(#[ $m:meta ])* $name:ident, $value:ident) => {
         $(#[ $m ])*
-        pub struct $name <S> (HashTable<Entry<$value<S>, S>>, RandomState);
+        pub(crate) struct $name <S> (HashTable<Entry<$value<S>, S>>, RandomState);
 
         impl<S> Default for $name <S> {
             fn default() -> Self {
@@ -1017,6 +1017,19 @@ impl<S> OtherComponent<S> {
 
     pub fn subcomponents_mut(&mut self) -> &mut Vec<Component<S>> {
         &mut self.subcomponents
+    }
+}
+
+impl<S> OtherComponent<S>
+where
+    S: Hash + PartialEq + Equiv<LineFoldCaseless> + AsRef<[u8]>,
+{
+    seq_accessors! {AnyProp, AnyPropName;
+        [CalScale, scale, scale_mut, Prop<S, ()>],
+        [Method, method, method_mut, Prop<S, Method<S>>],
+        [ProdId, prod_id, prod_id_mut, Prop<S, Text<S>>],
+        [Version, version, version_mut, Prop<S, ()>],
+        // TODO: finish other accessors
     }
 }
 
