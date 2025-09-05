@@ -14,11 +14,14 @@ use winnow::{
 use crate::{
     model::{
         component::{
-            Alarm, Calendar, Component, Event, ExtComponent, FreeBusy, Journal, Mult,
-            OtherComponent, PropEntry, PropKey, PropertyTable, StaticProp, StaticPropName,
+            Alarm, AlarmActionProp, Calendar, Component, Event, ExtComponent, FreeBusy, Journal,
+            Mult, OtherComponent, PropEntry, PropKey, PropertyTable, StaticProp, StaticPropName,
             StatusProp, TimeZone, Todo, TzRule, TzRuleKind,
         },
-        primitive::{EventStatus, JournalStatus, Status, TodoStatus},
+        primitive::{
+            AlarmAction, AudioAction, DisplayAction, EmailAction, EventStatus, JournalStatus,
+            Status, TodoStatus, UnknownAction,
+        },
         property::{Prop, TriggerProp},
     },
     parser::{
@@ -139,7 +142,7 @@ macro_rules! insert_seq {
     };
 }
 
-/// Instantiates local macros to avoid boilerplate in [`try_insert_once`] and [`insert_seq`].
+/// Instantiates local macros `once` and `seq` to avoid boilerplate in [`try_insert_once`] and [`insert_seq`].
 macro_rules! define_local_helpers {
     ($component:ident, $state:ident, $unknown_params:ident) => {
         macro_rules! once {
@@ -1080,8 +1083,15 @@ where
 
         step_inner! {state, Alarm, prop, unknown_params;
             ParserProp::Known(KnownProp::Action(value)) => {
-                // once!(Action, PropName::Rfc5545(Rfc5545PropName::Action), value, ())
-                todo!()
+                let value = match value {
+                    AlarmAction::Audio => AlarmActionProp::Audio(Prop { value: AudioAction, params: (), unknown_params }),
+                    AlarmAction::Display => AlarmActionProp::Display(Prop { value: DisplayAction, params: (), unknown_params }),
+                    AlarmAction::Email => AlarmActionProp::Email(Prop { value: EmailAction, params: (), unknown_params }),
+                    AlarmAction::Iana(action) => AlarmActionProp::Other(Prop { value: UnknownAction::Iana(action), params: (), unknown_params}),
+                    AlarmAction::X(action) => AlarmActionProp::Other(Prop { value: UnknownAction::X(action), params: (), unknown_params}),
+                };
+
+                try_insert_once!(state, Alarm, Action, PropName::Rfc5545(Rfc5545PropName::Action), value)
             },
             ParserProp::Known(KnownProp::Description(value, params)) => {
                 once!(Description, PropName::Rfc5545(Rfc5545PropName::Description), value, params)
