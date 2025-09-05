@@ -139,6 +139,41 @@ macro_rules! insert_seq {
     };
 }
 
+/// Instantiates local macros to avoid boilerplate in [`try_insert_once`] and [`insert_seq`].
+macro_rules! define_local_helpers {
+    ($component:ident, $state:ident, $unknown_params:ident) => {
+        macro_rules! once {
+            ($name:ident, $long_name:expr, $value:expr, $params:expr) => {
+                try_insert_once!(
+                    $state,
+                    $component,
+                    $name,
+                    $long_name,
+                    Prop {
+                        value: $value,
+                        params: $params,
+                        unknown_params: $unknown_params
+                    },
+                )
+            };
+        }
+
+        macro_rules! seq {
+            ($name:ident, $value:expr, $params:expr) => {
+                insert_seq!(
+                    $state,
+                    $name,
+                    Prop {
+                        value: $value,
+                        params: $params,
+                        unknown_params: $unknown_params,
+                    }
+                )
+            };
+        }
+    };
+}
+
 pub fn calendar<I, E>(input: &mut I) -> Result<Calendar<I::Slice>, E>
 where
     I: StreamIsPartial
@@ -166,35 +201,7 @@ where
     where
         S: Hash + PartialEq + Debug + Equiv<LineFoldCaseless> + AsRef<[u8]>,
     {
-        macro_rules! once {
-            ($name:ident, $long_name:expr, $value:expr, $params:expr) => {
-                try_insert_once!(
-                    state,
-                    Calendar,
-                    $name,
-                    $long_name,
-                    Prop {
-                        value: $value,
-                        params: $params,
-                        unknown_params
-                    },
-                )
-            };
-        }
-
-        macro_rules! seq {
-            ($name:ident, $value:expr, $params:expr) => {
-                insert_seq!(
-                    state,
-                    $name,
-                    Prop {
-                        value: $value,
-                        params: $params,
-                        unknown_params,
-                    }
-                )
-            };
-        }
+        define_local_helpers!(Calendar, state, unknown_params);
 
         step_inner! {state, Calendar, prop, unknown_params;
             ParserProp::Known(KnownProp::ProdId(value)) => {
@@ -374,35 +381,7 @@ where
     where
         S: Hash + PartialEq + Debug + Equiv<LineFoldCaseless> + AsRef<[u8]>,
     {
-        macro_rules! once {
-            ($name:ident, $long_name:expr, $value:expr, $params:expr) => {
-                try_insert_once!(
-                    state,
-                    Event,
-                    $name,
-                    $long_name,
-                    Prop {
-                        value: $value,
-                        params: $params,
-                        unknown_params
-                    },
-                )
-            };
-        }
-
-        macro_rules! seq {
-            ($name:ident, $value:expr, $params:expr) => {
-                insert_seq!(
-                    state,
-                    $name,
-                    Prop {
-                        value: $value,
-                        params: $params,
-                        unknown_params,
-                    }
-                )
-            };
-        }
+        define_local_helpers!(Event, state, unknown_params);
 
         step_inner! {state, Event, prop, unknown_params;
             ParserProp::Known(KnownProp::DtStamp(value)) => {
@@ -571,35 +550,7 @@ where
     where
         S: Hash + PartialEq + Debug + Equiv<LineFoldCaseless> + AsRef<[u8]>,
     {
-        macro_rules! once {
-            ($name:ident, $long_name:expr, $value:expr, $params:expr) => {
-                try_insert_once!(
-                    state,
-                    Todo,
-                    $name,
-                    $long_name,
-                    Prop {
-                        value: $value,
-                        params: $params,
-                        unknown_params
-                    },
-                )
-            };
-        }
-
-        macro_rules! seq {
-            ($name:ident, $value:expr, $params:expr) => {
-                insert_seq!(
-                    state,
-                    $name,
-                    Prop {
-                        value: $value,
-                        params: $params,
-                        unknown_params,
-                    }
-                )
-            };
-        }
+        define_local_helpers!(Todo, state, unknown_params);
 
         step_inner! {state, Todo, prop, unknown_params;
             ParserProp::Known(KnownProp::DtStamp(value)) => {
@@ -768,35 +719,7 @@ where
     where
         S: Hash + PartialEq + Debug + Equiv<LineFoldCaseless> + AsRef<[u8]>,
     {
-        macro_rules! once {
-            ($name:ident, $long_name:expr, $value:expr, $params:expr) => {
-                try_insert_once!(
-                    state,
-                    Journal,
-                    $name,
-                    $long_name,
-                    Prop {
-                        value: $value,
-                        params: $params,
-                        unknown_params
-                    },
-                )
-            };
-        }
-
-        macro_rules! seq {
-            ($name:ident, $value:expr, $params:expr) => {
-                insert_seq!(
-                    state,
-                    $name,
-                    Prop {
-                        value: $value,
-                        params: $params,
-                        unknown_params,
-                    }
-                )
-            };
-        }
+        define_local_helpers!(Journal, state, unknown_params);
 
         step_inner! {state, Journal, prop, unknown_params;
             ParserProp::Known(KnownProp::DtStamp(value)) => {
@@ -924,35 +847,7 @@ where
     where
         S: Hash + PartialEq + Debug + Equiv<LineFoldCaseless> + AsRef<[u8]>,
     {
-        macro_rules! once {
-            ($name:ident, $long_name:expr, $value:expr, $params:expr) => {
-                try_insert_once!(
-                    state,
-                    FreeBusy,
-                    $name,
-                    $long_name,
-                    Prop {
-                        value: $value,
-                        params: $params,
-                        unknown_params
-                    },
-                )
-            };
-        }
-
-        macro_rules! seq {
-            ($name:ident, $value:expr, $params:expr) => {
-                insert_seq!(
-                    state,
-                    $name,
-                    Prop {
-                        value: $value,
-                        params: $params,
-                        unknown_params,
-                    }
-                )
-            };
-        }
+        define_local_helpers!(FreeBusy, state, unknown_params);
 
         step_inner! {state, FreeBusy, prop, unknown_params;
             ParserProp::Known(KnownProp::DtStamp(value)) => {
@@ -1036,7 +931,7 @@ where
         S: Hash + PartialEq + Debug + Equiv<LineFoldCaseless> + AsRef<[u8]>,
     {
         macro_rules! once {
-            ($name:ident, $long_name:expr, $value:expr) => {
+            ($name:ident, $long_name:expr, $value:expr, $params:expr) => {
                 try_insert_once!(
                     state,
                     TimeZone,
@@ -1044,7 +939,7 @@ where
                     $long_name,
                     Prop {
                         value: $value,
-                        params: (),
+                        params: $params,
                         unknown_params
                     },
                 )
@@ -1053,13 +948,13 @@ where
 
         step_inner! {state, TimeZone, prop, unknown_params;
             ParserProp::Known(KnownProp::TzId(value)) => {
-                once!(TzId, PropName::Rfc5545(Rfc5545PropName::TimeZoneIdentifier), value)
+                once!(TzId, PropName::Rfc5545(Rfc5545PropName::TimeZoneIdentifier), value, ())
             },
             ParserProp::Known(KnownProp::LastModified(value)) => {
-                once!(LastModified, PropName::Rfc5545(Rfc5545PropName::LastModified), value)
+                once!(LastModified, PropName::Rfc5545(Rfc5545PropName::LastModified), value, ())
             },
             ParserProp::Known(KnownProp::TzUrl(value)) => {
-                once!(TzUrl, PropName::Rfc5545(Rfc5545PropName::TimeZoneUrl), value)
+                once!(TzUrl, PropName::Rfc5545(Rfc5545PropName::TimeZoneUrl), value, ())
             }
         }
     }
@@ -1071,35 +966,7 @@ where
     where
         S: Hash + PartialEq + Debug + Equiv<LineFoldCaseless> + AsRef<[u8]>,
     {
-        macro_rules! once {
-            ($name:ident, $long_name:expr, $value:expr, $params:expr) => {
-                try_insert_once!(
-                    state,
-                    StandardOrDaylight,
-                    $name,
-                    $long_name,
-                    Prop {
-                        value: $value,
-                        params: $params,
-                        unknown_params
-                    },
-                )
-            };
-        }
-
-        macro_rules! seq {
-            ($name:ident, $value:expr, $params:expr) => {
-                insert_seq!(
-                    state,
-                    $name,
-                    Prop {
-                        value: $value,
-                        params: $params,
-                        unknown_params,
-                    }
-                )
-            };
-        }
+        define_local_helpers!(StandardOrDaylight, state, unknown_params);
 
         step_inner! {state, StandardOrDaylight, prop, unknown_params;
             ParserProp::Known(KnownProp::DtStart(value, params)) => {
@@ -1209,35 +1076,7 @@ where
     where
         S: Hash + PartialEq + Debug + Equiv<LineFoldCaseless> + AsRef<[u8]>,
     {
-        macro_rules! once {
-            ($name:ident, $long_name:expr, $value:expr, $params:expr) => {
-                try_insert_once!(
-                    state,
-                    Alarm,
-                    $name,
-                    $long_name,
-                    Prop {
-                        value: $value,
-                        params: $params,
-                        unknown_params
-                    },
-                )
-            };
-        }
-
-        macro_rules! seq {
-            ($name:ident, $value:expr, $params:expr) => {
-                insert_seq!(
-                    state,
-                    $name,
-                    Prop {
-                        value: $value,
-                        params: $params,
-                        unknown_params,
-                    }
-                )
-            };
-        }
+        define_local_helpers!(Alarm, state, unknown_params);
 
         step_inner! {state, Alarm, prop, unknown_params;
             ParserProp::Known(KnownProp::Action(value)) => {
