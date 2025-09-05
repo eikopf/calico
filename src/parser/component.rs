@@ -14,15 +14,12 @@ use winnow::{
 use crate::{
     model::{
         component::{
-            Alarm, Calendar, CalendarProp, CalendarPropName, CalendarTable, Component, Entry,
-            Event, EventProp, EventPropName, EventTable, ExtComponent, FreeAlarmProp,
-            FreeAlarmPropName, FreeAlarmTable, FreeBusy, FreeBusyProp, FreeBusyPropName,
-            FreeBusyTable, Journal, JournalProp, JournalPropName, JournalTable, Key, OffsetProp,
-            OffsetPropName, OffsetTable, OtherComponent, TimeZone, TimeZoneProp, TimeZonePropName,
-            TimeZoneTable, Todo, TodoProp, TodoPropName, TodoTable, TzRule, TzRuleKind,
+            Alarm, Calendar, Component, Event, ExtComponent, FreeBusy, Journal, Mult,
+            OtherComponent, PropEntry, PropKey, PropertyTable, StaticProp, StaticPropName,
+            StatusProp, TimeZone, Todo, TzRule, TzRuleKind,
         },
         primitive::{EventStatus, JournalStatus, Status, TodoStatus},
-        property::{EventTerminationProp, Prop, TodoTerminationProp, TriggerProp},
+        property::{Prop, TriggerProp},
     },
     parser::{
         error::ComponentKind,
@@ -91,15 +88,32 @@ macro_rules! step_inner {
     };
 }
 
+macro_rules! check_mandatory_fields {
+    ($input:expr, $component:ident; $($field:expr => $prop:expr),* $(,)?) => {
+        $(
+            if $field.is_none() {
+                return Err(E::from_external_error(
+                    $input,
+                    CalendarParseError::MissingProp {
+                        prop: $prop,
+                        component: ComponentKind::$component,
+                    },
+                ));
+            }
+        )*
+    };
+}
+
 macro_rules! try_insert_once {
-    ($state:ident, $component:ident, $key:expr, $name:expr, $ret:expr $(,)?) => {
-        match $state.get($key) {
-            Some(_) => Err(CalendarParseError::UnexpectedProp {
+    ($state:ident, $component:ident, $key:ident, $name:expr, $ret:expr $(,)?) => {
+        match $state.get(PropKey::Static(StaticPropName::$key)) {
+            Some(_) => Err(CalendarParseError::MoreThanOneProp {
                 prop: $name,
                 component: super::error::ComponentKind::$component,
             }),
             None => {
-                let _prev = $state.insert($ret);
+                let entry = StaticProp::$key(Mult::One($ret));
+                let _prev = $state.insert(PropEntry::Static(entry));
                 debug_assert!(_prev.is_none());
                 Ok(())
             }
@@ -108,16 +122,16 @@ macro_rules! try_insert_once {
 }
 
 macro_rules! insert_seq {
-    ($state:ident, $component:ident, $name:ident, $key:expr, $ret:expr $(,)?) => {
-        match $state.get_mut($key) {
-            Some(Entry::Known($component::$name(props))) => {
+    ($state:ident, $name:ident, $ret:expr $(,)?) => {
+        match $state.get_mut(PropKey::Static(StaticPropName::$name)) {
+            Some(PropEntry::Static(StaticProp::$name(Mult::Seq(props)))) => {
                 props.push($ret);
                 Ok(())
             }
             Some(_) => unreachable!(),
             None => {
-                let props = vec![$ret];
-                let entry = Entry::Known($component::$name(props));
+                let props = Mult::Seq(vec![$ret]);
+                let entry = PropEntry::Static(StaticProp::$name(props));
                 $state.insert(entry);
                 Ok(())
             }
@@ -147,7 +161,7 @@ where
 {
     fn step<S>(
         (prop, unknown_params): ParsedProp<S>,
-        state: &mut CalendarTable<S>,
+        state: &mut PropertyTable<S>,
     ) -> Result<(), CalendarParseError<S>>
     where
         S: Hash + PartialEq + Debug + Equiv<LineFoldCaseless> + AsRef<[u8]>,
@@ -157,13 +171,13 @@ where
                 try_insert_once!(
                     state,
                     Calendar,
-                    Key::Known(CalendarPropName::$name),
+                    $name,
                     $long_name,
-                    Entry::Known(CalendarProp::$name(Prop {
+                    Prop {
                         value: $value,
                         params: $params,
                         unknown_params
-                    })),
+                    },
                 )
             };
         }
@@ -172,9 +186,7 @@ where
             ($name:ident, $value:expr, $params:expr) => {
                 insert_seq!(
                     state,
-                    CalendarProp,
                     $name,
-                    Key::Known(CalendarPropName::$name),
                     Prop {
                         value: $value,
                         params: $params,
@@ -241,28 +253,12 @@ where
     dbg![components.len()];
     terminated(end(name), crlf).parse_next(input)?;
 
-    // check mandatory fields
-    if props.get(Key::Known(CalendarPropName::ProdId)).is_none() {
-        return Err(E::from_external_error(
-            input,
-            CalendarParseError::MissingProp {
-                prop: PropName::Rfc5545(Rfc5545PropName::ProductIdentifier),
-                component: ComponentKind::Calendar,
-            },
-        ));
+    check_mandatory_fields! {input, Calendar;
+        props.prod_id() => PropName::Rfc5545(Rfc5545PropName::ProductIdentifier),
+        props.version() => PropName::Rfc5545(Rfc5545PropName::Version),
     }
 
-    if props.get(Key::Known(CalendarPropName::Version)).is_none() {
-        return Err(E::from_external_error(
-            input,
-            CalendarParseError::MissingProp {
-                prop: PropName::Rfc5545(Rfc5545PropName::Version),
-                component: ComponentKind::Calendar,
-            },
-        ));
-    }
-
-    Ok(Calendar { props, components })
+    Ok(Calendar::new(props, components))
 }
 
 /// Parses a [`Component`].
@@ -290,11 +286,11 @@ where
     let kind = peek(begin(comp_kind)).parse_next(input)?;
 
     let result = match kind {
-        CalCompKind::Event => event.map(Into::into).parse_next(input),
-        CalCompKind::Todo => todo.map(Into::into).parse_next(input),
-        CalCompKind::Journal => journal.map(Into::into).parse_next(input),
-        CalCompKind::FreeBusy => free_busy.map(Into::into).parse_next(input),
-        CalCompKind::TimeZone => timezone.map(Into::into).parse_next(input),
+        CalCompKind::Event => event.map(Component::Event).parse_next(input),
+        CalCompKind::Todo => todo.map(Component::Todo).parse_next(input),
+        CalCompKind::Journal => journal.map(Component::Journal).parse_next(input),
+        CalCompKind::FreeBusy => free_busy.map(Component::FreeBusy).parse_next(input),
+        CalCompKind::TimeZone => timezone.map(Component::TimeZone).parse_next(input),
         CalCompKind::Iana(name) => other(name).map(Component::Iana).parse_next(input),
         CalCompKind::X(name) => other(name).map(Component::X).parse_next(input),
     }?;
@@ -373,7 +369,7 @@ where
 {
     fn step<S>(
         (prop, unknown_params): ParsedProp<S>,
-        state: &mut EventTable<S>,
+        state: &mut PropertyTable<S>,
     ) -> Result<(), CalendarParseError<S>>
     where
         S: Hash + PartialEq + Debug + Equiv<LineFoldCaseless> + AsRef<[u8]>,
@@ -383,13 +379,13 @@ where
                 try_insert_once!(
                     state,
                     Event,
-                    Key::Known(EventPropName::$name),
+                    $name,
                     $long_name,
-                    Entry::Known(EventProp::$name(Prop {
+                    Prop {
                         value: $value,
                         params: $params,
                         unknown_params
-                    })),
+                    },
                 )
             };
         }
@@ -398,9 +394,7 @@ where
             ($name:ident, $value:expr, $params:expr) => {
                 insert_seq!(
                     state,
-                    EventProp,
                     $name,
-                    Key::Known(EventPropName::$name),
                     Prop {
                         value: $value,
                         params: $params,
@@ -455,7 +449,9 @@ where
                     status => return Err(CalendarParseError::InvalidEventStatus(status)),
                 };
 
-                once!(Status, PropName::Rfc5545(Rfc5545PropName::Status), value, ())
+                try_insert_once!(state, Event, Status, PropName::Rfc5545(Rfc5545PropName::Status),
+                    StatusProp::Event(Prop { value, params: (), unknown_params }),
+                )
             },
             ParserProp::Known(KnownProp::Summary(value, params)) => {
                 once!(Summary, PropName::Rfc5545(Rfc5545PropName::Summary), value, params)
@@ -476,21 +472,19 @@ where
                 once!(Color, PropName::Rfc7986(Rfc7986PropName::Color), value, ())
             },
             ParserProp::Known(KnownProp::DtEnd(value, params)) => {
-                let prop = EventTerminationProp::End(Prop { value, params, unknown_params });
-                try_insert_once!(state, Event, Key::Known(EventPropName::Termination),
-                    PropName::Rfc5545(Rfc5545PropName::DateTimeEnd),
-                    Entry::Known(EventProp::Termination(prop))
-                )
+                match state.duration() {
+                    Some(_) => Err(CalendarParseError::EventTerminationCollision),
+                    None => once!(DtEnd, PropName::Rfc5545(Rfc5545PropName::DateTimeEnd), value, params),
+                }
             },
             ParserProp::Known(KnownProp::Duration(value)) => {
-                let prop = EventTerminationProp::Duration(Prop { value, params: (), unknown_params });
-                try_insert_once!(state, Event, Key::Known(EventPropName::Termination),
-                    PropName::Rfc5545(Rfc5545PropName::Duration),
-                    Entry::Known(EventProp::Termination(prop))
-                )
+                match state.dt_end() {
+                    Some(_) => Err(CalendarParseError::EventTerminationCollision),
+                    None => once!(Duration, PropName::Rfc5545(Rfc5545PropName::Duration), value, ()),
+                }
             },
             ParserProp::Known(KnownProp::Attach(value, params)) => {
-                seq!(Attach, value, Box::new(params))
+                seq!(Attach, value, params)
             },
             ParserProp::Known(KnownProp::Attendee(value, params)) => {
                 seq!(Attendee, value, Box::new(params))
@@ -541,28 +535,12 @@ where
     let alarms = repeat(0.., alarm).parse_next(input)?;
     terminated(end(name), crlf).parse_next(input)?;
 
-    // check mandatory fields
-    if props.get(Key::Known(EventPropName::DtStamp)).is_none() {
-        return Err(E::from_external_error(
-            input,
-            CalendarParseError::MissingProp {
-                prop: PropName::Rfc5545(Rfc5545PropName::DateTimeStart),
-                component: ComponentKind::Event,
-            },
-        ));
+    check_mandatory_fields! {input, Event;
+        props.dt_stamp() => PropName::Rfc5545(Rfc5545PropName::DateTimeStamp),
+        props.uid() => PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier),
     }
 
-    if props.get(Key::Known(EventPropName::Uid)).is_none() {
-        return Err(E::from_external_error(
-            input,
-            CalendarParseError::MissingProp {
-                prop: PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier),
-                component: ComponentKind::Event,
-            },
-        ));
-    }
-
-    Ok(Event { props, alarms })
+    Ok(Event::new(props, alarms))
 }
 
 /// Parses a [`Todo`].
@@ -588,7 +566,7 @@ where
 {
     fn step<S>(
         (prop, unknown_params): ParsedProp<S>,
-        state: &mut TodoTable<S>,
+        state: &mut PropertyTable<S>,
     ) -> Result<(), CalendarParseError<S>>
     where
         S: Hash + PartialEq + Debug + Equiv<LineFoldCaseless> + AsRef<[u8]>,
@@ -598,13 +576,13 @@ where
                 try_insert_once!(
                     state,
                     Todo,
-                    Key::Known(TodoPropName::$name),
+                    $name,
                     $long_name,
-                    Entry::Known(TodoProp::$name(Prop {
+                    Prop {
                         value: $value,
                         params: $params,
                         unknown_params
-                    })),
+                    },
                 )
             };
         }
@@ -613,9 +591,7 @@ where
             ($name:ident, $value:expr, $params:expr) => {
                 insert_seq!(
                     state,
-                    TodoProp,
                     $name,
-                    Key::Known(TodoPropName::$name),
                     Prop {
                         value: $value,
                         params: $params,
@@ -636,7 +612,7 @@ where
                 once!(Class, PropName::Rfc5545(Rfc5545PropName::Classification), value, ())
             },
             ParserProp::Known(KnownProp::DtCompleted(value)) => {
-                once!(Completed, PropName::Rfc5545(Rfc5545PropName::DateTimeCompleted), value, ())
+                once!(DtCompleted, PropName::Rfc5545(Rfc5545PropName::DateTimeCompleted), value, ())
             },
             ParserProp::Known(KnownProp::Created(value)) => {
                 once!(Created, PropName::Rfc5545(Rfc5545PropName::DateTimeCreated), value, ())
@@ -660,7 +636,7 @@ where
                 once!(Organizer, PropName::Rfc5545(Rfc5545PropName::Organizer), value, Box::new(params))
             },
             ParserProp::Known(KnownProp::PercentComplete(value)) => {
-                once!(Percent, PropName::Rfc5545(Rfc5545PropName::PercentComplete), value, ())
+                once!(PercentComplete, PropName::Rfc5545(Rfc5545PropName::PercentComplete), value, ())
             },
             ParserProp::Known(KnownProp::Priority(value)) => {
                 once!(Priority, PropName::Rfc5545(Rfc5545PropName::Priority), value, ())
@@ -680,7 +656,9 @@ where
                     status => return Err(CalendarParseError::InvalidTodoStatus(status)),
                 };
 
-                once!(Status, PropName::Rfc5545(Rfc5545PropName::Status), value, ())
+                try_insert_once!(state, Todo, Status, PropName::Rfc5545(Rfc5545PropName::Status),
+                    StatusProp::Todo(Prop { value, params: (), unknown_params }),
+                )
             },
             ParserProp::Known(KnownProp::Summary(value, params)) => {
                 once!(Summary, PropName::Rfc5545(Rfc5545PropName::Summary), value, params)
@@ -695,21 +673,19 @@ where
                 once!(Color, PropName::Rfc7986(Rfc7986PropName::Color), value, ())
             },
             ParserProp::Known(KnownProp::DtDue(value, params)) => {
-                let prop = TodoTerminationProp::Due(Prop { value, params, unknown_params });
-                try_insert_once!(state, Todo, Key::Known(TodoPropName::Termination),
-                    PropName::Rfc5545(Rfc5545PropName::DateTimeDue),
-                    Entry::Known(TodoProp::Termination(prop))
-                )
+                match state.duration() {
+                    Some(_) => Err(CalendarParseError::TodoTerminationCollision),
+                    None => once!(DtDue, PropName::Rfc5545(Rfc5545PropName::DateTimeDue), value, params),
+                }
             },
             ParserProp::Known(KnownProp::Duration(value)) => {
-                let prop = TodoTerminationProp::Duration(Prop { value, unknown_params, params: () });
-                try_insert_once!(state, Todo, Key::Known(TodoPropName::Termination),
-                    PropName::Rfc5545(Rfc5545PropName::Duration),
-                    Entry::Known(TodoProp::Termination(prop))
-                )
+                match state.dt_due() {
+                    Some(_) => Err(CalendarParseError::TodoTerminationCollision),
+                    None => once!(Duration, PropName::Rfc5545(Rfc5545PropName::Duration), value, ()),
+                }
             },
             ParserProp::Known(KnownProp::Attach(value, params)) => {
-                seq!(Attach, value, Box::new(params))
+                seq!(Attach, value, params)
             },
             ParserProp::Known(KnownProp::Attendee(value, params)) => {
                 seq!(Attendee, value, Box::new(params))
@@ -760,28 +736,12 @@ where
     let alarms = repeat(0.., alarm).parse_next(input)?;
     terminated(end(name), crlf).parse_next(input)?;
 
-    // check mandatory fields
-    if props.get(Key::Known(TodoPropName::DtStamp)).is_none() {
-        return Err(E::from_external_error(
-            input,
-            CalendarParseError::MissingProp {
-                prop: PropName::Rfc5545(Rfc5545PropName::DateTimeStart),
-                component: ComponentKind::Todo,
-            },
-        ));
+    check_mandatory_fields! {input, Todo;
+        props.dt_stamp() => PropName::Rfc5545(Rfc5545PropName::DateTimeStamp),
+        props.uid() => PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier),
     }
 
-    if props.get(Key::Known(TodoPropName::Uid)).is_none() {
-        return Err(E::from_external_error(
-            input,
-            CalendarParseError::MissingProp {
-                prop: PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier),
-                component: ComponentKind::Todo,
-            },
-        ));
-    }
-
-    Ok(Todo { props, alarms })
+    Ok(Todo::new(props, alarms))
 }
 
 /// Parses a [`Journal`].
@@ -803,7 +763,7 @@ where
 {
     fn step<S>(
         (prop, unknown_params): ParsedProp<S>,
-        state: &mut JournalTable<S>,
+        state: &mut PropertyTable<S>,
     ) -> Result<(), CalendarParseError<S>>
     where
         S: Hash + PartialEq + Debug + Equiv<LineFoldCaseless> + AsRef<[u8]>,
@@ -813,13 +773,13 @@ where
                 try_insert_once!(
                     state,
                     Journal,
-                    Key::Known(JournalPropName::$name),
+                    $name,
                     $long_name,
-                    Entry::Known(JournalProp::$name(Prop {
+                    Prop {
                         value: $value,
                         params: $params,
                         unknown_params
-                    })),
+                    },
                 )
             };
         }
@@ -828,9 +788,7 @@ where
             ($name:ident, $value:expr, $params:expr) => {
                 insert_seq!(
                     state,
-                    JournalProp,
                     $name,
-                    Key::Known(JournalPropName::$name),
                     Prop {
                         value: $value,
                         params: $params,
@@ -876,7 +834,9 @@ where
                     status => return Err(CalendarParseError::InvalidJournalStatus(status)),
                 };
 
-                once!(Status, PropName::Rfc5545(Rfc5545PropName::Status), value, ())
+                try_insert_once!(state, Journal, Status, PropName::Rfc5545(Rfc5545PropName::Status),
+                    StatusProp::Journal(Prop { value, params: (), unknown_params }),
+                )
             },
             ParserProp::Known(KnownProp::Summary(value, params)) => {
                 once!(Summary, PropName::Rfc5545(Rfc5545PropName::Summary), value, params)
@@ -888,7 +848,7 @@ where
                 once!(RRule, PropName::Rfc5545(Rfc5545PropName::RecurrenceRule), Box::new(value), ())
             },
             ParserProp::Known(KnownProp::Attach(value, params)) => {
-                seq!(Attach, value, Box::new(params))
+                seq!(Attach, value, params)
             },
             ParserProp::Known(KnownProp::Attendee(value, params)) => {
                 seq!(Attendee, value, Box::new(params))
@@ -932,28 +892,12 @@ where
     let props = StateMachine::new(step).parse_next(input)?;
     terminated(end(name), crlf).parse_next(input)?;
 
-    // check mandatory fields
-    if props.get(Key::Known(JournalPropName::DtStamp)).is_none() {
-        return Err(E::from_external_error(
-            input,
-            CalendarParseError::MissingProp {
-                prop: PropName::Rfc5545(Rfc5545PropName::DateTimeStart),
-                component: ComponentKind::Journal,
-            },
-        ));
+    check_mandatory_fields! {input, Journal;
+        props.dt_stamp() => PropName::Rfc5545(Rfc5545PropName::DateTimeStamp),
+        props.uid() => PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier),
     }
 
-    if props.get(Key::Known(JournalPropName::Uid)).is_none() {
-        return Err(E::from_external_error(
-            input,
-            CalendarParseError::MissingProp {
-                prop: PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier),
-                component: ComponentKind::Journal,
-            },
-        ));
-    }
-
-    Ok(Journal { props })
+    Ok(Journal::new(props))
 }
 
 /// Parses a [`FreeBusy`].
@@ -975,7 +919,7 @@ where
 {
     fn step<S>(
         (prop, unknown_params): ParsedProp<S>,
-        state: &mut FreeBusyTable<S>,
+        state: &mut PropertyTable<S>,
     ) -> Result<(), CalendarParseError<S>>
     where
         S: Hash + PartialEq + Debug + Equiv<LineFoldCaseless> + AsRef<[u8]>,
@@ -985,13 +929,13 @@ where
                 try_insert_once!(
                     state,
                     FreeBusy,
-                    Key::Known(FreeBusyPropName::$name),
+                    $name,
                     $long_name,
-                    Entry::Known(FreeBusyProp::$name(Prop {
+                    Prop {
                         value: $value,
                         params: $params,
                         unknown_params
-                    })),
+                    },
                 )
             };
         }
@@ -1000,9 +944,7 @@ where
             ($name:ident, $value:expr, $params:expr) => {
                 insert_seq!(
                     state,
-                    FreeBusyProp,
                     $name,
-                    Key::Known(FreeBusyPropName::$name),
                     Prop {
                         value: $value,
                         params: $params,
@@ -1061,28 +1003,12 @@ where
     let props = StateMachine::new(step).parse_next(input)?;
     terminated(end(name), crlf).parse_next(input)?;
 
-    // check mandatory fields
-    if props.get(Key::Known(FreeBusyPropName::DtStamp)).is_none() {
-        return Err(E::from_external_error(
-            input,
-            CalendarParseError::MissingProp {
-                prop: PropName::Rfc5545(Rfc5545PropName::DateTimeStart),
-                component: ComponentKind::FreeBusy,
-            },
-        ));
+    check_mandatory_fields! {input, FreeBusy;
+        props.dt_stamp() => PropName::Rfc5545(Rfc5545PropName::DateTimeStamp),
+        props.uid() => PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier),
     }
 
-    if props.get(Key::Known(FreeBusyPropName::Uid)).is_none() {
-        return Err(E::from_external_error(
-            input,
-            CalendarParseError::MissingProp {
-                prop: PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier),
-                component: ComponentKind::FreeBusy,
-            },
-        ));
-    }
-
-    Ok(FreeBusy { props })
+    Ok(FreeBusy::new(props))
 }
 
 /// Parses a [`TimeZone`].
@@ -1104,7 +1030,7 @@ where
 {
     fn tz_step<S>(
         (prop, unknown_params): ParsedProp<S>,
-        state: &mut TimeZoneTable<S>,
+        state: &mut PropertyTable<S>,
     ) -> Result<(), CalendarParseError<S>>
     where
         S: Hash + PartialEq + Debug + Equiv<LineFoldCaseless> + AsRef<[u8]>,
@@ -1114,13 +1040,13 @@ where
                 try_insert_once!(
                     state,
                     TimeZone,
-                    Key::Known(TimeZonePropName::$name),
+                    $name,
                     $long_name,
-                    Entry::Known(TimeZoneProp::$name(Prop {
+                    Prop {
                         value: $value,
                         params: (),
                         unknown_params
-                    })),
+                    },
                 )
             };
         }
@@ -1140,7 +1066,7 @@ where
 
     fn rule_step<S>(
         (prop, unknown_params): ParsedProp<S>,
-        state: &mut OffsetTable<S>,
+        state: &mut PropertyTable<S>,
     ) -> Result<(), CalendarParseError<S>>
     where
         S: Hash + PartialEq + Debug + Equiv<LineFoldCaseless> + AsRef<[u8]>,
@@ -1150,13 +1076,13 @@ where
                 try_insert_once!(
                     state,
                     StandardOrDaylight,
-                    Key::Known(OffsetPropName::$name),
+                    $name,
                     $long_name,
-                    Entry::Known(OffsetProp::$name(Prop {
+                    Prop {
                         value: $value,
                         params: $params,
                         unknown_params
-                    })),
+                    },
                 )
             };
         }
@@ -1165,9 +1091,7 @@ where
             ($name:ident, $value:expr, $params:expr) => {
                 insert_seq!(
                     state,
-                    OffsetProp,
                     $name,
-                    Key::Known(OffsetPropName::$name),
                     Prop {
                         value: $value,
                         params: $params,
@@ -1234,42 +1158,14 @@ where
         let kind = terminated(begin(rule_kind), crlf).parse_next(input)?;
         let props = StateMachine::new(rule_step).parse_next(input)?;
 
-        // check for mandatory fields
-        if props.get(Key::Known(OffsetPropName::DtStart)).is_none() {
-            return Err(E::from_external_error(
-                input,
-                CalendarParseError::MissingProp {
-                    prop: PropName::Rfc5545(Rfc5545PropName::DateTimeStart),
-                    component: kind.into(),
-                },
-            ));
-        }
-
-        if props.get(Key::Known(OffsetPropName::TzOffsetTo)).is_none() {
-            return Err(E::from_external_error(
-                input,
-                CalendarParseError::MissingProp {
-                    prop: PropName::Rfc5545(Rfc5545PropName::TimeZoneOffsetTo),
-                    component: kind.into(),
-                },
-            ));
-        }
-
-        if props
-            .get(Key::Known(OffsetPropName::TzOffsetFrom))
-            .is_none()
-        {
-            return Err(E::from_external_error(
-                input,
-                CalendarParseError::MissingProp {
-                    prop: PropName::Rfc5545(Rfc5545PropName::TimeZoneOffsetFrom),
-                    component: kind.into(),
-                },
-            ));
+        check_mandatory_fields! {input, StandardOrDaylight;
+            props.dt_start() => PropName::Rfc5545(Rfc5545PropName::DateTimeStart),
+            props.tz_offset_from() => PropName::Rfc5545(Rfc5545PropName::TimeZoneOffsetFrom),
+            props.tz_offset_to() => PropName::Rfc5545(Rfc5545PropName::TimeZoneOffsetTo),
         }
 
         match terminated(end(rule_kind), crlf).parse_next(input)? == kind {
-            true => Ok(TzRule { props, kind }),
+            true => Ok(TzRule::new(props, kind)),
             false => fail.parse_next(input),
         }
     }
@@ -1279,10 +1175,11 @@ where
     let subcomponents = repeat(1.., rule).parse_next(input)?;
     terminated(end(CalCompKind::TimeZone.parser()), crlf).parse_next(input)?;
 
-    Ok(TimeZone {
-        props,
-        subcomponents,
-    })
+    check_mandatory_fields! {input, TimeZone;
+        props.tz_id() => PropName::Rfc5545(Rfc5545PropName::TimeZoneIdentifier),
+    }
+
+    Ok(TimeZone::new(props, subcomponents))
 }
 
 fn alarm<I, E>(input: &mut I) -> Result<Alarm<I::Slice>, E>
@@ -1307,7 +1204,7 @@ where
 {
     fn step<S>(
         (prop, unknown_params): ParsedProp<S>,
-        state: &mut FreeAlarmTable<S>,
+        state: &mut PropertyTable<S>,
     ) -> Result<(), CalendarParseError<S>>
     where
         S: Hash + PartialEq + Debug + Equiv<LineFoldCaseless> + AsRef<[u8]>,
@@ -1317,13 +1214,13 @@ where
                 try_insert_once!(
                     state,
                     Alarm,
-                    Key::Known(FreeAlarmPropName::$name),
+                    $name,
                     $long_name,
-                    Entry::Known(FreeAlarmProp::$name(Prop {
+                    Prop {
                         value: $value,
                         params: $params,
                         unknown_params
-                    })),
+                    },
                 )
             };
         }
@@ -1332,9 +1229,7 @@ where
             ($name:ident, $value:expr, $params:expr) => {
                 insert_seq!(
                     state,
-                    FreeAlarmProp,
                     $name,
-                    Key::Known(FreeAlarmPropName::$name),
                     Prop {
                         value: $value,
                         params: $params,
@@ -1346,30 +1241,35 @@ where
 
         step_inner! {state, Alarm, prop, unknown_params;
             ParserProp::Known(KnownProp::Action(value)) => {
-                once!(Action, PropName::Rfc5545(Rfc5545PropName::Action), value, ())
+                // once!(Action, PropName::Rfc5545(Rfc5545PropName::Action), value, ())
+                todo!()
             },
             ParserProp::Known(KnownProp::Description(value, params)) => {
                 once!(Description, PropName::Rfc5545(Rfc5545PropName::Description), value, params)
             },
             ParserProp::Known(KnownProp::TriggerRelative(value, params)) => {
-                try_insert_once!(state, Alarm, Key::Known(FreeAlarmPropName::Trigger),
-                    PropName::Rfc5545(Rfc5545PropName::Trigger),
-                    Entry::Known(FreeAlarmProp::Trigger(TriggerProp::Relative(Prop {
-                        value,
-                        params,
-                        unknown_params
-                    }))),
-                )
+                // try_insert_once!(state, Alarm, Key::Known(FreeAlarmPropName::Trigger),
+                //     PropName::Rfc5545(Rfc5545PropName::Trigger),
+                //     Entry::Known(FreeAlarmProp::Trigger(TriggerProp::Relative(Prop {
+                //         value,
+                //         params,
+                //         unknown_params
+                //     }))),
+                // )
+
+                todo!()
             },
             ParserProp::Known(KnownProp::TriggerAbsolute(value)) => {
-                try_insert_once!(state, Alarm, Key::Known(FreeAlarmPropName::Trigger),
-                    PropName::Rfc5545(Rfc5545PropName::Trigger),
-                    Entry::Known(FreeAlarmProp::Trigger(TriggerProp::Absolute(Prop {
-                        value,
-                        params: (),
-                        unknown_params
-                    }))),
-                )
+                // try_insert_once!(state, Alarm, Key::Known(FreeAlarmPropName::Trigger),
+                //     PropName::Rfc5545(Rfc5545PropName::Trigger),
+                //     Entry::Known(FreeAlarmProp::Trigger(TriggerProp::Absolute(Prop {
+                //         value,
+                //         params: (),
+                //         unknown_params
+                //     }))),
+                // )
+
+                todo!()
             },
             ParserProp::Known(KnownProp::Summary(value, params)) => {
                 once!(Summary, PropName::Rfc5545(Rfc5545PropName::Summary), value, params)
@@ -1639,6 +1539,7 @@ mod tests {
     use crate::{
         date,
         model::{
+            component::EventTerminationRef,
             primitive::{
                 AttachValue, AudioAction, CalAddress, ClassValue, DateTime, DisplayAction,
                 Duration, DurationKind, DurationTime, EmailAction, FormatType, Local, Period, Sign,
@@ -1706,7 +1607,7 @@ mod tests {
 
         assert_eq!(
             event.termination(),
-            Some(&EventTerminationProp::End(Prop::from_value(
+            Some(EventTerminationRef::End(&Prop::from_value(
                 DateTime {
                     date: date!(1997;9;3),
                     time: time!(19;00;00, Utc),
@@ -2059,7 +1960,7 @@ mod tests {
 
         // properties
 
-        let tz_id = tz.id().unwrap();
+        let tz_id = tz.id();
         let last_modified = tz.last_modified().unwrap();
         let tz_url = tz.url();
 

@@ -5,9 +5,9 @@ use crate::parser::parameter::ParamValue;
 use super::{
     parameter::UnknownParam,
     primitive::{
-        CalAddress, CalendarUserType, DateTime, DateTimeOrDate, DisplayType, Duration, FeatureType,
-        FormatType, FreeBusyType, Language, ParticipationRole, ParticipationStatus,
-        RelationshipType, ThisAndFuture, TriggerRelation, TzId, Uri, Utc,
+        CalAddress, CalendarUserType, DateTime, DisplayType, Duration, FeatureType, FormatType,
+        FreeBusyType, Language, ParticipationRole, ParticipationStatus, RelationshipType,
+        ThisAndFuture, TriggerRelation, TzId, Uri, Utc,
     },
 };
 
@@ -30,18 +30,6 @@ impl<S, V, P> Prop<S, V, P> {
             unknown_params: Default::default(),
         }
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum EventTerminationProp<S> {
-    End(Prop<S, DateTimeOrDate, DtParams<S>>),
-    Duration(Prop<S, Duration>),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TodoTerminationProp<S> {
-    Due(Prop<S, DateTimeOrDate, DtParams<S>>),
-    Duration(Prop<S, Duration>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

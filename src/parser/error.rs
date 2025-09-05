@@ -67,6 +67,14 @@ pub enum CalendarParseError<S> {
     InvalidEventStatus(Status),
     InvalidTodoStatus(Status),
     InvalidJournalStatus(Status),
+    MoreThanOneProp {
+        prop: PropName<S>,
+        component: ComponentKind<S>,
+    },
+    /// Both DTEND and DURATION occurred in the same VEVENT.
+    EventTerminationCollision,
+    /// Both DTDUE and DURATION occurred in the same VTODO.
+    TodoTerminationCollision,
 }
 
 /// A component kind, including the static subcomponents.
