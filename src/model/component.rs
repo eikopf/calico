@@ -18,7 +18,7 @@ use super::{
     parameter::KnownParam,
     primitive::{
         AttachValue, AudioAction, CalAddress, ClassValue, CompletionPercentage, DateTime,
-        DateTimeOrDate, DateTimeOrDateSeq, DisplayAction, Duration, EmailAction, EventStatus, Geo,
+        DateTimeOrDate, DisplayAction, Duration, EmailAction, EventStatus, ExDateSeq, Geo,
         ImageData, Integer, JournalStatus, Method, Period, Priority, RDateSeq, RequestStatus,
         Status, Text, TimeTransparency, TodoStatus, TzId, Uid, Uri, Utc, UtcOffset, Value,
     },
@@ -237,17 +237,25 @@ where
     }
 
     pub fn termination(&self) -> Option<EventTerminationRef<'_, S>> {
-        todo!()
+        self.end()
+            .map(EventTerminationRef::End)
+            .or_else(|| self.duration().map(EventTerminationRef::Duration))
     }
 
     pub fn termination_mut(&mut self) -> Option<EventTerminationMut<'_, S>> {
-        todo!()
+        if self.end().is_some() {
+            self.end_mut().map(EventTerminationMut::End)
+        } else if self.duration().is_some() {
+            self.duration_mut().map(EventTerminationMut::Duration)
+        } else {
+            None
+        }
     }
-
-    // TODO: write termination and termination_mut accessors for (DTEND xor DURATION)
 
     optional_accessors! {
         [DtStart, start, start_mut, Prop<S, DateTimeOrDate, DtParams<S>>],
+        [DtEnd, end, end_mut, Prop<S, DateTimeOrDate, DtParams<S>>],
+        [Duration, duration, duration_mut, Prop<S, Duration>],
         [Class, class, class_mut, Prop<S, ClassValue<S>>],
         [Created, created, created_mut, Prop<S, DateTime<Utc>>],
         [Description, description, description_mut, Prop<S, Text<S>, TextParams<S>>],
@@ -271,7 +279,7 @@ where
         [Comment, comments, comments_mut, Prop<S, Text<S>, TextParams<S>>],
         [Contact, contacts, contacts_mut, Prop<S, Text<S>, TextParams<S>>],
         [RRule, rrule, rrule_mut, Prop<S, Box<RRule>>],
-        [ExDate, exception_dates, exception_dates_mut, Prop<S, DateTimeOrDateSeq, DtParams<S>>],
+        [ExDate, exception_dates, exception_dates_mut, Prop<S, ExDateSeq, DtParams<S>>],
         [RequestStatus, request_statuses, request_statuses_mut, Prop<S, RequestStatus<S>, LangParams<S>>],
         [RelatedTo, relateds, relateds_mut, Prop<S, Text<S>, RelTypeParams<S>>],
         [Resources, resources, resources_mut, Prop<S, Box<[Text<S>]>, TextParams<S>>],
@@ -344,14 +352,20 @@ where
     }
 
     pub fn termination(&self) -> Option<TodoTerminationRef<'_, S>> {
-        todo!()
+        self.due()
+            .map(TodoTerminationRef::Due)
+            .or_else(|| self.duration().map(TodoTerminationRef::Duration))
     }
 
     pub fn termination_mut(&mut self) -> Option<TodoTerminationMut<'_, S>> {
-        todo!()
+        if self.due().is_some() {
+            self.due_mut().map(TodoTerminationMut::Due)
+        } else if self.duration().is_some() {
+            self.duration_mut().map(TodoTerminationMut::Duration)
+        } else {
+            None
+        }
     }
-
-    // TODO: write termination and termination_mut accessors for (DTDUE xor DURATION)
 
     optional_accessors! {
         [Class, class, class_mut, Prop<S, ClassValue<S>>],
@@ -381,7 +395,7 @@ where
         [Comment, comments, comments_mut, Prop<S, Text<S>, TextParams<S>>],
         [Contact, contacts, contacts_mut, Prop<S, Text<S>, TextParams<S>>],
         [RRule, rrule, rrule_mut, Prop<S, Box<RRule>>],
-        [ExDate, exception_dates, exception_dates_mut, Prop<S, DateTimeOrDateSeq, DtParams<S>>],
+        [ExDate, exception_dates, exception_dates_mut, Prop<S, ExDateSeq, DtParams<S>>],
         [RequestStatus, request_statuses, request_statuses_mut, Prop<S, RequestStatus<S>, LangParams<S>>],
         [RelatedTo, relateds, relateds_mut, Prop<S, Text<S>, RelTypeParams<S>>],
         [Resources, resources, resources_mut, Prop<S, Box<[Text<S>]>, TextParams<S>>],
@@ -736,7 +750,7 @@ where
         [Comment, comments, comments_mut, Prop<S, Text<S>, TextParams<S>>],
         [Contact, contacts, contacts_mut, Prop<S, Text<S>, TextParams<S>>],
         [Description, descriptions, descriptions_mut, Prop<S, Text<S>, TextParams<S>>],
-        [ExDate, exception_dates, exception_dates_mut, Prop<S, DateTimeOrDateSeq, DtParams<S>>],
+        [ExDate, exception_dates, exception_dates_mut, Prop<S, ExDateSeq, DtParams<S>>],
         [RelatedTo, relateds, relateds_mut, Prop<S, Text<S>, RelTypeParams<S>>],
         [RDate, recurrence_dates, recurrence_dates_mut, Prop<S, RDateSeq, DtParams<S>>],
         [RequestStatus, request_statuses, request_statuses_mut, Prop<S, RequestStatus<S>, LangParams<S>>],
@@ -890,6 +904,14 @@ impl<S> OtherComponent<S> {
         &mut self.name
     }
 
+    pub const fn props(&self) -> &PropertyTable<S> {
+        &self.props
+    }
+
+    pub const fn props_mut(&mut self) -> &mut PropertyTable<S> {
+        &mut self.props
+    }
+
     pub const fn subcomponents(&self) -> &[OtherComponent<S>] {
         self.subcomponents.as_slice()
     }
@@ -986,14 +1008,27 @@ impl<S> PropertyTable<S> {
         [Method, method, method_mut, Prop<S, Method<S>>],
         [ProdId, prod_id, prod_id_mut, Prop<S, Text<S>>],
         [Version, version, version_mut, Prop<S, ()>],
-
+        // DESCRIPTIVE COMPONENT PROPERTIES
+        [Attach, attachment, attachment_mut, Prop<S, AttachValue<S>, AttachParams<S>>],
+        [Categories, categories, categories_mut, Prop<S, Box<[Text<S>]>, LangParams<S>>],
+        [Class, class, class_mut, Prop<S, ClassValue<S>>],
+        [Comment, comment, comment_mut, Prop<S, Text<S>, TextParams<S>>],
+        [Description, description, description_mut, Prop<S, Text<S>, TextParams<S>>],
+        [Geo, geo, geo_mut, Prop<S, Geo>],
+        [Location, location, location_mut, Prop<S, Text<S>, TextParams<S>>],
+        [PercentComplete, percent_complete, percent_complete_mut, Prop<S, CompletionPercentage>],
+        [Priority, priority, priority_mut, Prop<S, Priority>],
+        [Resources, resources, resources_mut, Prop<S, Box<[Text<S>]>, TextParams<S>>],
+        [Status, status, status_mut, StatusProp<S>],
+        [Summary, summary, summary_mut, Prop<S, Text<S>, TextParams<S>>],
         // DATE AND TIME COMPONENT PROPERTIES
         [DtCompleted, dt_completed, dt_completed_mut, Prop<S, DateTime<Utc>>],
         [DtEnd, dt_end, dt_end_mut, Prop<S, DateTimeOrDate, DtParams<S>>],
         [DtDue, dt_due, dt_due_mut, Prop<S, DateTimeOrDate, DtParams<S>>],
         [DtStart, dt_start, dt_start_mut, Prop<S, DateTimeOrDate, DtParams<S>>],
         [Duration, duration, duration_mut, Prop<S, Duration>],
-
+        [FreeBusy, free_busy, free_busy_mut, Prop<S, Box<[Period]>, FBTypeParams<S>>],
+        [Transp, time_transparency, time_transparency_mut, Prop<S, TimeTransparency>],
         // TIME ZONE COMPONENT PROPERTIES
         [TzId, tz_id, tz_id_mut, Prop<S, TzId<S>>],
         [TzName, tz_name, tz_name_mut, Prop<S, Text<S>, LangParams<S>>],
@@ -1001,10 +1036,38 @@ impl<S> PropertyTable<S> {
         [TzOffsetTo, tz_offset_to, tz_offset_to_mut, Prop<S, UtcOffset>],
         [TzUrl, tz_url, tz_url_mut, Prop<S, Uri<S>>],
         // RELATIONSHIP COMPONENT PROPERTIES
+        [Attendee, attendee, attendee_mut, Prop<S, CalAddress<S>, Box<AttendeeParams<S>>>],
+        [Contact, contact, contact_mut, Prop<S, Text<S>, TextParams<S>>],
+        [Organizer, organizer, organizer_mut, Prop<S, CalAddress<S>, Box<OrganizerParams<S>>>],
+        [RecurId, recurrence_id, recurrence_id_mut, Prop<S, DateTimeOrDate, RecurrenceIdParams<S>>],
+        [RelatedTo, related_to, related_to_mut, Prop<S, Text<S>, RelTypeParams<S>>],
+        [Url, url, url_mut, Prop<S, Uri<S>>],
         [Uid, uid, uid_mut, Prop<S, Uid<S>>],
-
+        // RECURRENCE COMPONENT PROPERTIES
+        [ExDate, exception_dates, exception_dates_mut, Prop<S, ExDateSeq, DtParams<S>>],
+        [RDate, recurrence_dates, recurrence_dates_mut, Prop<S, RDateSeq, DtParams<S>>],
+        [RRule, rrule, rrule_mut, Prop<S, Box<RRule>>],
+        // ALARM COMPONENT PROPERTIES
+        [Action, alarm_action, alarm_action_mut, AlarmActionProp<S>],
+        [Repeat, repeat, repeat_mut, Prop<S, Integer>],
+        [Trigger, trigger, trigger_mut, TriggerProp<S>],
         // CHANGE MANAGEMENT COMPONENT PROPERTIES
+        [Created, created, created_mut, Prop<S, DateTime<Utc>>],
         [DtStamp, dt_stamp, dt_stamp_mut, Prop<S, DateTime<Utc>>],
+        [LastModified, last_modified, last_modified_mut, Prop<S, DateTime<Utc>>],
+        [Sequence, sequence, sequence_mut, Prop<S, Integer>],
+        // MISCELLANEOUS COMPONENT PROPERTIES
+        [RequestStatus, request_status, request_status_mut, Prop<S, RequestStatus<S>, LangParams<S>>],
+        // RFC 7986 PROPERTIES
+        [Name, name, name_mut, Prop<S, Text<S>, TextParams<S>>],
+        [RefreshInterval, refresh_interval, refresh_interval_mut, Prop<S, Duration>],
+        [Source, source, source_mut, Prop<S, Uri<S>>],
+        [Color, color, color_mut, Prop<S, Css3Color>],
+        [Image, image, image_mut, Prop<S, ImageData<S>, ImageParams<S>>],
+        [Conference, conference, conference_mut, Prop<S, Uri<S>, ConfParams<S>>],
+        // RFC 9074 PROPERTIES
+        [Acknowledged, acknowledged, acknowledged_mut, Prop<S, DateTime<Utc>>],
+        [Proximity, proximity, proximity_mut, Prop<S, ProximityValue<S>>],
     }
 
     /// Returns an empty table; does not allocate.
@@ -1190,6 +1253,32 @@ impl<T> Mult<T> {
             Some(v)
         } else {
             None
+        }
+    }
+
+    /// Moves any value in [`Mult::One`] to [`Mult::Seq`] by allocating a new vector.
+    pub fn seq_in_place(&mut self) {
+        if let Mult::One(_) = self {
+            let vec = Mult::Seq(Vec::with_capacity(1));
+            let Mult::One(value) = std::mem::replace(self, vec) else {
+                unreachable!()
+            };
+            self.as_seq_mut().unwrap().push(value);
+        }
+    }
+
+    /// Tries to convert `self` into a [`Mult::One`]. If `self` is a [`Mult::Seq`] with a number of
+    /// elements other than 1, this fails, and the number of elements is returned.
+    pub fn one_in_place(&mut self) -> Result<(), usize> {
+        match self {
+            Mult::One(_) => Ok(()),
+            Mult::Seq(items) if items.len() != 1 => Err(items.len()),
+            Mult::Seq(items) => {
+                let item = items.pop().unwrap();
+                debug_assert!(items.is_empty());
+                let _vec = std::mem::replace(self, Mult::One(item));
+                Ok(())
+            }
         }
     }
 }
@@ -1420,7 +1509,7 @@ StaticPropName {
     Version(Mult<Prop<S, ()>>),
     // DESCRIPTIVE COMPONENT PROPERTIES
     Attach(Mult<Prop<S, AttachValue<S>, AttachParams<S>>>),
-    Categories(Mult<Prop<S, Box<[Text<S>]>, LangParams<S>>>),
+    Categories(Mult<Prop<S, Box<[Text<S>]>, LangParams<S>>>), // TODO: change Box<[_]> to Vec<_>
     Class(Mult<Prop<S, ClassValue<S>>>),
     Comment(Mult<Prop<S, Text<S>, TextParams<S>>>),
     Description(Mult<Prop<S, Text<S>, TextParams<S>>>),
@@ -1428,7 +1517,7 @@ StaticPropName {
     Location(Mult<Prop<S, Text<S>, TextParams<S>>>),
     PercentComplete(Mult<Prop<S, CompletionPercentage>>),
     Priority(Mult<Prop<S, Priority>>),
-    Resources(Mult<Prop<S, Box<[Text<S>]>, TextParams<S>>>),
+    Resources(Mult<Prop<S, Box<[Text<S>]>, TextParams<S>>>), // TODO: change Box<[_]> to Vec<_>
     Status(Mult<StatusProp<S>>),
     Summary(Mult<Prop<S, Text<S>, TextParams<S>>>),
     // DATE AND TIME COMPONENT PROPERTIES
@@ -1437,7 +1526,7 @@ StaticPropName {
     DtDue(Mult<Prop<S, DateTimeOrDate, DtParams<S>>>),
     DtStart(Mult<Prop<S, DateTimeOrDate, DtParams<S>>>),
     Duration(Mult<Prop<S, Duration>>),
-    FreeBusy(Mult<Prop<S, Box<[Period]>, FBTypeParams<S>>>),
+    FreeBusy(Mult<Prop<S, Box<[Period]>, FBTypeParams<S>>>), // TODO: change Box<[_]> to Vec<_>
     Transp(Mult<Prop<S, TimeTransparency>>),
     // TIME ZONE COMPONENT PROPERTIES
     TzId(Mult<Prop<S, TzId<S>>>),
@@ -1454,7 +1543,7 @@ StaticPropName {
     Url(Mult<Prop<S, Uri<S>>>),
     Uid(Mult<Prop<S, Uid<S>>>),
     // RECURRENCE COMPONENT PROPERTIES
-    ExDate(Mult<Prop<S, DateTimeOrDateSeq, DtParams<S>>>),
+    ExDate(Mult<Prop<S, ExDateSeq, DtParams<S>>>),
     RDate(Mult<Prop<S, RDateSeq, DtParams<S>>>),
     RRule(Mult<Prop<S, Box<RRule>>>),
     // ALARM COMPONENT PROPERTIES
@@ -1480,30 +1569,12 @@ StaticPropName {
     Proximity(Mult<Prop<S, ProximityValue<S>>>) // RFC 9074 §8.1
 }}
 
-macro_rules! get_fields {
-    ($this:ident; $([$name:ident = $field:ident]),* $(,)?) => {
-        $(
-            let $name =
-                $this.get(PropKey::Static(StaticPropName::$field))
-                    .map(|entry| match entry {
-                        PropEntry::Static(StaticProp::$field(x)) => x,
-                        _ => unreachable!(),
-                    });
-        )*
-    };
-}
-
-// TODO: finish refactoring this function to use PropertyTable. note that since the input is
-// already a property table, there's no point in removing and replacing fields: we just need
-// to check for the existence and multiplicity of certain fields before selecting one of the
-// alarm wrapper types based on the action and returning it
-
 impl<S> PropertyTable<S>
 where
     S: Hash + Equiv<LineFoldCaseless> + AsRef<[u8]>,
 {
-    pub fn try_into_alarm(
-        self,
+    pub(crate) fn try_into_alarm(
+        mut self,
         subcomponents: Vec<ExtComponent<S>>,
     ) -> Result<Alarm<S>, CalendarParseError<S>> {
         macro_rules! one {
@@ -1535,370 +1606,104 @@ where
             };
         }
 
-        get_fields! {self;
-            [  action =       Action],
-            [ trigger =      Trigger],
-            [    desc =  Description],
-            [     dur =     Duration],
-            [  repeat =       Repeat],
-            [     uid =          Uid],
-            [     ack = Acknowledged],
-            [    prox =    Proximity],
-            [ summary =      Summary],
-            [  attend =     Attendee],
-            [  attach =       Attach],
-            [ related =    RelatedTo],
-        }
+        // get references to fields that need to be inspected
+        let action = one!(
+            self.alarm_action(),
+            PropName::Rfc5545(Rfc5545PropName::Action)
+        )?;
+        let duration = zero_or_one!(
+            self.duration(),
+            PropName::Rfc5545(Rfc5545PropName::Duration)
+        )?;
+        let repeat = zero_or_one!(
+            self.repeat(),
+            PropName::Rfc5545(Rfc5545PropName::RepeatCount)
+        )?;
 
-        let action = one!(action, PropName::Rfc5545(Rfc5545PropName::Action))?;
-        let trigger = one!(trigger, PropName::Rfc5545(Rfc5545PropName::Trigger))?;
-        let dur = zero_or_one!(dur, PropName::Rfc5545(Rfc5545PropName::Duration))?;
-        let repeat = zero_or_one!(repeat, PropName::Rfc5545(Rfc5545PropName::RepeatCount))?;
-        let uid = zero_or_one!(uid, PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier))?;
-        let ack = zero_or_one!(ack, PropName::Rfc9074(Rfc9074PropName::Acknowledged))?;
-        let prox = zero_or_one!(prox, PropName::Rfc9074(Rfc9074PropName::Proximity))?;
+        // check multiplicities for other fields as necessary
+        let _ = one!(self.trigger(), PropName::Rfc5545(Rfc5545PropName::Trigger))?;
+        let _ = zero_or_one!(
+            self.uid(),
+            PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier)
+        )?;
+        let _ = zero_or_one!(
+            self.acknowledged(),
+            PropName::Rfc9074(Rfc9074PropName::Acknowledged)
+        )?;
+        let _ = zero_or_one!(
+            self.proximity(),
+            PropName::Rfc9074(Rfc9074PropName::Proximity)
+        )?;
 
-        // TODO: how are we handling multiple props with Mult (here for related)? do
-        // we reallocate, or should Mult handle that internally?
+        // check that duration and repeat occur together
+        let () = match (duration, repeat) {
+            (Some(_), Some(_)) => Ok(()),
+            (None, None) => Ok(()),
+            (None, Some(_)) => Err(CalendarParseError::RepeatWithoutDuration),
+            (Some(_), None) => Err(CalendarParseError::DurationWithoutRepeat),
+        }?;
 
-        match action {
-            AlarmActionProp::Audio(_) => todo!(),
-            AlarmActionProp::Display(_) => todo!(),
-            AlarmActionProp::Email(_) => todo!(),
-            AlarmActionProp::Other(_) => todo!(),
-        }
+        Ok(match action {
+            AlarmActionProp::Audio(_) => {
+                // props: attachments (0-1)
+
+                let () = match self.attachment_mut().map(Mult::one_in_place) {
+                    Some(Ok(())) | None => Ok(()),
+                    Some(Err(_)) => Err(CalendarParseError::TooManyAttachmentsOnAudioAlarm),
+                }?;
+
+                Alarm::Audio(AudioAlarm {
+                    props: self,
+                    subcomponents,
+                })
+            }
+            AlarmActionProp::Display(_) => {
+                // props: description (1)
+
+                let _ = one!(
+                    self.description(),
+                    PropName::Rfc5545(Rfc5545PropName::Description)
+                )?;
+
+                Alarm::Display(DisplayAlarm {
+                    props: self,
+                    subcomponents,
+                })
+            }
+            AlarmActionProp::Email(_) => {
+                // props: description (1), summary (1), attendees (1+)
+
+                let _ = one!(
+                    self.description(),
+                    PropName::Rfc5545(Rfc5545PropName::Description)
+                )?;
+                let _ = one!(self.summary(), PropName::Rfc5545(Rfc5545PropName::Summary))?;
+
+                // check for one or more attendees
+                let () = match self.attendee_mut() {
+                    Some(Mult::Seq(xs)) if !xs.is_empty() => Ok(()),
+                    Some(prop @ Mult::One(_)) => {
+                        prop.seq_in_place();
+                        Ok(())
+                    }
+                    _ => Err(CalendarParseError::MissingProp {
+                        prop: PropName::Rfc5545(Rfc5545PropName::Attendee),
+                        component: ComponentKind::EmailAlarm,
+                    }),
+                }?;
+
+                Alarm::Email(EmailAlarm {
+                    props: self,
+                    subcomponents,
+                })
+            }
+            AlarmActionProp::Other(_) => Alarm::Other(OtherAlarm {
+                props: self,
+                subcomponents,
+            }),
+        })
     }
 }
-
-// impl<S> PropertyTable<S>
-// where
-//     S: Hash + Equiv<LineFoldCaseless> + AsRef<[u8]>,
-// {
-//     pub fn try_into_alarm(
-//         mut self,
-//         subcomponents: Vec<ExtComponent<S>>,
-//     ) -> Result<Alarm<S>, CalendarParseError<S>> {
-//         remove_fields! {self;
-//             [let action      =       Action],
-//             [let trigger     =      Trigger],
-//             [let description =  Description],
-//             [let duration    =     Duration],
-//             [let repeat      =       Repeat],
-//             [let uid         =          Uid],
-//             [let ack         = Acknowledged],
-//             [let prox        =    Proximity],
-//             [let summary     =      Summary],
-//             [let attendees   =     Attendee],
-//             [let attachments =       Attach],
-//             [let relateds    =    RelatedTo],
-//         }
-//
-//         // check mandatory fields
-//         let Some(Mult::One(action)) = action else {
-//             return Err(CalendarParseError::MissingProp {
-//                 prop: PropName::Rfc5545(Rfc5545PropName::Action),
-//                 component: ComponentKind::Alarm,
-//             });
-//         };
-//
-//         let Some(Mult::One(trigger)) = trigger else {
-//             return Err(CalendarParseError::MissingProp {
-//                 prop: PropName::Rfc5545(Rfc5545PropName::Trigger),
-//                 component: ComponentKind::Alarm,
-//             });
-//         };
-//
-//         // check duration and repeat occur together or not at all
-//         let (duration, repeat) = match (duration, repeat) {
-//             (Some(d), Some(r)) => (Some(d), Some(r)),
-//             (None, None) => (None, None),
-//             (Some(_), None) => {
-//                 return Err(CalendarParseError::DurationWithoutRepeat);
-//             }
-//             (None, Some(_)) => {
-//                 return Err(CalendarParseError::RepeatWithoutDuration);
-//             }
-//         };
-//
-//         // init properties and insert trigger
-//         let mut props = PropertyTable::new();
-//         props.insert(PropEntry::Static(StaticProp::Trigger(Mult::One(trigger))));
-//
-//         // insert optional fields
-//
-//         if let Some(duration) = duration {
-//             props.insert(PropEntry::Static(StaticProp::Duration(duration)));
-//         }
-//
-//         if let Some(repeat) = repeat {
-//             props.insert(PropEntry::Static(StaticProp::Repeat(repeat)));
-//         }
-//
-//         if let Some(uid) = uid {
-//             props.insert(PropEntry::Static(StaticProp::Uid(uid)));
-//         }
-//
-//         if let Some(ack) = ack {
-//             props.insert(PropEntry::Static(StaticProp::Acknowledged(ack)));
-//         }
-//
-//         if let Some(prox) = prox {
-//             props.insert(PropEntry::Static(StaticProp::Proximity(prox)));
-//         }
-//
-//         if let Some(relateds) = relateds {
-//             props.insert(PropEntry::Static(StaticProp::RelatedTo(relateds)));
-//         }
-//
-//         match action {
-//             AlarmActionProp::Audio(prop) => {
-//                 // insert action
-//                 props.insert(Entry::Known(AudioAlarmProp::Action(Prop {
-//                     value: AudioAction,
-//                     params: (),
-//                     unknown_params: action.unknown_params,
-//                 })));
-//
-//                 // insert attachment if single
-//                 if let Some(mut attachments) = attachments {
-//                     if attachments.len() == 1 {
-//                         let p = attachments.remove(0);
-//                         props.insert(Entry::Known(AudioAlarmProp::Attach(p)));
-//                     } else if attachments.len() > 1 {
-//                         return Err(CalendarParseError::TooManyAttachmentsOnAudioAlarm);
-//                     }
-//                 }
-//
-//                 // check for invalid fields
-//
-//                 if description.is_some() {
-//                     return Err(CalendarParseError::UnexpectedProp {
-//                         prop: PropName::Rfc5545(Rfc5545PropName::Description),
-//                         component: ComponentKind::AudioAlarm,
-//                     });
-//                 }
-//
-//                 if summary.is_some() {
-//                     return Err(CalendarParseError::UnexpectedProp {
-//                         prop: PropName::Rfc5545(Rfc5545PropName::Summary),
-//                         component: ComponentKind::AudioAlarm,
-//                     });
-//                 }
-//
-//                 if attendees.is_some() {
-//                     return Err(CalendarParseError::UnexpectedProp {
-//                         prop: PropName::Rfc5545(Rfc5545PropName::Attendee),
-//                         component: ComponentKind::AudioAlarm,
-//                     });
-//                 }
-//
-//                 Ok(Alarm::Audio(AudioAlarm {
-//                     props,
-//                     subcomponents,
-//                 }))
-//             }
-//             AlarmActionProp::Display(prop) => {
-//                 // check for mandatory description
-//                 let Some(description) = description else {
-//                     return Err(CalendarParseError::MissingProp {
-//                         prop: PropName::Rfc5545(Rfc5545PropName::Description),
-//                         component: ComponentKind::DisplayAlarm,
-//                     });
-//                 };
-//
-//                 // insert action
-//                 props.insert(Entry::Known(DisplayAlarmProp::Action(Prop {
-//                     value: DisplayAction,
-//                     params: (),
-//                     unknown_params: action.unknown_params,
-//                 })));
-//
-//                 // insert description
-//                 props.insert(Entry::Known(DisplayAlarmProp::Description(description)));
-//
-//                 // check for invalid fields
-//
-//                 if summary.is_some() {
-//                     return Err(CalendarParseError::UnexpectedProp {
-//                         prop: PropName::Rfc5545(Rfc5545PropName::Summary),
-//                         component: ComponentKind::DisplayAlarm,
-//                     });
-//                 }
-//
-//                 if attendees.is_some() {
-//                     return Err(CalendarParseError::UnexpectedProp {
-//                         prop: PropName::Rfc5545(Rfc5545PropName::Attendee),
-//                         component: ComponentKind::DisplayAlarm,
-//                     });
-//                 }
-//
-//                 if attachments.is_some() {
-//                     return Err(CalendarParseError::UnexpectedProp {
-//                         prop: PropName::Rfc5545(Rfc5545PropName::Attachment),
-//                         component: ComponentKind::DisplayAlarm,
-//                     });
-//                 }
-//
-//                 Ok(Alarm::Display(DisplayAlarm {
-//                     props,
-//                     subcomponents,
-//                 }))
-//             }
-//             AlarmActionProp::Email(prop) => {
-//                 // check for mandatory description
-//                 let Some(description) = description else {
-//                     return Err(CalendarParseError::MissingProp {
-//                         prop: PropName::Rfc5545(Rfc5545PropName::Description),
-//                         component: ComponentKind::EmailAlarm,
-//                     });
-//                 };
-//
-//                 // check for mandatory summary
-//                 let Some(summary) = summary else {
-//                     return Err(CalendarParseError::MissingProp {
-//                         prop: PropName::Rfc5545(Rfc5545PropName::Summary),
-//                         component: ComponentKind::EmailAlarm,
-//                     });
-//                 };
-//
-//                 // check for mandatory attendees
-//                 let Some(attendees) = attendees else {
-//                     return Err(CalendarParseError::MissingProp {
-//                         prop: PropName::Rfc5545(Rfc5545PropName::Attendee),
-//                         component: ComponentKind::EmailAlarm,
-//                     });
-//                 };
-//
-//                 // insert mandatory fields
-//                 props.insert(Entry::Known(EmailAlarmProp::Action(Prop {
-//                     value: EmailAction,
-//                     params: (),
-//                     unknown_params: action.unknown_params,
-//                 })));
-//                 props.insert(Entry::Known(EmailAlarmProp::Description(description)));
-//                 props.insert(Entry::Known(EmailAlarmProp::Summary(summary)));
-//                 props.insert(Entry::Known(EmailAlarmProp::Attendee(attendees)));
-//
-//                 // insert optional fields
-//
-//                 if let Some(p) = attachments {
-//                     props.insert(Entry::Known(EmailAlarmProp::Attach(p)));
-//                 }
-//
-//                 if let Some(relateds) = relateds {
-//                     props.insert(Entry::Known(EmailAlarmProp::RelatedTo(relateds)));
-//                 }
-//
-//                 Ok(Alarm::Email(EmailAlarm {
-//                     props,
-//                     subcomponents,
-//                 }))
-//             }
-//             AlarmActionProp::Iana(name) => {
-//                 let mut props = OtherAlarmTable::new();
-//
-//                 // insert action
-//                 props.insert(Entry::Known(OtherAlarmProp::Action(Prop {
-//                     value: UnknownAction::Iana(name),
-//                     params: (),
-//                     unknown_params: action.unknown_params,
-//                 })));
-//
-//                 // insert trigger
-//                 props.insert(Entry::Known(OtherAlarmProp::Trigger(trigger)));
-//
-//                 // insert optional fields
-//                 if let Some(p) = description {
-//                     props.insert(Entry::Known(OtherAlarmProp::Description(p)));
-//                 }
-//
-//                 if let Some((d, r)) = dur_rep {
-//                     props.insert(Entry::Known(OtherAlarmProp::DurRep(d, r)));
-//                 }
-//
-//                 if let Some(uid) = uid {
-//                     props.insert(Entry::Known(OtherAlarmProp::Uid(uid)));
-//                 }
-//
-//                 if let Some(ack) = ack {
-//                     props.insert(Entry::Known(OtherAlarmProp::Acknowledged(ack)));
-//                 }
-//
-//                 if let Some(prox) = prox {
-//                     props.insert(Entry::Known(OtherAlarmProp::Proximity(prox)));
-//                 }
-//
-//                 if let Some(p) = summary {
-//                     props.insert(Entry::Known(OtherAlarmProp::Summary(p)));
-//                 }
-//
-//                 if let Some(p) = attendees {
-//                     props.insert(Entry::Known(OtherAlarmProp::Attendee(p)));
-//                 }
-//
-//                 if let Some(p) = attachments {
-//                     props.insert(Entry::Known(OtherAlarmProp::Attach(p)));
-//                 }
-//
-//                 Ok(Alarm::Other(OtherAlarm {
-//                     props,
-//                     subcomponents,
-//                 }))
-//             }
-//             AlarmAction::X(name) => {
-//                 let mut props = OtherAlarmTable::new();
-//
-//                 // insert action
-//                 props.insert(Entry::Known(OtherAlarmProp::Action(Prop {
-//                     value: UnknownAction::X(name),
-//                     params: (),
-//                     unknown_params: action.unknown_params,
-//                 })));
-//
-//                 // insert trigger
-//                 props.insert(Entry::Known(OtherAlarmProp::Trigger(trigger)));
-//
-//                 // insert optional fields
-//                 if let Some(p) = description {
-//                     props.insert(Entry::Known(OtherAlarmProp::Description(p)));
-//                 }
-//
-//                 if let Some((d, r)) = dur_rep {
-//                     props.insert(Entry::Known(OtherAlarmProp::DurRep(d, r)));
-//                 }
-//
-//                 if let Some(uid) = uid {
-//                     props.insert(Entry::Known(OtherAlarmProp::Uid(uid)));
-//                 }
-//
-//                 if let Some(ack) = ack {
-//                     props.insert(Entry::Known(OtherAlarmProp::Acknowledged(ack)));
-//                 }
-//
-//                 if let Some(prox) = prox {
-//                     props.insert(Entry::Known(OtherAlarmProp::Proximity(prox)));
-//                 }
-//
-//                 if let Some(p) = summary {
-//                     props.insert(Entry::Known(OtherAlarmProp::Summary(p)));
-//                 }
-//
-//                 if let Some(p) = attendees {
-//                     props.insert(Entry::Known(OtherAlarmProp::Attendee(p)));
-//                 }
-//
-//                 if let Some(p) = attachments {
-//                     props.insert(Entry::Known(OtherAlarmProp::Attach(p)));
-//                 }
-//
-//                 Ok(Alarm::Other(OtherAlarm {
-//                     props,
-//                     subcomponents,
-//                 }))
-//             }
-//         }
-//     }
-// }
 
 #[cfg(test)]
 mod tests {

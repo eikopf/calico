@@ -1097,28 +1097,12 @@ where
                 once!(Description, PropName::Rfc5545(Rfc5545PropName::Description), value, params)
             },
             ParserProp::Known(KnownProp::TriggerRelative(value, params)) => {
-                // try_insert_once!(state, Alarm, Key::Known(FreeAlarmPropName::Trigger),
-                //     PropName::Rfc5545(Rfc5545PropName::Trigger),
-                //     Entry::Known(FreeAlarmProp::Trigger(TriggerProp::Relative(Prop {
-                //         value,
-                //         params,
-                //         unknown_params
-                //     }))),
-                // )
-
-                todo!()
+                let prop = TriggerProp::Relative(Prop { value, params, unknown_params });
+                try_insert_once!(state, Alarm, Trigger, PropName::Rfc5545(Rfc5545PropName::Trigger), prop)
             },
             ParserProp::Known(KnownProp::TriggerAbsolute(value)) => {
-                // try_insert_once!(state, Alarm, Key::Known(FreeAlarmPropName::Trigger),
-                //     PropName::Rfc5545(Rfc5545PropName::Trigger),
-                //     Entry::Known(FreeAlarmProp::Trigger(TriggerProp::Absolute(Prop {
-                //         value,
-                //         params: (),
-                //         unknown_params
-                //     }))),
-                // )
-
-                todo!()
+                let prop = TriggerProp::Absolute(Prop { value, params: (), unknown_params });
+                try_insert_once!(state, Alarm, Trigger, PropName::Rfc5545(Rfc5545PropName::Trigger), prop)
             },
             ParserProp::Known(KnownProp::Summary(value, params)) => {
                 once!(Summary, PropName::Rfc5545(Rfc5545PropName::Summary), value, params)

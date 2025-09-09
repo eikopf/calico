@@ -15,7 +15,7 @@ use crate::{
         parameter::{KnownParam, Param, Rfc5545ParamName, StaticParamName, UnknownParam},
         primitive::{
             AlarmAction, AttachValue, CalAddress, ClassValue, CompletionPercentage, DateTime,
-            DateTimeOrDate, DateTimeOrDateSeq, Duration, Encoding, FormatType, FreeBusyType, Geo,
+            DateTimeOrDate, Duration, Encoding, ExDateSeq, FormatType, FreeBusyType, Geo,
             ImageData, Integer, Language, Method, Period, Priority, ProximityValue, RDateSeq,
             RelationshipType, RequestStatus, Status, Text, ThisAndFuture, TimeTransparency,
             TriggerRelation, TzId, Uid, Uri, Utc, UtcOffset, Value, ValueType,
@@ -120,7 +120,7 @@ pub enum KnownProp<S> {
     Url(Uri<S>),
     Uid(Uid<S>),
     // RECURRENCE COMPONENT PROPERTIES
-    ExDate(DateTimeOrDateSeq, DtParams<S>),
+    ExDate(ExDateSeq, DtParams<S>),
     RDate(RDateSeq, DtParams<S>),
     RRule(RRule),
     // ALARM COMPONENT PROPERTIES
@@ -507,7 +507,7 @@ where
             }
         }
 
-        fn into_seq_parser<I, E>(self) -> impl Parser<I, DateTimeOrDateSeq, E> + Copy
+        fn into_seq_parser<I, E>(self) -> impl Parser<I, ExDateSeq, E> + Copy
         where
             I: StreamIsPartial + Stream + Compare<char>,
             I::Token: AsChar + Clone,
@@ -516,11 +516,11 @@ where
             move |input: &mut I| match self {
                 DateTimeOrDateType::DateTime => separated(1.., datetime, ',')
                     .map(Vec::into_boxed_slice)
-                    .map(DateTimeOrDateSeq::DateTime)
+                    .map(ExDateSeq::DateTime)
                     .parse_next(input),
                 DateTimeOrDateType::Date => separated(1.., date, ',')
                     .map(Vec::into_boxed_slice)
-                    .map(DateTimeOrDateSeq::Date)
+                    .map(ExDateSeq::Date)
                     .parse_next(input),
             }
         }
