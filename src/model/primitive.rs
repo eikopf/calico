@@ -91,7 +91,7 @@ impl<F> From<DateTime<F>> for DateTimeOrDate<F> {
 /// A homogeneous sequence of either datetimes or dates. Used primarily as the
 /// value type for the EXDATE property.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DateTimeOrDateSeq<F = TimeFormat> {
+pub enum ExDateSeq<F = TimeFormat> {
     DateTime(Box<[DateTime<F>]>),
     Date(Box<[Date]>),
 }
@@ -892,14 +892,14 @@ macro_rules! utc_offset {
     };
     (- $h:expr;$m:expr $(; $s:expr)?) => {
         {
-        let s: Option<u8> = None;
-        $(let s = Some($s);)?
+        let _s: Option<u8> = None;
+        $(let _s = Some($s);)?
 
         $crate::model::primitive::UtcOffset {
             sign: $crate::model::primitive::Sign::Negative,
             hours: $h,
             minutes: $m,
-            seconds: s,
+            seconds: _s,
         }
         }
     };
@@ -946,6 +946,12 @@ mod tests {
         assert_eq!(neg_160050.hours, 16);
         assert_eq!(neg_160050.minutes, 0);
         assert_eq!(neg_160050.seconds, Some(50));
+
+        let neg_1737 = utc_offset!(-17;37);
+        assert_eq!(neg_1737.sign, Sign::Negative);
+        assert_eq!(neg_1737.hours, 17);
+        assert_eq!(neg_1737.minutes, 37);
+        assert_eq!(neg_1737.seconds, None);
     }
 
     #[test]
