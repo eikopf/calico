@@ -1,6 +1,9 @@
 //! Model types for calendar components.
 
-use std::hash::{BuildHasher, Hash, Hasher, RandomState};
+use std::{
+    fmt::Debug,
+    hash::{BuildHasher, Hash, Hasher, RandomState},
+};
 
 use hashbrown::{HashTable, hash_table::Entry};
 
@@ -163,6 +166,7 @@ where
     }
 }
 
+/// An immediate subcomponent of a [`Calendar`].
 #[derive(Debug, Clone)]
 pub enum Component<S> {
     Event(Event<S>),
@@ -921,21 +925,15 @@ impl<S> OtherComponent<S> {
     }
 }
 
-// impl<S> OtherComponent<S>
-// where
-//     S: Hash + PartialEq + Equiv<LineFoldCaseless> + AsRef<[u8]>,
-// {
-//     seq_accessors! {AnyProp, AnyPropName;
-//         [CalScale, scale, scale_mut, Prop<S, ()>],
-//         [Method, method, method_mut, Prop<S, Method<S>>],
-//         [ProdId, prod_id, prod_id_mut, Prop<S, Text<S>>],
-//         [Version, version, version_mut, Prop<S, ()>],
-//         // TODO: finish other accessors
-//     }
-// }
-
-#[derive(Debug, Clone)]
+/// A table of every possible property and every possible [multiplicity](Mult).
+#[derive(Clone)]
 pub struct PropertyTable<S>(HashTable<PropEntry<S>>, RandomState);
+
+impl<S: Debug> Debug for PropertyTable<S> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        <HashTable<PropEntry<S>> as Debug>::fmt(&self.0, f)
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PropEntry<S> {
@@ -1217,9 +1215,12 @@ impl<S> PropertyTable<S> {
     }
 }
 
+/// A multiplicity of `T`.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Mult<T> {
+    /// Exactly one value.
     One(T),
+    /// Zero or more values.
     Seq(Vec<T>),
 }
 
