@@ -21,6 +21,9 @@ use super::rrule::RRule;
 /// The INTEGER type as defined in RFC 5545 §3.3.8.
 pub type Integer = i32;
 
+/// A strictly positive [`Integer`].
+pub type PositiveInteger = NonZero<u32>;
+
 /// A method as defined in RFC 5546 §1.4
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Method<S> {
@@ -59,15 +62,9 @@ pub struct CalAddress<S>(pub(crate) S);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Language<S>(pub(crate) S);
 
-/// The data of a BINARY property.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Binary {
-    pub(crate) bytes: Vec<u8>,
-}
-
-/// The text of a BINARY value, which may be converted into a [`Binary`].
+/// The text of a BINARY value.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct BinaryText<S>(pub(crate) S);
+pub struct Binary<S>(pub(crate) S);
 
 /// Date-time or date value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -245,7 +242,7 @@ pub enum Encoding {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImageData<S> {
     Uri(Uri<S>),
-    Binary(BinaryText<S>),
+    Binary(Binary<S>),
 }
 
 /// The value of the TRANSP property (RFC 5545 §3.8.2.7).
@@ -303,6 +300,50 @@ impl<S> Default for CalendarUserType<S> {
     fn default() -> Self {
         Self::Individual
     }
+}
+
+/// A value of the STRUCTURED-DATA property (RFC 9073 §6.6).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StructuredDataValue<S> {
+    Text(Text<S>),
+    Binary(Binary<S>),
+    Uri(Uri<S>),
+}
+
+/// A value of the STYLED-DESCRIPTION property (RFC 9073 §6.5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StyledDescriptionValue<S> {
+    Text(Text<S>),
+    Uri(Uri<S>),
+    Iana { value_type: S, value: Text<S> },
+}
+
+/// A value of the RESOURCE-TYPE property (RFC 9073 §6.3). Note that this type does not admit
+/// extension values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResourceType<S> {
+    Room,
+    Projector,
+    RemoteConferenceAudio,
+    RemoteConferenceVideo,
+    Iana(S),
+}
+
+/// A value of the PARTICIPANT-TYPE property (RFC 9073 §6.2). Note that this type does not admit
+/// extension values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParticipantType<S> {
+    Active,
+    Inactive,
+    Sponsor,
+    Contact,
+    BookingContact,
+    EmergencyContact,
+    PublicityContact,
+    PlannerContact,
+    Performer,
+    Speaker,
+    Iana(S),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -467,7 +508,7 @@ pub enum ValueType<S> {
 ///A runtime-discriminated property value.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Value<S> {
-    Binary(BinaryText<S>),
+    Binary(Binary<S>),
     Boolean(bool),
     CalAddress(CalAddress<S>),
     Date(Date),
@@ -518,7 +559,7 @@ pub struct Float<S>(pub S);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AttachValue<S> {
     Uri(Uri<S>),
-    Binary(BinaryText<S>),
+    Binary(Binary<S>),
 }
 
 /// The value type of the `CLASS` property.

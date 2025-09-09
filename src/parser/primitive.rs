@@ -1,5 +1,7 @@
 //! Parsers for primitive (i.e. terminal) grammar elements.
 
+use std::num::NonZero;
+
 use winnow::{
     Parser,
     ascii::{Caseless, digit0, digit1},
@@ -14,12 +16,13 @@ use winnow::{
 use crate::model::{
     css::Css3Color,
     primitive::{
-        AlarmAction, BinaryText, CalAddress, CalendarUserType, ClassValue, CompletionPercentage,
-        Date, DateTime, DateTimeOrDate, DisplayType, Duration, DurationKind, DurationTime,
-        Encoding, FeatureType, Float, FormatType, FreeBusyType, Geo, GeoComponent, Integer,
-        IsoWeek, Language, Method, ParticipationRole, ParticipationStatus, Period, Priority,
-        ProximityValue, RawTime, RelationshipType, RequestStatusCode, Sign, Status, Text, Time,
-        TimeFormat, TimeTransparency, TriggerRelation, TzId, Uid, Uri, Utc, UtcOffset, ValueType,
+        AlarmAction, Binary, CalAddress, CalendarUserType, ClassValue, CompletionPercentage, Date,
+        DateTime, DateTimeOrDate, DisplayType, Duration, DurationKind, DurationTime, Encoding,
+        FeatureType, Float, FormatType, FreeBusyType, Geo, GeoComponent, Integer, IsoWeek,
+        Language, Method, ParticipantType, ParticipationRole, ParticipationStatus, Period,
+        PositiveInteger, Priority, ProximityValue, RawTime, RelationshipType, RequestStatusCode,
+        ResourceType, Sign, Status, Text, Time, TimeFormat, TimeTransparency, TriggerRelation,
+        TzId, Uid, Uri, Utc, UtcOffset, ValueType,
     },
 };
 
@@ -28,6 +31,48 @@ use super::error::{
     InvalidDurationTimeError, InvalidGeoError, InvalidIntegerError, InvalidPriorityError,
     InvalidRawTimeError, InvalidUtcOffsetError,
 };
+
+/// Parses a [`ParticipantType`].
+pub fn participant_type<I, E>(input: &mut I) -> Result<ParticipantType<I::Slice>, E>
+where
+    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
+    <I as Stream>::Token: AsChar + Clone,
+    E: ParserError<I>,
+    ParticipantType<I::Slice>: Clone,
+{
+    alt((
+        Caseless("EMERGENCY-CONTACT").value(ParticipantType::EmergencyContact),
+        Caseless("PUBLICITY-CONTACT").value(ParticipantType::PublicityContact),
+        Caseless("BOOKING-CONTACT").value(ParticipantType::BookingContact),
+        Caseless("PLANNER-CONTACT").value(ParticipantType::PlannerContact),
+        Caseless("PERFORMER").value(ParticipantType::Performer),
+        Caseless("INACTIVE").value(ParticipantType::Inactive),
+        Caseless("SPONSOR").value(ParticipantType::Sponsor),
+        Caseless("CONTACT").value(ParticipantType::Contact),
+        Caseless("SPEAKER").value(ParticipantType::Speaker),
+        Caseless("ACTIVE").value(ParticipantType::Active),
+        iana_token.map(ParticipantType::Iana),
+    ))
+    .parse_next(input)
+}
+
+/// Parses a [`ResourceType`].
+pub fn resource_type<I, E>(input: &mut I) -> Result<ResourceType<I::Slice>, E>
+where
+    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
+    <I as Stream>::Token: AsChar + Clone,
+    E: ParserError<I>,
+    ResourceType<I::Slice>: Clone,
+{
+    alt((
+        Caseless("REMOTE-CONFERENCE-AUDIO").value(ResourceType::RemoteConferenceAudio),
+        Caseless("REMOTE-CONFERENCE-VIDEO").value(ResourceType::RemoteConferenceVideo),
+        Caseless("PROJECTOR").value(ResourceType::Projector),
+        Caseless("ROOM").value(ResourceType::Room),
+        iana_token.map(ResourceType::Iana),
+    ))
+    .parse_next(input)
+}
 
 /// Parses a [`RequestStatusCode`].
 pub fn status_code<I, E>(input: &mut I) -> Result<RequestStatusCode, E>
@@ -256,7 +301,7 @@ where
 }
 
 /// Parses a base64-encoded character string.
-pub fn binary<I, E>(input: &mut I) -> Result<BinaryText<I::Slice>, E>
+pub fn binary<I, E>(input: &mut I) -> Result<Binary<I::Slice>, E>
 where
     I: StreamIsPartial + Stream + Compare<char>,
     <I as Stream>::Token: AsChar + Clone,
@@ -279,7 +324,7 @@ where
         ))),
     )
         .take()
-        .map(BinaryText)
+        .map(Binary)
         .parse_next(input)
 }
 
@@ -1149,6 +1194,29 @@ where
     alt((Caseless("TRUE").value(true), Caseless("FALSE").value(false))).parse_next(input)
 }
 
+/// Parses a [`PositiveInteger`].
+pub fn positive_integer<I, E>(input: &mut I) -> Result<PositiveInteger, E>
+where
+    I: StreamIsPartial + Stream + Compare<char>,
+    I::Token: AsChar + Clone,
+    I::Slice: AsBStr,
+    E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
+{
+    let int = integer.parse_next(input)?;
+    let res = NonZero::<i32>::try_from(int)
+        .and_then(PositiveInteger::try_from)
+        .ok();
+
+    match res {
+        Some(value) => Ok(value),
+        None => Err(E::from_external_error(
+            input,
+            CalendarParseError::InvalidPositiveInteger(int),
+        )),
+    }
+}
+
+/// Parses an [`Integer`].
 pub fn integer<I, E>(input: &mut I) -> Result<Integer, E>
 where
     I: StreamIsPartial + Stream + Compare<char>,

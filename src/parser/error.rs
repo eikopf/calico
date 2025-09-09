@@ -11,6 +11,7 @@ use super::property::PropName;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CalendarParseError<S> {
+    InvalidPositiveInteger(Integer),
     InvalidRawTime(InvalidRawTimeError),
     InvalidUtcOffset(InvalidUtcOffsetError),
     InvalidDate(InvalidDateError),

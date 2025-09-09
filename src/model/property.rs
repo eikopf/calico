@@ -11,6 +11,11 @@ use super::{
     },
 };
 
+// NOTE: the ORDER and DERIVED parameters (RFC 9073 §5) can appear on a large number of properties,
+// and DERIVED in particular can appear on literally any property. how should this be handled
+// architecturally? should Prop get a field corresponding to DERIVED? what if additional "universal"
+// parameters of this kind are added?
+
 /// A property generic over values and parameters.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Prop<S, V, P = ()> {

@@ -19,35 +19,38 @@ use winnow::{
     Parser,
     ascii::Caseless,
     combinator::{alt, delimited, opt, preceded, repeat, separated, terminated},
-    error::ParserError,
-    stream::{AsChar, Compare, SliceLen, Stream, StreamIsPartial},
+    error::{FromExternalError, ParserError},
+    stream::{AsBStr, AsChar, Compare, SliceLen, Stream, StreamIsPartial},
     token::none_of,
 };
 
 use crate::{
     model::{
         parameter::{
-            KnownParam, Param, ParamName, Rfc5545ParamName, Rfc7986ParamName, StaticParamName,
-            UnknownParam,
+            KnownParam, Param, ParamName, Rfc5545ParamName, Rfc7986ParamName, Rfc9073ParamName,
+            StaticParamName, UnknownParam,
         },
         primitive::{CalAddress, CalendarUserType, FreeBusyType, ParticipationStatus, TzId, Uri},
     },
     parser::primitive::{
         alarm_trigger_relationship, ascii_lower, bool_caseless, feature_type, format_type,
         free_busy_type, inline_encoding, language, participation_role, participation_status,
-        relationship_type, uri, value_type,
+        positive_integer, relationship_type, uri, value_type,
     },
 };
 
-use super::primitive::{calendar_user_type, display_type, iana_token, x_name};
+use super::{
+    error::CalendarParseError,
+    primitive::{calendar_user_type, display_type, iana_token, x_name},
+};
 
 /// Parses a [`Param`].
 pub fn parameter<I, E>(input: &mut I) -> Result<Param<I::Slice>, E>
 where
     I: StreamIsPartial + Stream + Compare<Caseless<&'static str>> + Compare<char>,
     I::Token: AsChar + Clone,
-    I::Slice: Clone + SliceLen,
-    E: ParserError<I>,
+    I::Slice: AsBStr + Clone + SliceLen,
+    E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
     CalendarUserType<I::Slice>: Clone,
     FreeBusyType<I::Slice>: Clone,
     ParticipationStatus<I::Slice>: Clone,
@@ -91,109 +94,79 @@ where
             }))
         }
         ParamName::Rfc5545(name) => match name {
-            Rfc5545ParamName::AlternateTextRepresentation => quoted_uri
-                .map(KnownParam::AltRep)
-                .map(Param::Known)
-                .parse_next(input),
-            Rfc5545ParamName::CommonName => param_value
-                .map(KnownParam::CommonName)
-                .map(Param::Known)
-                .parse_next(input),
-            Rfc5545ParamName::CalendarUserType => calendar_user_type
-                .map(KnownParam::CUType)
-                .map(Param::Known)
-                .parse_next(input),
-            Rfc5545ParamName::Delegators => quoted_addresses
-                .map(KnownParam::DelFrom)
-                .map(Param::Known)
-                .parse_next(input),
-            Rfc5545ParamName::Delegatees => quoted_addresses
-                .map(KnownParam::DelTo)
-                .map(Param::Known)
-                .parse_next(input),
-            Rfc5545ParamName::DirectoryEntryReference => quoted_uri
-                .map(KnownParam::Dir)
-                .map(Param::Known)
-                .parse_next(input),
-            Rfc5545ParamName::InlineEncoding => inline_encoding
-                .map(KnownParam::Encoding)
-                .map(Param::Known)
-                .parse_next(input),
-            Rfc5545ParamName::FormatType => format_type
-                .map(KnownParam::FormatType)
-                .map(Param::Known)
-                .parse_next(input),
-            Rfc5545ParamName::FreeBusyTimeType => free_busy_type
-                .map(KnownParam::FBType)
-                .map(Param::Known)
-                .parse_next(input),
-            Rfc5545ParamName::Language => language
-                .map(KnownParam::Language)
-                .map(Param::Known)
-                .parse_next(input),
-            Rfc5545ParamName::GroupOrListMembership => quoted_addresses
-                .map(KnownParam::Member)
-                .map(Param::Known)
-                .parse_next(input),
+            Rfc5545ParamName::AlternateTextRepresentation => {
+                quoted_uri.map(KnownParam::AltRep).parse_next(input)
+            }
+            Rfc5545ParamName::CommonName => {
+                param_value.map(KnownParam::CommonName).parse_next(input)
+            }
+            Rfc5545ParamName::CalendarUserType => {
+                calendar_user_type.map(KnownParam::CUType).parse_next(input)
+            }
+            Rfc5545ParamName::Delegators => {
+                quoted_addresses.map(KnownParam::DelFrom).parse_next(input)
+            }
+            Rfc5545ParamName::Delegatees => {
+                quoted_addresses.map(KnownParam::DelTo).parse_next(input)
+            }
+            Rfc5545ParamName::DirectoryEntryReference => {
+                quoted_uri.map(KnownParam::Dir).parse_next(input)
+            }
+            Rfc5545ParamName::InlineEncoding => {
+                inline_encoding.map(KnownParam::Encoding).parse_next(input)
+            }
+            Rfc5545ParamName::FormatType => {
+                format_type.map(KnownParam::FormatType).parse_next(input)
+            }
+            Rfc5545ParamName::FreeBusyTimeType => {
+                free_busy_type.map(KnownParam::FBType).parse_next(input)
+            }
+            Rfc5545ParamName::Language => language.map(KnownParam::Language).parse_next(input),
+            Rfc5545ParamName::GroupOrListMembership => {
+                quoted_addresses.map(KnownParam::Member).parse_next(input)
+            }
             Rfc5545ParamName::ParticipationStatus => participation_status
                 .map(KnownParam::PartStatus)
-                .map(Param::Known)
                 .parse_next(input),
             Rfc5545ParamName::RecurrenceIdentifierRange => Caseless("THISANDFUTURE")
                 .value(KnownParam::RecurrenceIdentifierRange)
-                .map(Param::Known)
                 .parse_next(input),
             Rfc5545ParamName::AlarmTriggerRelationship => alarm_trigger_relationship
                 .map(KnownParam::AlarmTrigger)
-                .map(Param::Known)
                 .parse_next(input),
-            Rfc5545ParamName::RelationshipType => relationship_type
-                .map(KnownParam::RelType)
-                .map(Param::Known)
-                .parse_next(input),
-            Rfc5545ParamName::ParticipationRole => participation_role
-                .map(KnownParam::Role)
-                .map(Param::Known)
-                .parse_next(input),
-            Rfc5545ParamName::RsvpExpectation => bool_caseless
-                .map(KnownParam::Rsvp)
-                .map(Param::Known)
-                .parse_next(input),
-            Rfc5545ParamName::SentBy => quoted_uri
-                .map(KnownParam::SentBy)
-                .map(Param::Known)
-                .parse_next(input),
+            Rfc5545ParamName::RelationshipType => {
+                relationship_type.map(KnownParam::RelType).parse_next(input)
+            }
+            Rfc5545ParamName::ParticipationRole => {
+                participation_role.map(KnownParam::Role).parse_next(input)
+            }
+            Rfc5545ParamName::RsvpExpectation => {
+                bool_caseless.map(KnownParam::Rsvp).parse_next(input)
+            }
+            Rfc5545ParamName::SentBy => quoted_uri.map(KnownParam::SentBy).parse_next(input),
             Rfc5545ParamName::TimeZoneIdentifier => {
                 (opt('/'), param_value.verify(ParamValue::is_safe))
                     .take()
                     .map(TzId)
                     .map(KnownParam::TzId)
-                    .map(Param::Known)
                     .parse_next(input)
             }
-            Rfc5545ParamName::ValueDataType => value_type
-                .map(KnownParam::Value)
-                .map(Param::Known)
-                .parse_next(input),
-        },
+            Rfc5545ParamName::ValueDataType => value_type.map(KnownParam::Value).parse_next(input),
+        }
+        .map(Param::Known),
         ParamName::Rfc7986(name) => match name {
-            Rfc7986ParamName::Display => display_type
-                .map(KnownParam::Display)
-                .map(Param::Known)
-                .parse_next(input),
-            Rfc7986ParamName::Email => param_value
-                .map(KnownParam::Email)
-                .map(Param::Known)
-                .parse_next(input),
-            Rfc7986ParamName::Feature => feature_type
-                .map(KnownParam::Feature)
-                .map(Param::Known)
-                .parse_next(input),
-            Rfc7986ParamName::Label => param_value
-                .map(KnownParam::Label)
-                .map(Param::Known)
-                .parse_next(input),
-        },
+            Rfc7986ParamName::Display => display_type.map(KnownParam::Display).parse_next(input),
+            Rfc7986ParamName::Email => param_value.map(KnownParam::Email).parse_next(input),
+            Rfc7986ParamName::Feature => feature_type.map(KnownParam::Feature).parse_next(input),
+            Rfc7986ParamName::Label => param_value.map(KnownParam::Label).parse_next(input),
+        }
+        .map(Param::Known),
+        ParamName::Rfc9073(name) => match name {
+            Rfc9073ParamName::Order => positive_integer.map(KnownParam::Order).parse_next(input),
+            Rfc9073ParamName::Schema => quoted_uri.map(KnownParam::Schema).parse_next(input),
+            Rfc9073ParamName::Derived => bool_caseless.map(KnownParam::Derived).parse_next(input),
+        }
+        .map(Param::Known),
     }
 }
 
@@ -291,6 +264,7 @@ where
     match static_name.parse_next(input) {
         Ok(StaticParamName::Rfc5545(name)) => Ok(ParamName::Rfc5545(name)),
         Ok(StaticParamName::Rfc7986(name)) => Ok(ParamName::Rfc7986(name)),
+        Ok(StaticParamName::Rfc9073(name)) => Ok(ParamName::Rfc9073(name)),
         Err(()) => {
             input.reset(&checkpoint);
             alt((x_name.map(ParamName::X), iana_token.map(ParamName::Iana))).parse_next(input)

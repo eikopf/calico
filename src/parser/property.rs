@@ -16,8 +16,9 @@ use crate::{
         primitive::{
             AlarmAction, AttachValue, CalAddress, ClassValue, CompletionPercentage, DateTime,
             DateTimeOrDate, Duration, Encoding, ExDateSeq, FormatType, FreeBusyType, Geo,
-            ImageData, Integer, Language, Method, Period, Priority, ProximityValue, RDateSeq,
-            RelationshipType, RequestStatus, Status, Text, ThisAndFuture, TimeTransparency,
+            ImageData, Integer, Language, Method, ParticipantType, Period, Priority,
+            ProximityValue, RDateSeq, RelationshipType, RequestStatus, ResourceType, Status,
+            StructuredDataValue, StyledDescriptionValue, Text, ThisAndFuture, TimeTransparency,
             TriggerRelation, TzId, Uid, Uri, Utc, UtcOffset, Value, ValueType,
         },
         property::{
@@ -32,9 +33,9 @@ use crate::{
         parameter::parameter,
         primitive::{
             alarm_action, ascii_lower, cal_address, class_value, color, completion_percentage,
-            datetime_utc, duration, float, geo, gregorian, iana_token, integer, method, period,
-            priority, proximity_value, status, status_code, text, time_transparency, tz_id, uid,
-            utc_offset, v2_0, x_name,
+            datetime_utc, duration, float, geo, gregorian, iana_token, integer, method,
+            participant_type, period, priority, proximity_value, resource_type, status,
+            status_code, text, time_transparency, tz_id, uid, utc_offset, v2_0, x_name,
         },
         rrule::rrule,
     },
@@ -142,6 +143,13 @@ pub enum KnownProp<S> {
     Color(Css3Color),
     Image(ImageData<S>, ImageParams<S>),
     Conference(Uri<S>, ConfParams<S>),
+    // RFC 9073 PROPERTIES
+    LocationType(Vec<Text<S>>),
+    ParticipantType(ParticipantType<S>),
+    ResourceType(ResourceType<S>),
+    CalendarAddress(CalAddress<S>),
+    StyledDescription(StyledDescriptionValue<S>, ()), // TODO: create associated *Params type
+    StructuredData(StructuredDataValue<S>, ()),       // TODO: create associated *Params type
     // RFC 9074 PROPERTIES
     Acknowledged(DateTime<Utc>),
     Proximity(ProximityValue<S>),
@@ -152,6 +160,7 @@ impl<S> KnownProp<S> {
         use PropName::*;
         use Rfc5545PropName as PN5545;
         use Rfc7986PropName as PN7986;
+        use Rfc9073PropName as PN9073;
         use Rfc9074PropName as PN9074;
 
         match self {
@@ -208,6 +217,12 @@ impl<S> KnownProp<S> {
             KnownProp::Color(..) => Rfc7986(PN7986::Color),
             KnownProp::Image(..) => Rfc7986(PN7986::Image),
             KnownProp::Conference(..) => Rfc7986(PN7986::Conference),
+            KnownProp::LocationType(..) => Rfc9073(PN9073::LocationType),
+            KnownProp::ParticipantType(..) => Rfc9073(PN9073::ParticipantType),
+            KnownProp::ResourceType(..) => Rfc9073(PN9073::ResourceType),
+            KnownProp::CalendarAddress(..) => Rfc9073(PN9073::CalendarAddress),
+            KnownProp::StyledDescription(..) => Rfc9073(PN9073::StyledDescription),
+            KnownProp::StructuredData(..) => Rfc9073(PN9073::StructuredData),
             KnownProp::Acknowledged(..) => Rfc9074(PN9074::Acknowledged),
             KnownProp::Proximity(..) => Rfc9074(PN9074::Proximity),
         }
@@ -330,7 +345,7 @@ where
     where
         I: StreamIsPartial + Stream + Compare<Caseless<&'static str>> + Compare<char>,
         I::Token: AsChar + Clone,
-        I::Slice: Clone + SliceLen,
+        I::Slice: AsBStr + Clone + SliceLen,
         E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
         F: FnMut(KnownParam<I::Slice>, &mut S) -> Result<(), CalendarParseError<I::Slice>>,
     {
@@ -583,7 +598,7 @@ where
     where
         I: StreamIsPartial + Stream + Compare<Caseless<&'static str>> + Compare<char>,
         I::Token: AsChar + Clone,
-        I::Slice: Clone + SliceLen,
+        I::Slice: AsBStr + Clone + SliceLen,
         E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
         S: Default,
     {
@@ -1797,6 +1812,55 @@ where
                 unknown_params,
             )
         }
+        PropName::Rfc9073(prop @ Rfc9073PropName::LocationType) => {
+            let ((), (), (), unknown_params) = parse_property(
+                input,
+                trivial_step(PropName::Rfc9073(prop)),
+                only::<I>(ValueType::Text),
+                empty,
+            )?;
+
+            let value: Vec<_> = separated(1.., text, ',').parse_next(input)?;
+            (Prop::Known(KnownProp::LocationType(value)), unknown_params)
+        }
+        PropName::Rfc9073(prop @ Rfc9073PropName::ParticipantType) => {
+            let (value, (), (), unknown_params) = parse_property(
+                input,
+                trivial_step(PropName::Rfc9073(prop)),
+                only::<I>(ValueType::Text),
+                participant_type,
+            )?;
+
+            (
+                Prop::Known(KnownProp::ParticipantType(value)),
+                unknown_params,
+            )
+        }
+        PropName::Rfc9073(prop @ Rfc9073PropName::ResourceType) => {
+            let (value, (), (), unknown_params) = parse_property(
+                input,
+                trivial_step(PropName::Rfc9073(prop)),
+                only::<I>(ValueType::Text),
+                resource_type,
+            )?;
+
+            (Prop::Known(KnownProp::ResourceType(value)), unknown_params)
+        }
+        PropName::Rfc9073(prop @ Rfc9073PropName::CalendarAddress) => {
+            let (value, (), (), unknown_params) = parse_property(
+                input,
+                trivial_step(PropName::Rfc9073(prop)),
+                only::<I>(ValueType::CalAddress),
+                cal_address::<_, _, false>,
+            )?;
+
+            (
+                Prop::Known(KnownProp::CalendarAddress(value)),
+                unknown_params,
+            )
+        }
+        PropName::Rfc9073(prop @ Rfc9073PropName::StyledDescription) => todo!(),
+        PropName::Rfc9073(prop @ Rfc9073PropName::StructuredData) => todo!(),
         PropName::Rfc9074(prop @ Rfc9074PropName::Acknowledged) => {
             let (value, (), (), unknown_params) = parse_property(
                 input,
@@ -1859,6 +1923,7 @@ where
 pub enum PropName<S> {
     Rfc5545(Rfc5545PropName),
     Rfc7986(Rfc7986PropName),
+    Rfc9073(Rfc9073PropName),
     Rfc9074(Rfc9074PropName),
     Iana(S),
     X(S),
@@ -2173,6 +2238,22 @@ pub enum Rfc7986PropName {
     Image,
     /// RFC 7986 §5.11 (CONFERENCE)
     Conference,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Rfc9073PropName {
+    /// RFC 9073 §6.1
+    LocationType,
+    /// RFC 9073 §6.2
+    ParticipantType,
+    /// RFC 9073 §6.3
+    ResourceType,
+    /// RFC 9073 §6.4
+    CalendarAddress,
+    /// RFC 9073 §6.5
+    StyledDescription,
+    /// RFC 9073 §6.6
+    StructuredData,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

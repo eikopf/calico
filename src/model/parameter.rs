@@ -4,8 +4,8 @@ use crate::parser::parameter::ParamValue;
 
 use super::primitive::{
     CalAddress, CalendarUserType, DisplayType, Encoding, FeatureType, FormatType, FreeBusyType,
-    Language, ParticipationRole, ParticipationStatus, RelationshipType, TriggerRelation, TzId, Uri,
-    ValueType,
+    Language, ParticipationRole, ParticipationStatus, PositiveInteger, RelationshipType,
+    TriggerRelation, TzId, Uri, ValueType,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,6 +34,7 @@ impl<S> Param<S> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum KnownParam<S> {
+    // RFC 5545 PROPERTY PARAMETERS
     AltRep(Uri<S>),
     CommonName(ParamValue<S>),
     CUType(CalendarUserType<S>),
@@ -54,10 +55,15 @@ pub enum KnownParam<S> {
     SentBy(Uri<S>),
     TzId(TzId<S>),
     Value(ValueType<S>),
+    // RFC 7986 PROPERTY PARAMETERS
     Display(DisplayType<S>),
     Email(ParamValue<S>),
     Feature(FeatureType<S>),
     Label(ParamValue<S>),
+    // RFC 9073 PROPERTY PARAMETERS
+    Order(PositiveInteger),
+    Schema(Uri<S>),
+    Derived(bool),
 }
 
 impl<S> KnownParam<S> {
@@ -100,6 +106,9 @@ impl<S> KnownParam<S> {
             KnownParam::Email(_) => StaticParamName::Rfc7986(Rfc7986ParamName::Email),
             KnownParam::Feature(_) => StaticParamName::Rfc7986(Rfc7986ParamName::Feature),
             KnownParam::Label(_) => StaticParamName::Rfc7986(Rfc7986ParamName::Label),
+            KnownParam::Order(_) => StaticParamName::Rfc9073(Rfc9073ParamName::Order),
+            KnownParam::Schema(_) => StaticParamName::Rfc9073(Rfc9073ParamName::Schema),
+            KnownParam::Derived(_) => StaticParamName::Rfc9073(Rfc9073ParamName::Derived),
         }
     }
 }
@@ -181,11 +190,23 @@ pub enum Rfc7986ParamName {
     Label,
 }
 
+/// A statically known property parameter name from RFC 9073.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Rfc9073ParamName {
+    /// RFC 9073 §5.1 (ORDER)
+    Order,
+    /// RFC 9073 §5.2 (SCHEMA)
+    Schema,
+    /// RFC 9073 §5.3 (DERIVED)
+    Derived,
+}
+
 /// A property parameter name.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ParamName<S> {
     Rfc5545(Rfc5545ParamName),
     Rfc7986(Rfc7986ParamName),
+    Rfc9073(Rfc9073ParamName),
     Iana(S),
     X(S),
 }
@@ -229,6 +250,7 @@ impl<S> ParamName<S> {
 pub enum StaticParamName {
     Rfc5545(Rfc5545ParamName),
     Rfc7986(Rfc7986ParamName),
+    Rfc9073(Rfc9073ParamName),
 }
 
 impl StaticParamName {
