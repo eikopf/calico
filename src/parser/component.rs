@@ -40,6 +40,18 @@ use super::{
     property::{ParsedProp, property},
 };
 
+// TODO: having now threaded UniversalParams through the property parser, how should i handle them
+// in components? more importantly, how do they appear in the PropertyTable API versus each
+// specific component API? that is, whether ORDER is admissible as a parameter depends on the
+// active variant of Mult, and this is known statically when the component is known statically.
+// maybe i should have a type-level delineation between singular and multiplicit properties? e.g.
+// the type of the Prop::params field could differ between the two variants of Mult? but what about
+// when Mult doesn't directly contain a Prop (e.g. for TriggerProp)?
+//
+// maybe i could totally eliminate all examples where Mult does not contain a Prop directly by
+// modifying PropertyTable, and then the specific component types could just defer to the behaviour
+// of PropertyTable?
+
 macro_rules! step_inner {
     (
         $state:ident, $comp_kind:ident, $prop:ident, $unknown_params:ident;
@@ -198,7 +210,7 @@ where
     E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
     fn step<S>(
-        (prop, unknown_params): ParsedProp<S>,
+        (prop, universals, unknown_params): ParsedProp<S>,
         state: &mut PropertyTable<S>,
     ) -> Result<(), CalendarParseError<S>>
     where
@@ -378,7 +390,7 @@ where
     E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
     fn step<S>(
-        (prop, unknown_params): ParsedProp<S>,
+        (prop, universals, unknown_params): ParsedProp<S>,
         state: &mut PropertyTable<S>,
     ) -> Result<(), CalendarParseError<S>>
     where
@@ -547,7 +559,7 @@ where
     E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
     fn step<S>(
-        (prop, unknown_params): ParsedProp<S>,
+        (prop, universals, unknown_params): ParsedProp<S>,
         state: &mut PropertyTable<S>,
     ) -> Result<(), CalendarParseError<S>>
     where
@@ -716,7 +728,7 @@ where
     E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
     fn step<S>(
-        (prop, unknown_params): ParsedProp<S>,
+        (prop, universals, unknown_params): ParsedProp<S>,
         state: &mut PropertyTable<S>,
     ) -> Result<(), CalendarParseError<S>>
     where
@@ -844,7 +856,7 @@ where
     E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
     fn step<S>(
-        (prop, unknown_params): ParsedProp<S>,
+        (prop, universals, unknown_params): ParsedProp<S>,
         state: &mut PropertyTable<S>,
     ) -> Result<(), CalendarParseError<S>>
     where
@@ -927,7 +939,7 @@ where
     E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
     fn tz_step<S>(
-        (prop, unknown_params): ParsedProp<S>,
+        (prop, universals, unknown_params): ParsedProp<S>,
         state: &mut PropertyTable<S>,
     ) -> Result<(), CalendarParseError<S>>
     where
@@ -963,7 +975,7 @@ where
     }
 
     fn rule_step<S>(
-        (prop, unknown_params): ParsedProp<S>,
+        (prop, universals, unknown_params): ParsedProp<S>,
         state: &mut PropertyTable<S>,
     ) -> Result<(), CalendarParseError<S>>
     where
@@ -1073,7 +1085,7 @@ where
     E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
     fn step<S>(
-        (prop, unknown_params): ParsedProp<S>,
+        (prop, universals, unknown_params): ParsedProp<S>,
         state: &mut PropertyTable<S>,
     ) -> Result<(), CalendarParseError<S>>
     where

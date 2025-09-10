@@ -12,19 +12,22 @@ use winnow::{
 use crate::{
     model::{
         css::Css3Color,
-        parameter::{KnownParam, Param, Rfc5545ParamName, StaticParamName, UnknownParam},
+        parameter::{
+            KnownParam, Param, Rfc5545ParamName, Rfc9073ParamName, StaticParamName, UnknownParam,
+        },
         primitive::{
-            AlarmAction, AttachValue, CalAddress, ClassValue, CompletionPercentage, DateTime,
-            DateTimeOrDate, Duration, Encoding, ExDateSeq, FormatType, FreeBusyType, Geo,
+            AlarmAction, AttachValue, Binary, CalAddress, ClassValue, CompletionPercentage,
+            DateTime, DateTimeOrDate, Duration, Encoding, ExDateSeq, FormatType, FreeBusyType, Geo,
             ImageData, Integer, Language, Method, ParticipantType, Period, Priority,
             ProximityValue, RDateSeq, RelationshipType, RequestStatus, ResourceType, Status,
-            StructuredDataValue, StyledDescriptionValue, Text, ThisAndFuture, TimeTransparency,
-            TriggerRelation, TzId, Uid, Uri, Utc, UtcOffset, Value, ValueType,
+            StyledDescriptionValue, Text, ThisAndFuture, TimeTransparency, TriggerRelation, TzId,
+            Uid, Uri, Utc, UtcOffset, Value, ValueType,
         },
         property::{
             AttachParams, AttendeeParams, ConfParams, DtParams, FBTypeParams, ImageParams,
-            LangParams, OrganizerParams, RecurrenceIdParams, RelTypeParams, TextParams,
-            TriggerParams,
+            LangParams, OrganizerParams, RecurrenceIdParams, RelTypeParams, StructuredDataParams,
+            StyledDescriptionParams, TextParams, TriggerParams, UniversalParams,
+            UriStructuredDataParams,
         },
         rrule::RRule,
     },
@@ -35,7 +38,7 @@ use crate::{
             alarm_action, ascii_lower, cal_address, class_value, color, completion_percentage,
             datetime_utc, duration, float, geo, gregorian, iana_token, integer, method,
             participant_type, period, priority, proximity_value, resource_type, status,
-            status_code, text, time_transparency, tz_id, uid, utc_offset, v2_0, x_name,
+            status_code, text, text_seq, time_transparency, tz_id, uid, utc_offset, v2_0, x_name,
         },
         rrule::rrule,
     },
@@ -87,7 +90,7 @@ pub enum KnownProp<S> {
     Version,
     // DESCRIPTIVE COMPONENT PROPERTIES
     Attach(AttachValue<S>, AttachParams<S>),
-    Categories(Box<[Text<S>]>, LangParams<S>),
+    Categories(Vec<Text<S>>, LangParams<S>),
     Class(ClassValue<S>),
     Comment(Text<S>, TextParams<S>),
     Description(Text<S>, TextParams<S>),
@@ -95,7 +98,7 @@ pub enum KnownProp<S> {
     Location(Text<S>, TextParams<S>),
     PercentComplete(CompletionPercentage),
     Priority(Priority),
-    Resources(Box<[Text<S>]>, TextParams<S>),
+    Resources(Vec<Text<S>>, TextParams<S>),
     Status(Status),
     Summary(Text<S>, TextParams<S>),
     // DATE AND TIME COMPONENT PROPERTIES
@@ -104,7 +107,7 @@ pub enum KnownProp<S> {
     DtDue(DateTimeOrDate, DtParams<S>),
     DtStart(DateTimeOrDate, DtParams<S>),
     Duration(Duration),
-    FreeBusy(Box<[Period]>, FBTypeParams<S>),
+    FreeBusy(Vec<Period>, FBTypeParams<S>),
     Transparency(TimeTransparency),
     // TIME ZONE COMPONENT PROPERTIES
     TzId(TzId<S>),
@@ -148,8 +151,10 @@ pub enum KnownProp<S> {
     ParticipantType(ParticipantType<S>),
     ResourceType(ResourceType<S>),
     CalendarAddress(CalAddress<S>),
-    StyledDescription(StyledDescriptionValue<S>, ()), // TODO: create associated *Params type
-    StructuredData(StructuredDataValue<S>, ()),       // TODO: create associated *Params type
+    StyledDescription(StyledDescriptionValue<S>, StyledDescriptionParams<S>),
+    StructuredDataBinary(Binary<S>, StructuredDataParams<S>),
+    StructuredDataText(Text<S>, StructuredDataParams<S>),
+    StructuredDataUri(Uri<S>, UriStructuredDataParams<S>),
     // RFC 9074 PROPERTIES
     Acknowledged(DateTime<Utc>),
     Proximity(ProximityValue<S>),
@@ -222,7 +227,9 @@ impl<S> KnownProp<S> {
             KnownProp::ResourceType(..) => Rfc9073(PN9073::ResourceType),
             KnownProp::CalendarAddress(..) => Rfc9073(PN9073::CalendarAddress),
             KnownProp::StyledDescription(..) => Rfc9073(PN9073::StyledDescription),
-            KnownProp::StructuredData(..) => Rfc9073(PN9073::StructuredData),
+            KnownProp::StructuredDataBinary(..) => Rfc9073(PN9073::StructuredData),
+            KnownProp::StructuredDataText(..) => Rfc9073(PN9073::StructuredData),
+            KnownProp::StructuredDataUri(..) => Rfc9073(PN9073::StructuredData),
             KnownProp::Acknowledged(..) => Rfc9074(PN9074::Acknowledged),
             KnownProp::Proximity(..) => Rfc9074(PN9074::Proximity),
         }
@@ -294,7 +301,7 @@ where
     }
 }
 
-pub type ParsedProp<S> = (Prop<S>, Box<[UnknownParam<S>]>);
+pub type ParsedProp<S> = (Prop<S>, UniversalParams, Box<[UnknownParam<S>]>);
 
 /// Parses a [`Prop`].
 pub fn property<I, E>(input: &mut I) -> Result<ParsedProp<I::Slice>, E>
@@ -310,6 +317,7 @@ where
         step: F,
         unknown_params: Vec<UnknownParam<Src>>,
         value_type: Option<ValueType<Src>>,
+        universals: UniversalParams,
     }
 
     impl<Src, S, F> StateMachine<Src, S, F> {
@@ -319,6 +327,7 @@ where
                 step,
                 unknown_params: Vec::new(),
                 value_type: None,
+                universals: Default::default(),
             }
         }
 
@@ -338,6 +347,7 @@ where
         (
             S,
             Option<ValueType<I::Slice>>,
+            UniversalParams,
             Box<[UnknownParam<I::Slice>]>,
         ),
         E,
@@ -353,6 +363,32 @@ where
             let param = preceded(';', parameter).parse_next(input)?;
 
             match param {
+                Param::Known(KnownParam::Order(order)) => match sm.universals.order {
+                    Some(_) => {
+                        return Err(E::from_external_error(
+                            input,
+                            CalendarParseError::DuplicateParam(StaticParamName::Rfc9073(
+                                Rfc9073ParamName::Order,
+                            )),
+                        ));
+                    }
+                    None => {
+                        sm.universals.order = Some(order);
+                    }
+                },
+                Param::Known(KnownParam::Derived(derived)) => match sm.universals.derived {
+                    Some(_) => {
+                        return Err(E::from_external_error(
+                            input,
+                            CalendarParseError::DuplicateParam(StaticParamName::Rfc9073(
+                                Rfc9073ParamName::Derived,
+                            )),
+                        ));
+                    }
+                    None => {
+                        sm.universals.derived = Some(derived);
+                    }
+                },
                 Param::Known(KnownParam::Value(value_type)) => match sm.value_type {
                     Some(_) => {
                         return Err(E::from_external_error(
@@ -380,6 +416,7 @@ where
         Ok((
             sm.state,
             sm.value_type,
+            sm.universals,
             sm.unknown_params.into_boxed_slice(),
         ))
     }
@@ -530,11 +567,9 @@ where
         {
             move |input: &mut I| match self {
                 DateTimeOrDateType::DateTime => separated(1.., datetime, ',')
-                    .map(Vec::into_boxed_slice)
                     .map(ExDateSeq::DateTime)
                     .parse_next(input),
                 DateTimeOrDateType::Date => separated(1.., date, ',')
-                    .map(Vec::into_boxed_slice)
                     .map(ExDateSeq::Date)
                     .parse_next(input),
             }
@@ -586,6 +621,52 @@ where
         Binary,
     }
 
+    struct ParsedProp<T, V, P, S> {
+        value: T,
+        value_type: V,
+        state: P,
+        universals: UniversalParams,
+        unknown_params: Box<[UnknownParam<S>]>,
+    }
+
+    impl<T, V, P, S> ParsedProp<T, V, P, S> {
+        fn try_finish<E>(
+            self,
+            f: impl FnOnce(T, V, P) -> Result<KnownProp<S>, E>,
+        ) -> Result<(Prop<S>, UniversalParams, Box<[UnknownParam<S>]>), E> {
+            f(self.value, self.value_type, self.state).map(|known_prop| {
+                (
+                    Prop::Known(known_prop),
+                    self.universals,
+                    self.unknown_params,
+                )
+            })
+        }
+
+        fn finish_value(
+            self,
+            f: impl FnOnce(T) -> KnownProp<S>,
+        ) -> (Prop<S>, UniversalParams, Box<[UnknownParam<S>]>) {
+            (
+                Prop::Known(f(self.value)),
+                self.universals,
+                self.unknown_params,
+            )
+        }
+
+        fn finish_both<Params>(
+            self,
+            p: impl FnOnce(P) -> Params,
+            f: impl FnOnce(T, Params) -> KnownProp<S>,
+        ) -> (Prop<S>, UniversalParams, Box<[UnknownParam<S>]>) {
+            (
+                Prop::Known(f(self.value, p(self.state))),
+                self.universals,
+                self.unknown_params,
+            )
+        }
+    }
+
     #[allow(clippy::type_complexity)]
     fn parse_property<I, E, T, S, V>(
         input: &mut I,
@@ -594,7 +675,7 @@ where
             Option<ValueType<I::Slice>>,
         ) -> Result<V, CalendarParseError<I::Slice>>,
         value_parser: impl FnOnce(&mut I) -> Result<T, E>,
-    ) -> Result<(T, V, S, Box<[UnknownParam<I::Slice>]>), E>
+    ) -> Result<ParsedProp<T, V, S, I::Slice>, E>
     where
         I: StreamIsPartial + Stream + Compare<Caseless<&'static str>> + Compare<char>,
         I::Token: AsChar + Clone,
@@ -602,14 +683,20 @@ where
         E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
         S: Default,
     {
-        let (params, value_type, unknown_params) =
+        let (state, value_type, universals, unknown_params) =
             sm_parse_next(StateMachine::new(S::default(), step_fn), input)?;
         let _ = ':'.parse_next(input)?;
 
         let value_type =
             value_type_check(value_type).map_err(|err| E::from_external_error(input, err))?;
         let value = value_parser(input)?;
-        Ok((value, value_type, params, unknown_params))
+        Ok(ParsedProp {
+            value,
+            value_type,
+            state,
+            universals,
+            unknown_params,
+        })
     }
 
     #[allow(clippy::type_complexity)]
@@ -663,44 +750,44 @@ where
 
     Ok(match name {
         PropName::Rfc5545(prop @ Rfc5545PropName::CalendarScale) => {
-            let ((), (), (), unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 trivial_step(PropName::Rfc5545(prop)),
                 only::<I>(ValueType::Text),
                 gregorian,
             )?;
 
-            (Prop::Known(KnownProp::CalScale), unknown_params)
+            res.finish_value(|()| KnownProp::CalScale)
         }
         PropName::Rfc5545(prop @ Rfc5545PropName::Method) => {
-            let (method, (), (), unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 trivial_step(PropName::Rfc5545(prop)),
                 only::<I>(ValueType::Text),
                 method,
             )?;
 
-            (Prop::Known(KnownProp::Method(method)), unknown_params)
+            res.finish_value(KnownProp::Method)
         }
         PropName::Rfc5545(prop @ Rfc5545PropName::ProductIdentifier) => {
-            let (prod_id, (), (), unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 trivial_step(PropName::Rfc5545(prop)),
                 only::<I>(ValueType::Text),
                 text,
             )?;
 
-            (Prop::Known(KnownProp::ProdId(prod_id)), unknown_params)
+            res.finish_value(KnownProp::ProdId)
         }
         PropName::Rfc5545(prop @ Rfc5545PropName::Version) => {
-            let ((), (), (), unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 trivial_step(PropName::Rfc5545(prop)),
                 only::<I>(ValueType::Text),
                 v2_0,
             )?;
 
-            (Prop::Known(KnownProp::Version), unknown_params)
+            res.finish_value(|()| KnownProp::Version)
         }
         PropName::Rfc5545(Rfc5545PropName::Attachment) => {
             struct Base64;
@@ -754,15 +841,7 @@ where
                 }
             }
 
-            let (
-                (),
-                value_type,
-                State {
-                    encoding,
-                    format_type,
-                },
-                unknown_params,
-            ) = parse_property(
+            let res = parse_property(
                 input,
                 step,
                 |v| match v {
@@ -773,8 +852,8 @@ where
                 empty,
             )?;
 
-            if value_type == UriOrBinary::Binary {
-                match encoding {
+            if res.value_type == UriOrBinary::Binary {
+                match res.state.encoding {
                     Some(Base64) => (),
                     None => {
                         return Err(E::from_external_error(
@@ -787,215 +866,192 @@ where
                 }
             }
 
-            let params = AttachParams { format_type };
-            let value = match value_type {
+            let params = AttachParams {
+                format_type: res.state.format_type,
+            };
+
+            let value = match res.value_type {
                 UriOrBinary::Uri => uri::<_, _, false>.map(AttachValue::Uri).parse_next(input)?,
                 UriOrBinary::Binary => binary.map(AttachValue::Binary).parse_next(input)?,
             };
 
             (
                 Prop::Known(KnownProp::Attach(value, params)),
-                unknown_params,
+                res.universals,
+                res.unknown_params,
             )
         }
         PropName::Rfc5545(prop @ Rfc5545PropName::Categories) => {
-            let (value, (), state, unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 lang_param_step(PropName::Rfc5545(prop)),
                 only::<I>(ValueType::Text),
-                |i| {
-                    separated(1.., text, ',')
-                        .map(|v: Vec<_>| v.into_boxed_slice())
-                        .parse_next(i)
-                },
+                text_seq,
             )?;
 
-            (
-                Prop::Known(KnownProp::Categories(value, state.into_params())),
-                unknown_params,
-            )
+            res.finish_both(LangParamState::into_params, KnownProp::Categories)
         }
         PropName::Rfc5545(prop @ Rfc5545PropName::Classification) => {
-            let (value, (), (), unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 trivial_step(PropName::Rfc5545(prop)),
                 only::<I>(ValueType::Text),
                 class_value,
             )?;
 
-            (Prop::Known(KnownProp::Class(value)), unknown_params)
+            res.finish_value(KnownProp::Class)
         }
         PropName::Rfc5545(prop @ Rfc5545PropName::Comment) => {
-            let (value, (), state, unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 text_param_step(PropName::Rfc5545(prop)),
                 only::<I>(ValueType::Text),
                 text,
             )?;
 
-            (
-                Prop::Known(KnownProp::Comment(value, state.into_params())),
-                unknown_params,
-            )
+            res.finish_both(TextParamState::into_params, KnownProp::Comment)
         }
         PropName::Rfc5545(prop @ Rfc5545PropName::Description) => {
-            let (value, (), state, unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 text_param_step(PropName::Rfc5545(prop)),
                 only::<I>(ValueType::Text),
                 text,
             )?;
 
-            (
-                Prop::Known(KnownProp::Description(value, state.into_params())),
-                unknown_params,
-            )
+            res.finish_both(TextParamState::into_params, KnownProp::Description)
         }
         PropName::Rfc5545(prop @ Rfc5545PropName::GeographicPosition) => {
-            let (value, (), (), unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 trivial_step(PropName::Rfc5545(prop)),
                 only::<I>(ValueType::Float),
                 geo,
             )?;
 
-            (Prop::Known(KnownProp::Geo(value)), unknown_params)
+            res.finish_value(KnownProp::Geo)
         }
         PropName::Rfc5545(prop @ Rfc5545PropName::Location) => {
-            let (value, (), state, unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 text_param_step(PropName::Rfc5545(prop)),
                 only::<I>(ValueType::Text),
                 text,
             )?;
 
-            (
-                Prop::Known(KnownProp::Location(value, state.into_params())),
-                unknown_params,
-            )
+            res.finish_both(TextParamState::into_params, KnownProp::Location)
         }
         PropName::Rfc5545(prop @ Rfc5545PropName::PercentComplete) => {
-            let (value, (), (), unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 trivial_step(PropName::Rfc5545(prop)),
                 only::<I>(ValueType::Integer),
                 completion_percentage,
             )?;
 
-            (
-                Prop::Known(KnownProp::PercentComplete(value)),
-                unknown_params,
-            )
+            res.finish_value(KnownProp::PercentComplete)
         }
         PropName::Rfc5545(prop @ Rfc5545PropName::Priority) => {
-            let (value, (), (), unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 trivial_step(PropName::Rfc5545(prop)),
                 only::<I>(ValueType::Integer),
                 priority,
             )?;
 
-            (Prop::Known(KnownProp::Priority(value)), unknown_params)
+            res.finish_value(KnownProp::Priority)
         }
         PropName::Rfc5545(prop @ Rfc5545PropName::Resources) => {
-            let (value, (), state, unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 text_param_step(PropName::Rfc5545(prop)),
                 only::<I>(ValueType::Text),
-                |i| {
-                    separated(1.., text, ',')
-                        .map(|v: Vec<_>| v.into_boxed_slice())
-                        .parse_next(i)
-                },
+                text_seq,
             )?;
 
-            (
-                Prop::Known(KnownProp::Resources(value, state.into_params())),
-                unknown_params,
-            )
+            res.finish_both(TextParamState::into_params, KnownProp::Resources)
         }
         PropName::Rfc5545(prop @ Rfc5545PropName::Status) => {
-            let (status, (), (), unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 trivial_step(PropName::Rfc5545(prop)),
                 only::<I>(ValueType::Text),
                 status,
             )?;
 
-            (Prop::Known(KnownProp::Status(status)), unknown_params)
+            res.finish_value(KnownProp::Status)
         }
         PropName::Rfc5545(prop @ Rfc5545PropName::Summary) => {
-            let (value, (), state, unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 text_param_step(PropName::Rfc5545(prop)),
                 only::<I>(ValueType::Text),
                 text,
             )?;
 
-            (
-                Prop::Known(KnownProp::Summary(value, state.into_params())),
-                unknown_params,
-            )
+            res.finish_both(TextParamState::into_params, KnownProp::Summary)
         }
         PropName::Rfc5545(prop @ Rfc5545PropName::DateTimeCompleted) => {
-            let (dt, (), (), unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 trivial_step(PropName::Rfc5545(prop)),
                 only::<I>(ValueType::DateTime),
                 datetime_utc,
             )?;
 
-            (Prop::Known(KnownProp::DtCompleted(dt)), unknown_params)
+            res.finish_value(KnownProp::DtCompleted)
         }
         PropName::Rfc5545(prop @ Rfc5545PropName::DateTimeEnd) => {
-            let ((), value_type, state, unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 dt_param_step(PropName::Rfc5545(prop)),
                 datetime_or_date_type::<I>,
                 empty,
             )?;
 
-            let value = value_type.into_parser().parse_next(input)?;
-            let params = state.into_params();
-            (Prop::Known(KnownProp::DtEnd(value, params)), unknown_params)
+            res.try_finish(|(), value_type, state| {
+                let value = value_type.into_parser().parse_next(input)?;
+                let params = state.into_params();
+                Ok(KnownProp::DtEnd(value, params))
+            })?
         }
         PropName::Rfc5545(prop @ Rfc5545PropName::DateTimeDue) => {
-            let ((), value_type, state, unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 dt_param_step(PropName::Rfc5545(prop)),
                 datetime_or_date_type::<I>,
                 empty,
             )?;
 
-            let value = value_type.into_parser().parse_next(input)?;
-            let params = state.into_params();
-            (Prop::Known(KnownProp::DtDue(value, params)), unknown_params)
+            res.try_finish(|(), value_type, state| {
+                let value = value_type.into_parser().parse_next(input)?;
+                let params = state.into_params();
+                Ok(KnownProp::DtDue(value, params))
+            })?
         }
         PropName::Rfc5545(prop @ Rfc5545PropName::DateTimeStart) => {
-            let ((), value_type, state, unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 dt_param_step(PropName::Rfc5545(prop)),
                 datetime_or_date_type::<I>,
                 empty,
             )?;
 
-            let value = value_type.into_parser().parse_next(input)?;
-            let params = state.into_params();
-
-            (
-                Prop::Known(KnownProp::DtStart(value, params)),
-                unknown_params,
-            )
+            res.try_finish(|(), value_type, state| {
+                let value = value_type.into_parser().parse_next(input)?;
+                let params = state.into_params();
+                Ok(KnownProp::DtStart(value, params))
+            })?
         }
         PropName::Rfc5545(prop @ Rfc5545PropName::Duration) => {
-            let (value, (), (), unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 trivial_step(PropName::Rfc5545(prop)),
                 only::<I>(ValueType::Duration),
                 duration,
             )?;
 
-            (Prop::Known(KnownProp::Duration(value)), unknown_params)
+            res.finish_value(KnownProp::Duration)
         }
         PropName::Rfc5545(Rfc5545PropName::FreeBusyTime) => {
             type State<S> = Option<FreeBusyType<S>>;
@@ -1023,82 +1079,73 @@ where
                 }
             }
 
-            let (value, (), free_busy_type, unknown_params) =
-                parse_property(input, step, only::<I>(ValueType::Period), |i| {
-                    separated(1.., period, ',')
-                        .map(Vec::into_boxed_slice)
-                        .parse_next(i)
-                })?;
-
-            let params = FBTypeParams { free_busy_type };
-
-            (
-                Prop::Known(KnownProp::FreeBusy(value, params)),
-                unknown_params,
+            parse_property(input, step, only::<I>(ValueType::Period), |i| {
+                separated(1.., period, ',').parse_next(i)
+            })?
+            .finish_both(
+                |free_busy_type| FBTypeParams { free_busy_type },
+                KnownProp::FreeBusy,
             )
         }
         PropName::Rfc5545(prop @ Rfc5545PropName::TimeTransparency) => {
-            let (value, (), (), unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 trivial_step(PropName::Rfc5545(prop)),
                 only::<I>(ValueType::Text),
                 time_transparency,
             )?;
 
-            (Prop::Known(KnownProp::Transparency(value)), unknown_params)
+            res.finish_value(KnownProp::Transparency)
         }
         PropName::Rfc5545(prop @ Rfc5545PropName::TimeZoneIdentifier) => {
-            let (value, (), (), unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 trivial_step(PropName::Rfc5545(prop)),
                 only::<I>(ValueType::Text),
                 tz_id,
             )?;
 
-            (Prop::Known(KnownProp::TzId(value)), unknown_params)
+            res.finish_value(KnownProp::TzId)
         }
         PropName::Rfc5545(prop @ Rfc5545PropName::TimeZoneName) => {
-            let (value, (), state, unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 lang_param_step(PropName::Rfc5545(prop)),
                 only::<I>(ValueType::Text),
                 text,
             )?;
 
-            (
-                Prop::Known(KnownProp::TzName(value, state.into_params())),
-                unknown_params,
-            )
+            res.finish_both(LangParamState::into_params, KnownProp::TzName)
         }
         PropName::Rfc5545(prop @ Rfc5545PropName::TimeZoneOffsetFrom) => {
-            let (value, (), (), unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 trivial_step(PropName::Rfc5545(prop)),
                 only::<I>(ValueType::UtcOffset),
                 utc_offset,
             )?;
 
-            (Prop::Known(KnownProp::TzOffsetFrom(value)), unknown_params)
+            res.finish_value(KnownProp::TzOffsetFrom)
         }
         PropName::Rfc5545(prop @ Rfc5545PropName::TimeZoneOffsetTo) => {
-            let (value, (), (), unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 trivial_step(PropName::Rfc5545(prop)),
                 only::<I>(ValueType::UtcOffset),
                 utc_offset,
             )?;
 
-            (Prop::Known(KnownProp::TzOffsetTo(value)), unknown_params)
+            res.finish_value(KnownProp::TzOffsetTo)
         }
         PropName::Rfc5545(prop @ Rfc5545PropName::TimeZoneUrl) => {
-            let (value, (), (), unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 trivial_step(PropName::Rfc5545(prop)),
                 only::<I>(ValueType::Uri),
                 uri::<_, _, false>,
             )?;
 
-            (Prop::Known(KnownProp::TzUrl(value)), unknown_params)
+            res.finish_value(KnownProp::TzUrl)
         }
         PropName::Rfc5545(Rfc5545PropName::Attendee) => {
             type State<S> = AttendeeParams<S>;
@@ -1204,30 +1251,24 @@ where
                 }
             }
 
-            let (value, (), params, unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 step,
                 only::<I>(ValueType::CalAddress),
                 cal_address::<_, _, false>,
             )?;
 
-            (
-                Prop::Known(KnownProp::Attendee(value, params)),
-                unknown_params,
-            )
+            res.finish_both(std::convert::identity, KnownProp::Attendee)
         }
         PropName::Rfc5545(prop @ Rfc5545PropName::Contact) => {
-            let (value, (), state, unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 text_param_step(PropName::Rfc5545(prop)),
                 only::<I>(ValueType::Text),
                 text,
             )?;
 
-            (
-                Prop::Known(KnownProp::Contact(value, state.into_params())),
-                unknown_params,
-            )
+            res.finish_both(TextParamState::into_params, KnownProp::Contact)
         }
         PropName::Rfc5545(Rfc5545PropName::Organizer) => {
             type State<S> = OrganizerParams<S>;
@@ -1282,22 +1323,28 @@ where
                 }
             }
 
-            let (value, (), params, unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 step,
                 only::<I>(ValueType::CalAddress),
                 cal_address::<_, _, false>,
             )?;
 
-            (
-                Prop::Known(KnownProp::Organizer(value, params)),
-                unknown_params,
-            )
+            res.finish_both(std::convert::identity, KnownProp::Organizer)
         }
         PropName::Rfc5545(Rfc5545PropName::RecurrenceId) => {
             struct State<S> {
                 tz_id: Option<TzId<S>>,
                 recurrence_identifier_range: Option<ThisAndFuture>,
+            }
+
+            impl<S> State<S> {
+                fn into_params(self) -> RecurrenceIdParams<S> {
+                    RecurrenceIdParams {
+                        tz_id: self.tz_id,
+                        recurrence_identifier_range: self.recurrence_identifier_range,
+                    }
+                }
             }
 
             impl<S> Default for State<S> {
@@ -1340,19 +1387,13 @@ where
                 }
             }
 
-            let ((), value_type, state, unknown_params) =
-                parse_property(input, step, datetime_or_date_type::<I>, empty)?;
-
-            let value = value_type.into_parser().parse_next(input)?;
-            let params = RecurrenceIdParams {
-                tz_id: state.tz_id,
-                recurrence_identifier_range: state.recurrence_identifier_range,
-            };
-
-            (
-                Prop::Known(KnownProp::RecurrenceId(value, params)),
-                unknown_params,
-            )
+            parse_property(input, step, datetime_or_date_type::<I>, empty)?.try_finish(
+                |(), value_type, state| {
+                    let value = value_type.into_parser().parse_next(input)?;
+                    let params = state.into_params();
+                    Ok(KnownProp::RecurrenceId(value, params))
+                },
+            )?
         }
         PropName::Rfc5545(Rfc5545PropName::RelatedTo) => {
             type State<S> = Option<RelationshipType<S>>;
@@ -1380,49 +1421,44 @@ where
                 }
             }
 
-            let (value, (), relationship_type, unknown_params) =
-                parse_property(input, step, only::<I>(ValueType::Text), text)?;
-            let params = RelTypeParams { relationship_type };
-
-            (
-                Prop::Known(KnownProp::RelatedTo(value, params)),
-                unknown_params,
+            parse_property(input, step, only::<I>(ValueType::Text), text)?.finish_both(
+                |relationship_type| RelTypeParams { relationship_type },
+                KnownProp::RelatedTo,
             )
         }
         PropName::Rfc5545(prop @ Rfc5545PropName::UniformResourceLocator) => {
-            let (value, (), (), unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 trivial_step(PropName::Rfc5545(prop)),
                 only::<I>(ValueType::Uri),
                 uri::<_, _, false>,
             )?;
 
-            (Prop::Known(KnownProp::Url(value)), unknown_params)
+            res.finish_value(KnownProp::Url)
         }
         PropName::Rfc5545(prop @ Rfc5545PropName::UniqueIdentifier) => {
-            let (value, (), (), unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 trivial_step(PropName::Rfc5545(prop)),
                 only::<I>(ValueType::Text),
                 uid,
             )?;
 
-            (Prop::Known(KnownProp::Uid(value)), unknown_params)
+            res.finish_value(KnownProp::Uid)
         }
         PropName::Rfc5545(prop @ Rfc5545PropName::ExceptionDateTimes) => {
-            let ((), value_type, state, unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 dt_param_step(PropName::Rfc5545(prop)),
                 datetime_or_date_type::<I>,
                 empty,
             )?;
 
-            let value = value_type.into_seq_parser().parse_next(input)?;
-
-            (
-                Prop::Known(KnownProp::ExDate(value, state.into_params())),
-                unknown_params,
-            )
+            res.try_finish(|(), value_type, state| {
+                let value = value_type.into_seq_parser().parse_next(input)?;
+                let params = state.into_params();
+                Ok(KnownProp::ExDate(value, params))
+            })?
         }
         PropName::Rfc5545(prop @ Rfc5545PropName::RecurrenceDateTimes) => {
             enum RDateType {
@@ -1431,7 +1467,7 @@ where
                 Period,
             }
 
-            let ((), value_type, state, unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 dt_param_step(PropName::Rfc5545(prop)),
                 |v| match v {
@@ -1443,45 +1479,41 @@ where
                 empty,
             )?;
 
-            let value = match value_type {
-                RDateType::DateTime => separated(1.., datetime, ',')
-                    .map(Vec::into_boxed_slice)
-                    .map(RDateSeq::DateTime)
-                    .parse_next(input),
-                RDateType::Date => separated(1.., date, ',')
-                    .map(Vec::into_boxed_slice)
-                    .map(RDateSeq::Date)
-                    .parse_next(input),
-                RDateType::Period => separated(1.., period, ',')
-                    .map(Vec::into_boxed_slice)
-                    .map(RDateSeq::Period)
-                    .parse_next(input),
-            }?;
-
-            (
-                Prop::Known(KnownProp::RDate(value, state.into_params())),
-                unknown_params,
-            )
+            res.try_finish(|(), value_type, state| {
+                let value = match value_type {
+                    RDateType::DateTime => separated(1.., datetime, ',')
+                        .map(RDateSeq::DateTime)
+                        .parse_next(input),
+                    RDateType::Date => separated(1.., date, ',')
+                        .map(RDateSeq::Date)
+                        .parse_next(input),
+                    RDateType::Period => separated(1.., period, ',')
+                        .map(RDateSeq::Period)
+                        .parse_next(input),
+                }?;
+                let params = state.into_params();
+                Ok(KnownProp::RDate(value, params))
+            })?
         }
         PropName::Rfc5545(prop @ Rfc5545PropName::RecurrenceRule) => {
-            let (value, (), (), unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 trivial_step(PropName::Rfc5545(prop)),
                 only::<I>(ValueType::Recur),
                 rrule,
             )?;
 
-            (Prop::Known(KnownProp::RRule(value)), unknown_params)
+            res.finish_value(KnownProp::RRule)
         }
         PropName::Rfc5545(prop @ Rfc5545PropName::Action) => {
-            let (value, (), (), unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 trivial_step(PropName::Rfc5545(prop)),
                 only::<I>(ValueType::Text),
                 alarm_action,
             )?;
 
-            (Prop::Known(KnownProp::Action(value)), unknown_params)
+            res.finish_value(KnownProp::Action)
         }
         PropName::Rfc5545(prop @ Rfc5545PropName::RepeatCount) => {
             // NOTE: should we restrict this to being positive? the standard
@@ -1489,14 +1521,14 @@ where
             // seems semantically incoherent to have a negative number of
             // repetitions.
 
-            let (value, (), (), unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 trivial_step(PropName::Rfc5545(prop)),
                 only::<I>(ValueType::Integer),
                 integer,
             )?;
 
-            (Prop::Known(KnownProp::Repeat(value)), unknown_params)
+            res.finish_value(KnownProp::Repeat)
         }
         PropName::Rfc5545(Rfc5545PropName::Trigger) => {
             enum TriggerType {
@@ -1532,7 +1564,7 @@ where
                 }
             }
 
-            let ((), value_type, State { trigger_relation }, unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 step,
                 |v| match v {
@@ -1543,130 +1575,125 @@ where
                 empty,
             )?;
 
-            let prop = match value_type {
-                TriggerType::DateTime if trigger_relation.is_some() => Err(E::from_external_error(
-                    input,
-                    CalendarParseError::TriggerParam(TriggerParamError::DateTimeWithRelation),
-                )),
+            let prop = match res.value_type {
+                TriggerType::DateTime if res.state.trigger_relation.is_some() => {
+                    Err(E::from_external_error(
+                        input,
+                        CalendarParseError::TriggerParam(TriggerParamError::DateTimeWithRelation),
+                    ))
+                }
                 TriggerType::DateTime => {
                     let value = datetime_utc.parse_next(input)?;
                     Ok(Prop::Known(KnownProp::TriggerAbsolute(value)))
                 }
                 TriggerType::Duration => {
                     let value = duration.parse_next(input)?;
-                    let params = TriggerParams { trigger_relation };
+                    let params = TriggerParams {
+                        trigger_relation: res.state.trigger_relation,
+                    };
                     Ok(Prop::Known(KnownProp::TriggerRelative(value, params)))
                 }
             }?;
 
-            (prop, unknown_params)
+            (prop, res.universals, res.unknown_params)
         }
         PropName::Rfc5545(prop @ Rfc5545PropName::DateTimeCreated) => {
-            let (value, (), (), unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 trivial_step(PropName::Rfc5545(prop)),
                 only::<I>(ValueType::DateTime),
                 datetime_utc,
             )?;
 
-            (Prop::Known(KnownProp::Created(value)), unknown_params)
+            res.finish_value(KnownProp::Created)
         }
         PropName::Rfc5545(prop @ Rfc5545PropName::DateTimeStamp) => {
-            let (value, (), (), unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 trivial_step(PropName::Rfc5545(prop)),
                 only::<I>(ValueType::DateTime),
                 datetime_utc,
             )?;
 
-            (Prop::Known(KnownProp::DtStamp(value)), unknown_params)
+            res.finish_value(KnownProp::DtStamp)
         }
         PropName::Rfc5545(prop @ Rfc5545PropName::LastModified) => {
-            let (value, (), (), unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 trivial_step(PropName::Rfc5545(prop)),
                 only::<I>(ValueType::DateTime),
                 datetime_utc,
             )?;
 
-            (Prop::Known(KnownProp::LastModified(value)), unknown_params)
+            res.finish_value(KnownProp::LastModified)
         }
         PropName::Rfc5545(prop @ Rfc5545PropName::SequenceNumber) => {
-            let (value, (), (), unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 trivial_step(PropName::Rfc5545(prop)),
                 only::<I>(ValueType::Integer),
                 integer,
             )?;
 
-            (Prop::Known(KnownProp::Sequence(value)), unknown_params)
+            res.finish_value(KnownProp::Sequence)
         }
         PropName::Rfc5545(prop @ Rfc5545PropName::RequestStatus) => {
-            let ((), (), state, unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 lang_param_step(PropName::Rfc5545(prop)),
                 only::<I>(ValueType::Text),
                 empty,
             )?;
 
-            let status = RequestStatus {
-                code: status_code.parse_next(input)?,
-                description: preceded(';', text).parse_next(input)?,
-                exception_data: opt(preceded(';', text)).parse_next(input)?,
-            };
-
-            let params = state.into_params();
-
-            (
-                Prop::Known(KnownProp::RequestStatus(status, params)),
-                unknown_params,
-            )
+            res.try_finish(|(), (), state| {
+                let value = RequestStatus {
+                    code: status_code.parse_next(input)?,
+                    description: preceded(';', text).parse_next(input)?,
+                    exception_data: opt(preceded(';', text)).parse_next(input)?,
+                };
+                let params = state.into_params();
+                Ok(KnownProp::RequestStatus(value, params))
+            })?
         }
         PropName::Rfc7986(prop @ Rfc7986PropName::Name) => {
-            let (value, (), state, unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 text_param_step(PropName::Rfc7986(prop)),
                 only::<I>(ValueType::Text),
                 text,
             )?;
 
-            (
-                Prop::Known(KnownProp::Name(value, state.into_params())),
-                unknown_params,
-            )
+            res.finish_both(TextParamState::into_params, KnownProp::Name)
         }
         PropName::Rfc7986(prop @ Rfc7986PropName::RefreshInterval) => {
-            let (value, (), (), unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 trivial_step(PropName::Rfc7986(prop)),
                 once::<I>(ValueType::Duration),
                 duration,
             )?;
 
-            (
-                Prop::Known(KnownProp::RefreshInterval(value)),
-                unknown_params,
-            )
+            res.finish_value(KnownProp::RefreshInterval)
         }
         PropName::Rfc7986(prop @ Rfc7986PropName::Source) => {
-            let (value, (), (), unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 trivial_step(PropName::Rfc7986(prop)),
                 once::<I>(ValueType::Uri),
                 uri::<_, _, false>,
             )?;
 
-            (Prop::Known(KnownProp::Source(value)), unknown_params)
+            res.finish_value(KnownProp::Source)
         }
         PropName::Rfc7986(prop @ Rfc7986PropName::Color) => {
-            let (value, (), (), unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 trivial_step(PropName::Rfc7986(prop)),
                 only::<I>(ValueType::Text),
                 color,
             )?;
 
-            (Prop::Known(KnownProp::Color(value)), unknown_params)
+            res.finish_value(KnownProp::Color)
         }
         PropName::Rfc7986(Rfc7986PropName::Image) => {
             struct State<S> {
@@ -1733,7 +1760,7 @@ where
                 }
             }
 
-            let ((), value_type, state, unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 step,
                 |v| match v {
@@ -1744,25 +1771,24 @@ where
                 empty,
             )?;
 
-            let value = match (state.encoding_found, value_type) {
-                (false, UriOrBinary::Uri) => {
-                    uri::<_, _, false>.map(ImageData::Uri).parse_next(input)
-                }
-                (true, UriOrBinary::Binary) => binary.map(ImageData::Binary).parse_next(input),
-                (true, UriOrBinary::Uri) => Err(E::from_external_error(
-                    input,
-                    CalendarParseError::AttachParam(AttachParamError::EncodingOnUri),
-                )),
-                (false, UriOrBinary::Binary) => Err(E::from_external_error(
-                    input,
-                    CalendarParseError::AttachParam(AttachParamError::BinaryWithoutEncoding),
-                )),
-            }?;
-
-            (
-                Prop::Known(KnownProp::Image(value, state.params)),
-                unknown_params,
-            )
+            res.try_finish(|(), value_type, state| {
+                let value = match (state.encoding_found, value_type) {
+                    (false, UriOrBinary::Uri) => {
+                        uri::<_, _, false>.map(ImageData::Uri).parse_next(input)
+                    }
+                    (true, UriOrBinary::Binary) => binary.map(ImageData::Binary).parse_next(input),
+                    (true, UriOrBinary::Uri) => Err(E::from_external_error(
+                        input,
+                        CalendarParseError::AttachParam(AttachParamError::EncodingOnUri),
+                    )),
+                    (false, UriOrBinary::Binary) => Err(E::from_external_error(
+                        input,
+                        CalendarParseError::AttachParam(AttachParamError::BinaryWithoutEncoding),
+                    )),
+                }?;
+                let params = state.params;
+                Ok(KnownProp::Image(value, params))
+            })?
         }
         PropName::Rfc7986(Rfc7986PropName::Conference) => {
             type State<S> = ConfParams<S>;
@@ -1804,85 +1830,73 @@ where
                 }
             }
 
-            let (value, (), params, unknown_params) =
-                parse_property(input, step, once::<I>(ValueType::Uri), uri::<_, _, false>)?;
-
-            (
-                Prop::Known(KnownProp::Conference(value, params)),
-                unknown_params,
-            )
+            let res = parse_property(input, step, once::<I>(ValueType::Uri), uri::<_, _, false>)?;
+            res.finish_both(std::convert::identity, KnownProp::Conference)
         }
         PropName::Rfc9073(prop @ Rfc9073PropName::LocationType) => {
-            let ((), (), (), unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 trivial_step(PropName::Rfc9073(prop)),
                 only::<I>(ValueType::Text),
-                empty,
+                text_seq,
             )?;
 
-            let value: Vec<_> = separated(1.., text, ',').parse_next(input)?;
-            (Prop::Known(KnownProp::LocationType(value)), unknown_params)
+            res.finish_value(KnownProp::LocationType)
         }
         PropName::Rfc9073(prop @ Rfc9073PropName::ParticipantType) => {
-            let (value, (), (), unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 trivial_step(PropName::Rfc9073(prop)),
                 only::<I>(ValueType::Text),
                 participant_type,
             )?;
 
-            (
-                Prop::Known(KnownProp::ParticipantType(value)),
-                unknown_params,
-            )
+            res.finish_value(KnownProp::ParticipantType)
         }
         PropName::Rfc9073(prop @ Rfc9073PropName::ResourceType) => {
-            let (value, (), (), unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 trivial_step(PropName::Rfc9073(prop)),
                 only::<I>(ValueType::Text),
                 resource_type,
             )?;
 
-            (Prop::Known(KnownProp::ResourceType(value)), unknown_params)
+            res.finish_value(KnownProp::ResourceType)
         }
         PropName::Rfc9073(prop @ Rfc9073PropName::CalendarAddress) => {
-            let (value, (), (), unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 trivial_step(PropName::Rfc9073(prop)),
                 only::<I>(ValueType::CalAddress),
                 cal_address::<_, _, false>,
             )?;
 
-            (
-                Prop::Known(KnownProp::CalendarAddress(value)),
-                unknown_params,
-            )
+            res.finish_value(KnownProp::CalendarAddress)
         }
         PropName::Rfc9073(prop @ Rfc9073PropName::StyledDescription) => todo!(),
         PropName::Rfc9073(prop @ Rfc9073PropName::StructuredData) => todo!(),
         PropName::Rfc9074(prop @ Rfc9074PropName::Acknowledged) => {
-            let (value, (), (), unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 trivial_step(PropName::Rfc9074(prop)),
                 only::<I>(ValueType::DateTime),
                 datetime_utc,
             )?;
 
-            (Prop::Known(KnownProp::Acknowledged(value)), unknown_params)
+            res.finish_value(KnownProp::Acknowledged)
         }
         PropName::Rfc9074(prop @ Rfc9074PropName::Proximity) => {
-            let (value, (), (), unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 trivial_step(PropName::Rfc9074(prop)),
                 only::<I>(ValueType::Text),
                 proximity_value,
             )?;
 
-            (Prop::Known(KnownProp::Proximity(value)), unknown_params)
+            res.finish_value(KnownProp::Proximity)
         }
         PropName::Iana(name) => {
-            let ((), value_type, params, unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 unknown_step,
                 |v| Ok(v.unwrap_or(ValueType::Text)),
@@ -1891,15 +1905,16 @@ where
 
             (
                 Prop::Unknown(UnknownProp::Iana {
-                    value: parse_value(value_type, input)?,
+                    value: parse_value(res.value_type, input)?,
                     name: name.clone(),
-                    params: params.into_boxed_slice(),
+                    params: res.state.into_boxed_slice(),
                 }),
-                unknown_params,
+                res.universals,
+                res.unknown_params,
             )
         }
         PropName::X(name) => {
-            let ((), value_type, params, unknown_params) = parse_property(
+            let res = parse_property(
                 input,
                 unknown_step,
                 |v| Ok(v.unwrap_or(ValueType::Text)),
@@ -1908,11 +1923,12 @@ where
 
             (
                 Prop::Unknown(UnknownProp::X {
-                    value: parse_value(value_type, input)?,
+                    value: parse_value(res.value_type, input)?,
                     name: name.clone(),
-                    params: params.into_boxed_slice(),
+                    params: res.state.into_boxed_slice(),
                 }),
-                unknown_params,
+                res.universals,
+                res.unknown_params,
             )
         }
     })
@@ -2307,7 +2323,7 @@ mod tests {
         assert!(tail.is_empty());
         assert_eq!(props.len(), 15);
 
-        let mut iter = props.into_iter().map(|(prop, _)| prop);
+        let mut iter = props.into_iter().map(|(prop, _, _)| prop);
         let _ = iter.next(); // skip the first line, it's not a real property
 
         assert_eq!(
@@ -2357,9 +2373,10 @@ mod tests {
     #[test]
     fn rfc_5545_example_calendar_scale_property() {
         let input = "CALSCALE:GREGORIAN";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
         assert_eq!(prop, Prop::Known(KnownProp::CalScale));
     }
@@ -2367,9 +2384,10 @@ mod tests {
     #[test]
     fn rfc_5545_example_method_property() {
         let input = "METHOD:REQUEST";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
         assert_eq!(prop, Prop::Known(KnownProp::Method(Method::Request)));
     }
@@ -2377,9 +2395,10 @@ mod tests {
     #[test]
     fn rfc_5545_example_product_identifier_property() {
         let input = "PRODID:-//ABC Corporation//NONSGML My Product//EN";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
         assert_eq!(
             prop,
@@ -2392,9 +2411,10 @@ mod tests {
     #[test]
     fn rfc_5545_example_version_property() {
         let input = "VERSION:2.0";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
         assert_eq!(prop, Prop::Known(KnownProp::Version));
     }
@@ -2402,9 +2422,10 @@ mod tests {
     #[test]
     fn rfc_5545_example_attachment_property_1() {
         let input = "ATTACH:CID:jsmith.part3.960817T083000.xyzMail@example.com";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
 
         let Prop::Known(KnownProp::Attach(value, params)) = prop else {
@@ -2423,9 +2444,10 @@ mod tests {
         let input =
             "ATTACH;FMTTYPE=application/postscript:ftp://example.com/pub/\r\n reports/r-960812.ps"
                 .as_escaped();
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
 
         let Prop::Known(KnownProp::Attach(value, params)) = prop else {
@@ -2450,9 +2472,10 @@ mod tests {
     #[test]
     fn rfc_5545_example_categories_property_1() {
         let input = "CATEGORIES:APPOINTMENT,EDUCATION";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
 
         let Prop::Known(KnownProp::Categories(values, params)) = prop else {
@@ -2460,18 +2483,16 @@ mod tests {
         };
 
         assert!(params.language.is_none());
-        assert_eq!(
-            values.as_ref(),
-            [Text("APPOINTMENT"), Text("EDUCATION")].as_slice()
-        );
+        assert_eq!(values, vec![Text("APPOINTMENT"), Text("EDUCATION")]);
     }
 
     #[test]
     fn rfc_5545_example_categories_property_2() {
         let input = "CATEGORIES:MEETING";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
 
         let Prop::Known(KnownProp::Categories(values, params)) = prop else {
@@ -2479,15 +2500,16 @@ mod tests {
         };
 
         assert!(params.language.is_none());
-        assert_eq!(values.as_ref(), [Text("MEETING")].as_slice());
+        assert_eq!(values, vec![Text("MEETING")]);
     }
 
     #[test]
     fn rfc_5545_example_classification_property() {
         let input = "CLASS:PUBLIC";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
         assert_eq!(prop, Prop::Known(KnownProp::Class(ClassValue::Public)));
     }
@@ -2496,10 +2518,11 @@ mod tests {
     fn rfc_5545_example_comment_property() {
         let input = "COMMENT:The meeting really needs to include both ourselves \r\n and the customer. We can't hold this meeting without them. \r\n As a matter of fact\\, the venue for the meeting ought to be at \r\n their site. - - John";
 
-        let (tail, (prop, unknown_params)) =
+        let (tail, (prop, univ, unknown_params)) =
             property::<_, ()>.parse_peek(input.as_escaped()).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
 
         let Prop::Known(KnownProp::Comment(text, params)) = prop else {
@@ -2515,10 +2538,11 @@ mod tests {
     fn rfc_5545_example_description_property() {
         let input = "DESCRIPTION:Meeting to provide technical review for \"Phoenix\" \r\n design.\\nHappy Face Conference Room. Phoenix design team \r\n MUST attend this meeting.\\nRSVP to team leader.";
 
-        let (tail, (prop, unknown_params)) =
+        let (tail, (prop, univ, unknown_params)) =
             property::<_, ()>.parse_peek(input.as_escaped()).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
 
         let Prop::Known(KnownProp::Description(text, params)) = prop else {
@@ -2533,9 +2557,10 @@ mod tests {
     #[test]
     fn rfc_5545_example_geographic_position_property() {
         let input = "GEO:37.386013;-122.082932";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
 
         let Prop::Known(KnownProp::Geo(geo)) = prop else {
@@ -2549,9 +2574,10 @@ mod tests {
     #[test]
     fn rfc_5545_example_location_property_1() {
         let input = "LOCATION:Conference Room - F123\\, Bldg. 002";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
 
         let Prop::Known(KnownProp::Location(text, params)) = prop else {
@@ -2567,10 +2593,11 @@ mod tests {
     fn rfc_5545_example_location_property_2() {
         let input = "LOCATION;ALTREP=\"http://xyzcorp.com/conf-rooms/f123.vcf\":\r\n Conference Room - F123\\, Bldg. 002";
 
-        let (tail, (prop, unknown_params)) =
+        let (tail, (prop, univ, unknown_params)) =
             property::<_, ()>.parse_peek(input.as_escaped()).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
 
         let Prop::Known(KnownProp::Location(text, params)) = prop else {
@@ -2589,9 +2616,10 @@ mod tests {
     #[test]
     fn rfc_5545_example_percent_complete_property() {
         let input = "PERCENT-COMPLETE:39";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
 
         let Prop::Known(KnownProp::PercentComplete(pct)) = prop else {
@@ -2604,9 +2632,10 @@ mod tests {
     #[test]
     fn rfc_5545_example_priority_property_1() {
         let input = "PRIORITY:1";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
         assert_eq!(prop, Prop::Known(KnownProp::Priority(Priority::A1)));
     }
@@ -2614,9 +2643,10 @@ mod tests {
     #[test]
     fn rfc_5545_example_priority_property_2() {
         let input = "PRIORITY:2";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
         assert_eq!(prop, Prop::Known(KnownProp::Priority(Priority::A2)));
     }
@@ -2624,9 +2654,10 @@ mod tests {
     #[test]
     fn rfc_5545_example_priority_property_3() {
         let input = "PRIORITY:0";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
         assert_eq!(prop, Prop::Known(KnownProp::Priority(Priority::Zero)));
     }
@@ -2634,9 +2665,10 @@ mod tests {
     #[test]
     fn rfc_5545_example_resources_property_1() {
         let input = "RESOURCES:EASEL,PROJECTOR,VCR";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
 
         let Prop::Known(KnownProp::Resources(values, params)) = prop else {
@@ -2645,18 +2677,16 @@ mod tests {
 
         assert!(params.language.is_none());
         assert!(params.alternate_representation.is_none());
-        assert_eq!(
-            values.as_ref(),
-            [Text("EASEL"), Text("PROJECTOR"), Text("VCR")].as_slice()
-        );
+        assert_eq!(values, vec![Text("EASEL"), Text("PROJECTOR"), Text("VCR")]);
     }
 
     #[test]
     fn rfc_5545_example_resources_property_2() {
         let input = "RESOURCES;LANGUAGE=fr:Nettoyeur haute pression";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
 
         let Prop::Known(KnownProp::Resources(values, params)) = prop else {
@@ -2665,18 +2695,16 @@ mod tests {
 
         assert!(params.alternate_representation.is_none());
         assert_eq!(params.language, Some(Language("fr")));
-        assert_eq!(
-            values.as_ref(),
-            [Text("Nettoyeur haute pression")].as_slice()
-        );
+        assert_eq!(values, vec![Text("Nettoyeur haute pression")]);
     }
 
     #[test]
     fn rfc_5545_example_status_property_1() {
         let input = "STATUS:TENTATIVE";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
         assert_eq!(prop, Prop::Known(KnownProp::Status(Status::Tentative)));
     }
@@ -2684,9 +2712,10 @@ mod tests {
     #[test]
     fn rfc_5545_example_status_property_2() {
         let input = "STATUS:NEEDS-ACTION";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
         assert_eq!(prop, Prop::Known(KnownProp::Status(Status::NeedsAction)));
     }
@@ -2694,9 +2723,10 @@ mod tests {
     #[test]
     fn rfc_5545_example_status_property_3() {
         let input = "STATUS:DRAFT";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
         assert_eq!(prop, Prop::Known(KnownProp::Status(Status::Draft)));
     }
@@ -2704,9 +2734,10 @@ mod tests {
     #[test]
     fn rfc_5545_example_summary_property() {
         let input = "SUMMARY:Department Party";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
 
         let Prop::Known(KnownProp::Summary(text, params)) = prop else {
@@ -2721,9 +2752,10 @@ mod tests {
     #[test]
     fn rfc_5545_example_date_time_completed_property() {
         let input = "COMPLETED:19960401T150000Z";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
 
         let Prop::Known(KnownProp::DtCompleted(datetime)) = prop else {
@@ -2745,9 +2777,10 @@ mod tests {
     #[test]
     fn rfc_5545_example_date_time_end_property_1() {
         let input = "DTEND:19960401T150000Z";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
 
         let Prop::Known(KnownProp::DtEnd(value, params)) = prop else {
@@ -2774,9 +2807,10 @@ mod tests {
     #[test]
     fn rfc_5545_example_date_time_end_property_2() {
         let input = "DTEND;VALUE=DATE:19980704";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
 
         let Prop::Known(KnownProp::DtEnd(value, params)) = prop else {
@@ -2790,9 +2824,10 @@ mod tests {
     #[test]
     fn rfc_5545_example_date_time_due_property() {
         let input = "DUE:19980430T000000Z";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
 
         let Prop::Known(KnownProp::DtDue(value, params)) = prop else {
@@ -2819,9 +2854,10 @@ mod tests {
     #[test]
     fn rfc_5545_example_date_time_start_property() {
         let input = "DTSTART:19980118T073000Z";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
 
         let Prop::Known(KnownProp::DtStart(value, params)) = prop else {
@@ -2848,9 +2884,10 @@ mod tests {
     #[test]
     fn rfc_5545_example_duration_property_1() {
         let input = "DURATION:PT1H0M0S";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
 
         let Prop::Known(KnownProp::Duration(duration)) = prop else {
@@ -2875,9 +2912,10 @@ mod tests {
     #[test]
     fn rfc_5545_example_duration_property_2() {
         let input = "DURATION:PT15M";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
 
         let Prop::Known(KnownProp::Duration(duration)) = prop else {
@@ -2898,9 +2936,10 @@ mod tests {
     #[test]
     fn rfc_5545_example_free_busy_time_property_1() {
         let input = "FREEBUSY;FBTYPE=BUSY-UNAVAILABLE:19970308T160000Z/PT8H30M";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
 
         let Prop::Known(KnownProp::FreeBusy(periods, params)) = prop else {
@@ -2909,8 +2948,8 @@ mod tests {
 
         assert_eq!(params.free_busy_type, Some(FreeBusyType::BusyUnavailable));
         assert_eq!(
-            periods.as_ref(),
-            [Period::Start {
+            periods,
+            vec![Period::Start {
                 start: DateTime {
                     date: date!(1997;3;8),
                     time: Time {
@@ -2932,16 +2971,16 @@ mod tests {
                     }
                 }
             }]
-            .as_slice()
         );
     }
 
     #[test]
     fn rfc_5545_example_free_busy_time_property_2() {
         let input = "FREEBUSY;FBTYPE=FREE:19970308T160000Z/PT3H,19970308T200000Z/PT1H";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
 
         let Prop::Known(KnownProp::FreeBusy(periods, params)) = prop else {
@@ -2950,8 +2989,8 @@ mod tests {
 
         assert_eq!(params.free_busy_type, Some(FreeBusyType::Free));
         assert_eq!(
-            periods.as_ref(),
-            [
+            periods,
+            vec![
                 Period::Start {
                     start: DateTime {
                         date: date!(1997;3;8),
@@ -2991,17 +3030,17 @@ mod tests {
                     }
                 },
             ]
-            .as_slice()
         );
     }
 
     #[test]
     fn rfc_5545_example_free_busy_time_property_3() {
         let input = "FREEBUSY;FBTYPE=FREE:19970308T160000Z/PT3H,19970308T200000Z/PT1H\r\n\t,19970308T230000Z/19970309T000000Z";
-        let (tail, (prop, unknown_params)) =
+        let (tail, (prop, univ, unknown_params)) =
             property::<_, ()>.parse_peek(input.as_escaped()).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
 
         let Prop::Known(KnownProp::FreeBusy(periods, params)) = prop else {
@@ -3010,8 +3049,8 @@ mod tests {
 
         assert_eq!(params.free_busy_type, Some(FreeBusyType::Free));
         assert_eq!(
-            periods.as_ref(),
-            [
+            periods,
+            vec![
                 Period::Start {
                     start: DateTime {
                         date: date!(1997;3;8),
@@ -3075,16 +3114,16 @@ mod tests {
                     },
                 }
             ]
-            .as_slice()
         );
     }
 
     #[test]
     fn rfc_5545_example_time_transparency_property_1() {
         let input = "TRANSP:TRANSPARENT";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
         assert_eq!(
             prop,
@@ -3095,9 +3134,10 @@ mod tests {
     #[test]
     fn rfc_5545_example_time_transparency_property_2() {
         let input = "TRANSP:OPAQUE";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
         assert_eq!(
             prop,
@@ -3108,9 +3148,10 @@ mod tests {
     #[test]
     fn rfc_5545_example_time_zone_identifier_property_1() {
         let input = "TZID:America/New_York";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
         assert_eq!(prop, Prop::Known(KnownProp::TzId(TzId("America/New_York"))));
     }
@@ -3118,9 +3159,10 @@ mod tests {
     #[test]
     fn rfc_5545_example_time_zone_identifier_property_2() {
         let input = "TZID:America/Los_Angeles";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
         assert_eq!(
             prop,
@@ -3131,9 +3173,10 @@ mod tests {
     #[test]
     fn rfc_5545_example_time_zone_identifier_property_3() {
         let input = "TZID:/example.org/America/New_York";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
         assert_eq!(
             prop,
@@ -3144,9 +3187,10 @@ mod tests {
     #[test]
     fn rfc_5545_example_time_zone_name_property_1() {
         let input = "TZNAME:EST";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
 
         let Prop::Known(KnownProp::TzName(name, params)) = prop else {
@@ -3160,9 +3204,10 @@ mod tests {
     #[test]
     fn rfc_5545_example_time_zone_name_property_2() {
         let input = "TZNAME;LANGUAGE=fr-CA:HNE";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
 
         let Prop::Known(KnownProp::TzName(name, params)) = prop else {
@@ -3176,9 +3221,10 @@ mod tests {
     #[test]
     fn rfc_5545_example_time_zone_offset_from_property_1() {
         let input = "TZOFFSETFROM:-0500";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
         assert_eq!(
             prop,
@@ -3194,9 +3240,10 @@ mod tests {
     #[test]
     fn rfc_5545_example_time_zone_offset_from_property_2() {
         let input = "TZOFFSETFROM:+1345";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
         assert_eq!(
             prop,
@@ -3212,9 +3259,10 @@ mod tests {
     #[test]
     fn rfc_5545_example_time_zone_offset_to_property_1() {
         let input = "TZOFFSETTO:-0400";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
         assert_eq!(
             prop,
@@ -3230,9 +3278,10 @@ mod tests {
     #[test]
     fn rfc_5545_example_time_zone_offset_to_property_2() {
         let input = "TZOFFSETTO:+1245";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
         assert_eq!(
             prop,
@@ -3248,9 +3297,10 @@ mod tests {
     #[test]
     fn rfc_5545_example_time_zone_url_property() {
         let input = "TZURL:http://timezones.example.org/tz/America-Los_Angeles.ics";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
         assert_eq!(
             prop,
@@ -3264,10 +3314,11 @@ mod tests {
     fn rfc_5545_example_attendee_property_1() {
         let input =
             "ATTENDEE;MEMBER=\"mailto:DEV-GROUP@example.com\":\r\n mailto:joecool@example.com";
-        let (tail, (prop, unknown_params)) =
+        let (tail, (prop, univ, unknown_params)) =
             property::<_, ()>.parse_peek(input.as_escaped()).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
 
         let Prop::Known(KnownProp::Attendee(address, params)) = prop else {
@@ -3294,10 +3345,11 @@ mod tests {
     fn rfc_5545_example_attendee_property_2() {
         let input =
             "ATTENDEE;DELEGATED-FROM=\"mailto:immud@example.com\":\r\n mailto:ildoit@example.com";
-        let (tail, (prop, unknown_params)) =
+        let (tail, (prop, univ, unknown_params)) =
             property::<_, ()>.parse_peek(input.as_escaped()).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
 
         let Prop::Known(KnownProp::Attendee(address, params)) = prop else {
@@ -3321,10 +3373,11 @@ mod tests {
     #[test]
     fn rfc_5545_example_attendee_property_3() {
         let input = "ATTENDEE;ROLE=REQ-PARTICIPANT;PARTSTAT=TENTATIVE;CN=Henry\r\n Cabot:mailto:hcabot@example.com";
-        let (tail, (prop, unknown_params)) =
+        let (tail, (prop, univ, unknown_params)) =
             property::<_, ()>.parse_peek(input.as_escaped()).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
 
         let Prop::Known(KnownProp::Attendee(address, params)) = prop else {
@@ -3350,9 +3403,10 @@ mod tests {
     #[test]
     fn rfc_5545_example_contact_property_1() {
         let input = "CONTACT:Jim Dolittle\\, ABC Industries\\, +1-919-555-1234";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
 
         let Prop::Known(KnownProp::Contact(contact, params)) = prop else {
@@ -3369,10 +3423,11 @@ mod tests {
     #[test]
     fn rfc_5545_example_contact_property_2() {
         let input = "CONTACT;ALTREP=\"ldap://example.com:6666/o=ABC%20Industries\\,\r\n c=US???(cn=Jim%20Dolittle)\":Jim Dolittle\\, ABC Industries\\,\r\n +1-919-555-1234";
-        let (tail, (prop, unknown_params)) =
+        let (tail, (prop, univ, unknown_params)) =
             property::<_, ()>.parse_peek(input.as_escaped()).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
 
         let Prop::Known(KnownProp::Contact(contact, params)) = prop else {
@@ -3393,9 +3448,10 @@ mod tests {
     #[test]
     fn rfc_5545_example_organizer_property_1() {
         let input = "ORGANIZER;CN=John Smith:mailto:jsmith@example.com";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
 
         let Prop::Known(KnownProp::Organizer(organizer, params)) = prop else {
@@ -3416,10 +3472,11 @@ mod tests {
     #[test]
     fn rfc_5545_example_organizer_property_2() {
         let input = "ORGANIZER;CN=JohnSmith;DIR=\"ldap://example.com:6666/o=DC%20Ass\r\n ociates,c=US???(cn=John%20Smith)\":mailto:jsmith@example.com";
-        let (tail, (prop, unknown_params)) =
+        let (tail, (prop, univ, unknown_params)) =
             property::<_, ()>.parse_peek(input.as_escaped()).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
 
         let Prop::Known(KnownProp::Organizer(organizer, params)) = prop else {
@@ -3441,9 +3498,10 @@ mod tests {
     #[test]
     fn rfc_5545_example_recurrence_identifier_property_1() {
         let input = "RECURRENCE-ID;VALUE=DATE:19960401";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
 
         let Prop::Known(KnownProp::RecurrenceId(DateTimeOrDate::Date(date), params)) = prop else {
@@ -3458,9 +3516,10 @@ mod tests {
     #[test]
     fn rfc_5545_example_recurrence_identifier_property_2() {
         let input = "RECURRENCE-ID;RANGE=THISANDFUTURE:19960120T120000Z";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
 
         let Prop::Known(KnownProp::RecurrenceId(DateTimeOrDate::DateTime(dt), params)) = prop
@@ -3489,9 +3548,10 @@ mod tests {
     #[test]
     fn rfc_5545_example_uid_property() {
         let input = "UID:19960401T080045Z-4000F192713-0052@example.com";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
 
         let Prop::Known(KnownProp::Uid(uid)) = prop else {
@@ -3504,9 +3564,10 @@ mod tests {
     #[test]
     fn rfc_5545_example_request_status_property_1() {
         let input = "REQUEST-STATUS:2.0;Success";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
 
         let Prop::Known(KnownProp::RequestStatus(status, params)) = prop else {
@@ -3527,9 +3588,10 @@ mod tests {
     #[test]
     fn rfc_5545_example_request_status_property_2() {
         let input = "REQUEST-STATUS:3.1;Invalid property value;DTSTART:96-Apr-01";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
 
         let Prop::Known(KnownProp::RequestStatus(status, params)) = prop else {
@@ -3552,9 +3614,10 @@ mod tests {
     #[test]
     fn rfc_5545_example_request_status_property_4() {
         let input = "REQUEST-STATUS:4.1;Event conflict.  Date-time is busy.";
-        let (tail, (prop, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
+        assert!(univ.is_empty());
         assert!(unknown_params.is_empty());
 
         let Prop::Known(KnownProp::RequestStatus(status, params)) = prop else {
@@ -3584,8 +3647,9 @@ mod tests {
                     value: Value::Boolean(true),
                     params,
                 }),
+                universals,
                 extras,
-            )) if params.is_empty() && extras.is_empty(),
+            )) if params.is_empty() && universals.is_empty() && extras.is_empty(),
         ));
 
         let mut input = "NON-SMOKING:TRUE";
@@ -3598,8 +3662,9 @@ mod tests {
                     value: Value::Text("TRUE"),
                     params
                 }),
+                universals,
                 extras,
-            )) if params.is_empty() && extras.is_empty(),
+            )) if params.is_empty() && universals.is_empty() && extras.is_empty(),
         ));
     }
 
@@ -3614,7 +3679,7 @@ mod tests {
                 name: "X-ABC-MMSUBJ",
                 value: Value::Uri(uri),
                 params
-            }), extras))) if params.len() == 1 && extras.is_empty() && uri == expected_uri
+            }), universals, extras))) if params.len() == 1 && universals.is_empty() && extras.is_empty() && uri == expected_uri
         ))
     }
 

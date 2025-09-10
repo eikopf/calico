@@ -6,8 +6,8 @@ use super::{
     parameter::UnknownParam,
     primitive::{
         CalAddress, CalendarUserType, DateTime, DisplayType, Duration, FeatureType, FormatType,
-        FreeBusyType, Language, ParticipationRole, ParticipationStatus, RelationshipType,
-        ThisAndFuture, TriggerRelation, TzId, Uri, Utc,
+        FreeBusyType, Language, ParticipationRole, ParticipationStatus, PositiveInteger,
+        RelationshipType, ThisAndFuture, TriggerRelation, TzId, Uri, Utc,
     },
 };
 
@@ -41,6 +41,20 @@ impl<S, V, P> Prop<S, V, P> {
 pub enum TriggerProp<S> {
     Relative(Prop<S, Duration, TriggerParams>),
     Absolute(Prop<S, DateTime<Utc>>),
+}
+
+/// The parameters which are admissible on every property (assuming we do not know the multiplicity
+/// of the property and must conservatively include the ORDER parameter).
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct UniversalParams {
+    pub derived: Option<bool>,
+    pub order: Option<PositiveInteger>,
+}
+
+impl UniversalParams {
+    pub const fn is_empty(&self) -> bool {
+        self.derived.is_none() && self.order.is_none()
+    }
 }
 
 /// The parameters associated with the `ATTACH` property.
@@ -219,6 +233,49 @@ impl<S> Default for ConfParams<S> {
             feature_type: Default::default(),
             label: Default::default(),
             language: Default::default(),
+        }
+    }
+}
+
+/// The parameters associated with the STYLED-DESCRIPTION property (RFC 5545 §6.5).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StyledDescriptionParams<S> {
+    pub language: Option<Language<S>>,
+    pub alternate_representation: Option<Uri<S>>,
+    pub format_type: Option<FormatType<S>>,
+}
+
+impl<S> Default for StyledDescriptionParams<S> {
+    fn default() -> Self {
+        Self {
+            language: Default::default(),
+            alternate_representation: Default::default(),
+            format_type: Default::default(),
+        }
+    }
+}
+
+/// The parameters associated with the STRUCTURED-DATA property (RFC 5545 §6.6) when its value type
+/// is TEXT or BINARY.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StructuredDataParams<S> {
+    pub format_type: FormatType<S>,
+    pub schema: Uri<S>,
+}
+
+/// The parameters associated with the STRUCTURED-DATA property (RFC 5545 §6.6) when its value type
+/// is URI.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UriStructuredDataParams<S> {
+    pub format_type: Option<FormatType<S>>,
+    pub schema: Option<Uri<S>>,
+}
+
+impl<S> Default for UriStructuredDataParams<S> {
+    fn default() -> Self {
+        Self {
+            format_type: Default::default(),
+            schema: Default::default(),
         }
     }
 }

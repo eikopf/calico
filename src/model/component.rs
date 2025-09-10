@@ -161,7 +161,7 @@ where
     seq_accessors! {
         [Name, names, names_mut, Prop<S, Text<S>, TextParams<S>>],
         [Description, description, description_mut, Prop<S, Text<S>, TextParams<S>>],
-        [Categories, categories, categories_mut, Prop<S, Box<[Text<S>]>, LangParams<S>>],
+        [Categories, categories, categories_mut, Prop<S, Vec<Text<S>>, LangParams<S>>],
         [Image, images, images_mut, Prop<S, ImageData<S>, ImageParams<S>>],
     }
 }
@@ -279,14 +279,14 @@ where
     seq_accessors! {
         [Attach, attachments, attachments_mut, Prop<S, AttachValue<S>, AttachParams<S>>],
         [Attendee, attendees, attendees_mut, Prop<S, CalAddress<S>, Box<AttendeeParams<S>>>],
-        [Categories, categories, categories_mut, Prop<S, Box<[Text<S>]>, LangParams<S>>],
+        [Categories, categories, categories_mut, Prop<S, Vec<Text<S>>, LangParams<S>>],
         [Comment, comments, comments_mut, Prop<S, Text<S>, TextParams<S>>],
         [Contact, contacts, contacts_mut, Prop<S, Text<S>, TextParams<S>>],
         [RRule, rrule, rrule_mut, Prop<S, Box<RRule>>],
         [ExDate, exception_dates, exception_dates_mut, Prop<S, ExDateSeq, DtParams<S>>],
         [RequestStatus, request_statuses, request_statuses_mut, Prop<S, RequestStatus<S>, LangParams<S>>],
         [RelatedTo, relateds, relateds_mut, Prop<S, Text<S>, RelTypeParams<S>>],
-        [Resources, resources, resources_mut, Prop<S, Box<[Text<S>]>, TextParams<S>>],
+        [Resources, resources, resources_mut, Prop<S, Vec<Text<S>>, TextParams<S>>],
         [RDate, recurrence_dates, recurrence_dates_mut, Prop<S, RDateSeq, DtParams<S>>],
         [Conference, conferences, conferences_mut, Prop<S, Uri<S>, ConfParams<S>>],
         [Image, images, images_mut, Prop<S, ImageData<S>, ImageParams<S>>],
@@ -395,14 +395,14 @@ where
     seq_accessors! {
         [Attach, attachments, attachments_mut, Prop<S, AttachValue<S>, AttachParams<S>>],
         [Attendee, attendees, attendees_mut, Prop<S, CalAddress<S>, Box<AttendeeParams<S>>>],
-        [Categories, categories, categories_mut, Prop<S, Box<[Text<S>]>, LangParams<S>>],
+        [Categories, categories, categories_mut, Prop<S, Vec<Text<S>>, LangParams<S>>],
         [Comment, comments, comments_mut, Prop<S, Text<S>, TextParams<S>>],
         [Contact, contacts, contacts_mut, Prop<S, Text<S>, TextParams<S>>],
         [RRule, rrule, rrule_mut, Prop<S, Box<RRule>>],
         [ExDate, exception_dates, exception_dates_mut, Prop<S, ExDateSeq, DtParams<S>>],
         [RequestStatus, request_statuses, request_statuses_mut, Prop<S, RequestStatus<S>, LangParams<S>>],
         [RelatedTo, relateds, relateds_mut, Prop<S, Text<S>, RelTypeParams<S>>],
-        [Resources, resources, resources_mut, Prop<S, Box<[Text<S>]>, TextParams<S>>],
+        [Resources, resources, resources_mut, Prop<S, Vec<Text<S>>, TextParams<S>>],
         [RDate, recurrence_dates, recurrence_dates_mut, Prop<S, RDateSeq, DtParams<S>>],
         [Conference, conferences, conferences_mut, Prop<S, Uri<S>, ConfParams<S>>],
         [Image, images, images_mut, Prop<S, ImageData<S>, ImageParams<S>>],
@@ -750,7 +750,7 @@ where
     seq_accessors! {
         [Attach, attachments, attachments_mut, Prop<S, AttachValue<S>, AttachParams<S>>],
         [Attendee, attendees, attendees_mut, Prop<S, CalAddress<S>, Box<AttendeeParams<S>>>],
-        [Categories, categories, categories_mut, Prop<S, Box<[Text<S>]>, LangParams<S>>],
+        [Categories, categories, categories_mut, Prop<S, Vec<Text<S>>, LangParams<S>>],
         [Comment, comments, comments_mut, Prop<S, Text<S>, TextParams<S>>],
         [Contact, contacts, contacts_mut, Prop<S, Text<S>, TextParams<S>>],
         [Description, descriptions, descriptions_mut, Prop<S, Text<S>, TextParams<S>>],
@@ -793,7 +793,7 @@ where
     seq_accessors! {
         [Attendee, attendees, attendees_mut, Prop<S, CalAddress<S>, Box<AttendeeParams<S>>>],
         [Comment, comments, comments_mut, Prop<S, Text<S>, TextParams<S>>],
-        [FreeBusy, free_busy_periods, free_busy_periods_mut, Prop<S, Box<[Period]>, FBTypeParams<S>>],
+        [FreeBusy, free_busy_periods, free_busy_periods_mut, Prop<S, Vec<Period>, FBTypeParams<S>>],
         [RequestStatus, request_statuses, request_statuses_mut, Prop<S, RequestStatus<S>, LangParams<S>>],
     }
 }
@@ -1008,7 +1008,7 @@ impl<S> PropertyTable<S> {
         [Version, version, version_mut, Prop<S, ()>],
         // DESCRIPTIVE COMPONENT PROPERTIES
         [Attach, attachment, attachment_mut, Prop<S, AttachValue<S>, AttachParams<S>>],
-        [Categories, categories, categories_mut, Prop<S, Box<[Text<S>]>, LangParams<S>>],
+        [Categories, categories, categories_mut, Prop<S, Vec<Text<S>>, LangParams<S>>],
         [Class, class, class_mut, Prop<S, ClassValue<S>>],
         [Comment, comment, comment_mut, Prop<S, Text<S>, TextParams<S>>],
         [Description, description, description_mut, Prop<S, Text<S>, TextParams<S>>],
@@ -1016,7 +1016,7 @@ impl<S> PropertyTable<S> {
         [Location, location, location_mut, Prop<S, Text<S>, TextParams<S>>],
         [PercentComplete, percent_complete, percent_complete_mut, Prop<S, CompletionPercentage>],
         [Priority, priority, priority_mut, Prop<S, Priority>],
-        [Resources, resources, resources_mut, Prop<S, Box<[Text<S>]>, TextParams<S>>],
+        [Resources, resources, resources_mut, Prop<S, Vec<Text<S>>, TextParams<S>>],
         [Status, status, status_mut, StatusProp<S>],
         [Summary, summary, summary_mut, Prop<S, Text<S>, TextParams<S>>],
         // DATE AND TIME COMPONENT PROPERTIES
@@ -1025,7 +1025,7 @@ impl<S> PropertyTable<S> {
         [DtDue, dt_due, dt_due_mut, Prop<S, DateTimeOrDate, DtParams<S>>],
         [DtStart, dt_start, dt_start_mut, Prop<S, DateTimeOrDate, DtParams<S>>],
         [Duration, duration, duration_mut, Prop<S, Duration>],
-        [FreeBusy, free_busy, free_busy_mut, Prop<S, Box<[Period]>, FBTypeParams<S>>],
+        [FreeBusy, free_busy, free_busy_mut, Prop<S, Vec<Period>, FBTypeParams<S>>],
         [Transp, time_transparency, time_transparency_mut, Prop<S, TimeTransparency>],
         // TIME ZONE COMPONENT PROPERTIES
         [TzId, tz_id, tz_id_mut, Prop<S, TzId<S>>],
@@ -1510,7 +1510,7 @@ StaticPropName {
     Version(Mult<Prop<S, ()>>),
     // DESCRIPTIVE COMPONENT PROPERTIES
     Attach(Mult<Prop<S, AttachValue<S>, AttachParams<S>>>),
-    Categories(Mult<Prop<S, Box<[Text<S>]>, LangParams<S>>>), // TODO: change Box<[_]> to Vec<_>
+    Categories(Mult<Prop<S, Vec<Text<S>>, LangParams<S>>>),
     Class(Mult<Prop<S, ClassValue<S>>>),
     Comment(Mult<Prop<S, Text<S>, TextParams<S>>>),
     Description(Mult<Prop<S, Text<S>, TextParams<S>>>),
@@ -1518,7 +1518,7 @@ StaticPropName {
     Location(Mult<Prop<S, Text<S>, TextParams<S>>>),
     PercentComplete(Mult<Prop<S, CompletionPercentage>>),
     Priority(Mult<Prop<S, Priority>>),
-    Resources(Mult<Prop<S, Box<[Text<S>]>, TextParams<S>>>), // TODO: change Box<[_]> to Vec<_>
+    Resources(Mult<Prop<S, Vec<Text<S>>, TextParams<S>>>),
     Status(Mult<StatusProp<S>>),
     Summary(Mult<Prop<S, Text<S>, TextParams<S>>>),
     // DATE AND TIME COMPONENT PROPERTIES
@@ -1527,7 +1527,7 @@ StaticPropName {
     DtDue(Mult<Prop<S, DateTimeOrDate, DtParams<S>>>),
     DtStart(Mult<Prop<S, DateTimeOrDate, DtParams<S>>>),
     Duration(Mult<Prop<S, Duration>>),
-    FreeBusy(Mult<Prop<S, Box<[Period]>, FBTypeParams<S>>>), // TODO: change Box<[_]> to Vec<_>
+    FreeBusy(Mult<Prop<S, Vec<Period>, FBTypeParams<S>>>),
     Transp(Mult<Prop<S, TimeTransparency>>),
     // TIME ZONE COMPONENT PROPERTIES
     TzId(Mult<Prop<S, TzId<S>>>),

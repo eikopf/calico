@@ -6,7 +6,8 @@ use winnow::{
     Parser,
     ascii::{Caseless, digit0, digit1},
     combinator::{
-        alt, delimited, empty, fail, opt, preceded, repeat, separated_pair, terminated, trace,
+        alt, delimited, empty, fail, opt, preceded, repeat, separated, separated_pair, terminated,
+        trace,
     },
     error::{FromExternalError, ParserError},
     stream::{AsBStr, AsChar, Compare, SliceLen, Stream, StreamIsPartial},
@@ -606,6 +607,16 @@ where
     (one_of(('x', 'X')), '-', iana_token)
         .take()
         .parse_next(input)
+}
+
+/// Parses a comma-delimited non-empty sequence of [`Text`] values.
+pub fn text_seq<I, E>(input: &mut I) -> Result<Vec<Text<I::Slice>>, E>
+where
+    I: StreamIsPartial + Stream + Compare<char>,
+    I::Token: AsChar + Clone,
+    E: ParserError<I>,
+{
+    separated(1.., text, ',').parse_next(input)
 }
 
 /// Parses a [`Text`].

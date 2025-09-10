@@ -89,8 +89,8 @@ impl<F> From<DateTime<F>> for DateTimeOrDate<F> {
 /// value type for the EXDATE property.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExDateSeq<F = TimeFormat> {
-    DateTime(Box<[DateTime<F>]>),
-    Date(Box<[Date]>),
+    DateTime(Vec<DateTime<F>>),
+    Date(Vec<Date>),
 }
 
 impl<F> DateTimeOrDate<F> {
@@ -605,9 +605,9 @@ pub enum RDate<F = TimeFormat> {
 /// A homogeneous sequence of [`RDate`] values.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RDateSeq<F = TimeFormat> {
-    DateTime(Box<[DateTime<F>]>),
-    Date(Box<[Date]>),
-    Period(Box<[Period]>),
+    DateTime(Vec<DateTime<F>>),
+    Date(Vec<Date>),
+    Period(Vec<Period>),
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
