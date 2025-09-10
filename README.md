@@ -7,9 +7,9 @@
     - [RFC 5545](https://www.rfc-editor.org/rfc/rfc5545)
     - [RFC 5546](https://www.rfc-editor.org/rfc/rfc5546)
     - [RFC 7986](https://www.rfc-editor.org/rfc/rfc7986)
-    - [RFC 9074](https://www.rfc-editor.org/rfc/rfc9074)
 - Incomplete Support
     - [RFC 9073](https://www.rfc-editor.org/rfc/rfc9073)
+    - [RFC 9074](https://www.rfc-editor.org/rfc/rfc9074)
     - [RFC 9253](https://www.rfc-editor.org/rfc/rfc9253)
 - No Support
     - [RFC 6321](https://www.rfc-editor.org/rfc/rfc6321)
