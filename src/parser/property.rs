@@ -301,7 +301,7 @@ where
     }
 }
 
-pub type ParsedProp<S> = (Prop<S>, UniversalParams, Box<[UnknownParam<S>]>);
+pub type ParsedProp<S> = (Prop<S>, UniversalParams, Vec<UnknownParam<S>>);
 
 /// Parses a [`Prop`].
 pub fn property<I, E>(input: &mut I) -> Result<ParsedProp<I::Slice>, E>
@@ -348,7 +348,7 @@ where
             S,
             Option<ValueType<I::Slice>>,
             UniversalParams,
-            Box<[UnknownParam<I::Slice>]>,
+            Vec<UnknownParam<I::Slice>>,
         ),
         E,
     >
@@ -413,12 +413,7 @@ where
             }
         }
 
-        Ok((
-            sm.state,
-            sm.value_type,
-            sm.universals,
-            sm.unknown_params.into_boxed_slice(),
-        ))
+        Ok((sm.state, sm.value_type, sm.universals, sm.unknown_params))
     }
 
     /// The step function for unknown (IANA and X) properties.
@@ -621,19 +616,19 @@ where
         Binary,
     }
 
-    struct ParsedProp<T, V, P, S> {
+    struct StateMachineResult<T, V, P, S> {
         value: T,
         value_type: V,
         state: P,
         universals: UniversalParams,
-        unknown_params: Box<[UnknownParam<S>]>,
+        unknown_params: Vec<UnknownParam<S>>,
     }
 
-    impl<T, V, P, S> ParsedProp<T, V, P, S> {
+    impl<T, V, P, S> StateMachineResult<T, V, P, S> {
         fn try_finish<E>(
             self,
             f: impl FnOnce(T, V, P) -> Result<KnownProp<S>, E>,
-        ) -> Result<(Prop<S>, UniversalParams, Box<[UnknownParam<S>]>), E> {
+        ) -> Result<ParsedProp<S>, E> {
             f(self.value, self.value_type, self.state).map(|known_prop| {
                 (
                     Prop::Known(known_prop),
@@ -643,10 +638,7 @@ where
             })
         }
 
-        fn finish_value(
-            self,
-            f: impl FnOnce(T) -> KnownProp<S>,
-        ) -> (Prop<S>, UniversalParams, Box<[UnknownParam<S>]>) {
+        fn finish_value(self, f: impl FnOnce(T) -> KnownProp<S>) -> ParsedProp<S> {
             (
                 Prop::Known(f(self.value)),
                 self.universals,
@@ -654,11 +646,11 @@ where
             )
         }
 
-        fn finish_both<Params>(
+        fn finish_both<U>(
             self,
-            p: impl FnOnce(P) -> Params,
-            f: impl FnOnce(T, Params) -> KnownProp<S>,
-        ) -> (Prop<S>, UniversalParams, Box<[UnknownParam<S>]>) {
+            p: impl FnOnce(P) -> U,
+            f: impl FnOnce(T, U) -> KnownProp<S>,
+        ) -> ParsedProp<S> {
             (
                 Prop::Known(f(self.value, p(self.state))),
                 self.universals,
@@ -675,7 +667,7 @@ where
             Option<ValueType<I::Slice>>,
         ) -> Result<V, CalendarParseError<I::Slice>>,
         value_parser: impl FnOnce(&mut I) -> Result<T, E>,
-    ) -> Result<ParsedProp<T, V, S, I::Slice>, E>
+    ) -> Result<StateMachineResult<T, V, S, I::Slice>, E>
     where
         I: StreamIsPartial + Stream + Compare<Caseless<&'static str>> + Compare<char>,
         I::Token: AsChar + Clone,
@@ -690,7 +682,7 @@ where
         let value_type =
             value_type_check(value_type).map_err(|err| E::from_external_error(input, err))?;
         let value = value_parser(input)?;
-        Ok(ParsedProp {
+        Ok(StateMachineResult {
             value,
             value_type,
             state,

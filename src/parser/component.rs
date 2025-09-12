@@ -22,7 +22,7 @@ use crate::{
             AlarmAction, AudioAction, DisplayAction, EmailAction, EventStatus, JournalStatus,
             Status, TodoStatus, UnknownAction,
         },
-        property::{Prop, TriggerProp},
+        property::Prop,
     },
     parser::{
         error::ComponentKind,
@@ -54,7 +54,7 @@ use super::{
 
 macro_rules! step_inner {
     (
-        $state:ident, $comp_kind:ident, $prop:ident, $unknown_params:ident;
+        $state:ident, $comp_kind:ident, $prop:ident, $unknown_params:ident, $univ:ident;
         $($p:pat => $body:expr),* $(,)?
     ) => {
         match $prop {
@@ -75,6 +75,7 @@ macro_rules! step_inner {
                 $state.insert_iana(
                     name,
                     Prop {
+                        derived: $univ.derived.unwrap_or_default(),
                         value: Box::new(value),
                         params,
                         unknown_params: $unknown_params,
@@ -91,6 +92,7 @@ macro_rules! step_inner {
                 $state.insert_x(
                     name,
                     Prop {
+                        derived: $univ.derived.unwrap_or_default(),
                         value: Box::new(value),
                         params,
                         unknown_params: $unknown_params,
@@ -156,7 +158,7 @@ macro_rules! insert_seq {
 
 /// Instantiates local macros `once` and `seq` to avoid boilerplate in [`try_insert_once`] and [`insert_seq`].
 macro_rules! define_local_helpers {
-    ($component:ident, $state:ident, $unknown_params:ident) => {
+    ($component:ident, $state:ident, $unknown_params:ident, $univ:ident) => {
         macro_rules! once {
             ($name:ident, $long_name:expr, $value:expr, $params:expr) => {
                 try_insert_once!(
@@ -165,6 +167,7 @@ macro_rules! define_local_helpers {
                     $name,
                     $long_name,
                     Prop {
+                        derived: $univ.derived.unwrap_or_default(),
                         value: $value,
                         params: $params,
                         unknown_params: $unknown_params
@@ -179,6 +182,7 @@ macro_rules! define_local_helpers {
                     $state,
                     $name,
                     Prop {
+                        derived: $univ.derived.unwrap_or_default(),
                         value: $value,
                         params: $params,
                         unknown_params: $unknown_params,
@@ -216,9 +220,9 @@ where
     where
         S: Hash + PartialEq + Debug + Equiv<LineFoldCaseless> + AsRef<[u8]>,
     {
-        define_local_helpers!(Calendar, state, unknown_params);
+        define_local_helpers!(Calendar, state, unknown_params, universals);
 
-        step_inner! {state, Calendar, prop, unknown_params;
+        step_inner! {state, Calendar, prop, unknown_params, universals;
             ParserProp::Known(KnownProp::ProdId(value)) => {
                 once!(ProdId, PropName::Rfc5545(Rfc5545PropName::ProductIdentifier), value, ())
             },
@@ -396,9 +400,9 @@ where
     where
         S: Hash + PartialEq + Debug + Equiv<LineFoldCaseless> + AsRef<[u8]>,
     {
-        define_local_helpers!(Event, state, unknown_params);
+        define_local_helpers!(Event, state, unknown_params, universals);
 
-        step_inner! {state, Event, prop, unknown_params;
+        step_inner! {state, Event, prop, unknown_params, universals;
             ParserProp::Known(KnownProp::DtStamp(value)) => {
                 once!(DtStamp, PropName::Rfc5545(Rfc5545PropName::DateTimeStamp), value, ())
             },
@@ -436,6 +440,7 @@ where
                 once!(Sequence, PropName::Rfc5545(Rfc5545PropName::SequenceNumber), value, ())
             },
             ParserProp::Known(KnownProp::Status(value)) => {
+                let derived = universals.derived.unwrap_or_default();
                 let value = match value {
                     Status::Tentative => EventStatus::Tentative,
                     Status::Confirmed => EventStatus::Confirmed,
@@ -444,7 +449,7 @@ where
                 };
 
                 try_insert_once!(state, Event, Status, PropName::Rfc5545(Rfc5545PropName::Status),
-                    StatusProp::Event(Prop { value, params: (), unknown_params }),
+                    StatusProp::Event(Prop { derived, value, params: (), unknown_params }),
                 )
             },
             ParserProp::Known(KnownProp::Summary(value, params)) => {
@@ -530,7 +535,7 @@ where
     terminated(end(name), crlf).parse_next(input)?;
 
     check_mandatory_fields! {input, Event;
-        props.dt_stamp() => PropName::Rfc5545(Rfc5545PropName::DateTimeStamp),
+        props.timestamp() => PropName::Rfc5545(Rfc5545PropName::DateTimeStamp),
         props.uid() => PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier),
     }
 
@@ -565,9 +570,9 @@ where
     where
         S: Hash + PartialEq + Debug + Equiv<LineFoldCaseless> + AsRef<[u8]>,
     {
-        define_local_helpers!(Todo, state, unknown_params);
+        define_local_helpers!(Todo, state, unknown_params, universals);
 
-        step_inner! {state, Todo, prop, unknown_params;
+        step_inner! {state, Todo, prop, unknown_params, universals;
             ParserProp::Known(KnownProp::DtStamp(value)) => {
                 once!(DtStamp, PropName::Rfc5545(Rfc5545PropName::DateTimeStamp), value, ())
             },
@@ -614,6 +619,7 @@ where
                 once!(Sequence, PropName::Rfc5545(Rfc5545PropName::SequenceNumber), value, ())
             },
             ParserProp::Known(KnownProp::Status(value)) => {
+                let derived = universals.derived.unwrap_or_default();
                 let value = match value {
                     Status::NeedsAction => TodoStatus::NeedsAction,
                     Status::Completed => TodoStatus::Completed,
@@ -623,7 +629,7 @@ where
                 };
 
                 try_insert_once!(state, Todo, Status, PropName::Rfc5545(Rfc5545PropName::Status),
-                    StatusProp::Todo(Prop { value, params: (), unknown_params }),
+                    StatusProp::Todo(Prop { derived, value, params: (), unknown_params }),
                 )
             },
             ParserProp::Known(KnownProp::Summary(value, params)) => {
@@ -703,7 +709,7 @@ where
     terminated(end(name), crlf).parse_next(input)?;
 
     check_mandatory_fields! {input, Todo;
-        props.dt_stamp() => PropName::Rfc5545(Rfc5545PropName::DateTimeStamp),
+        props.timestamp() => PropName::Rfc5545(Rfc5545PropName::DateTimeStamp),
         props.uid() => PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier),
     }
 
@@ -734,9 +740,9 @@ where
     where
         S: Hash + PartialEq + Debug + Equiv<LineFoldCaseless> + AsRef<[u8]>,
     {
-        define_local_helpers!(Journal, state, unknown_params);
+        define_local_helpers!(Journal, state, unknown_params, universals);
 
-        step_inner! {state, Journal, prop, unknown_params;
+        step_inner! {state, Journal, prop, unknown_params, universals;
             ParserProp::Known(KnownProp::DtStamp(value)) => {
                 once!(DtStamp, PropName::Rfc5545(Rfc5545PropName::DateTimeStamp), value, ())
             },
@@ -765,6 +771,7 @@ where
                 once!(Sequence, PropName::Rfc5545(Rfc5545PropName::SequenceNumber), value, ())
             },
             ParserProp::Known(KnownProp::Status(value)) => {
+                let derived = universals.derived.unwrap_or_default();
                 let value = match value {
                     Status::Cancelled => JournalStatus::Cancelled,
                     Status::Draft => JournalStatus::Draft,
@@ -773,7 +780,7 @@ where
                 };
 
                 try_insert_once!(state, Journal, Status, PropName::Rfc5545(Rfc5545PropName::Status),
-                    StatusProp::Journal(Prop { value, params: (), unknown_params }),
+                    StatusProp::Journal(Prop { derived, value, params: (), unknown_params }),
                 )
             },
             ParserProp::Known(KnownProp::Summary(value, params)) => {
@@ -831,7 +838,7 @@ where
     terminated(end(name), crlf).parse_next(input)?;
 
     check_mandatory_fields! {input, Journal;
-        props.dt_stamp() => PropName::Rfc5545(Rfc5545PropName::DateTimeStamp),
+        props.timestamp() => PropName::Rfc5545(Rfc5545PropName::DateTimeStamp),
         props.uid() => PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier),
     }
 
@@ -862,9 +869,9 @@ where
     where
         S: Hash + PartialEq + Debug + Equiv<LineFoldCaseless> + AsRef<[u8]>,
     {
-        define_local_helpers!(FreeBusy, state, unknown_params);
+        define_local_helpers!(FreeBusy, state, unknown_params, universals);
 
-        step_inner! {state, FreeBusy, prop, unknown_params;
+        step_inner! {state, FreeBusy, prop, unknown_params, universals;
             ParserProp::Known(KnownProp::DtStamp(value)) => {
                 once!(DtStamp, PropName::Rfc5545(Rfc5545PropName::DateTimeStamp), value, ())
             },
@@ -914,7 +921,7 @@ where
     terminated(end(name), crlf).parse_next(input)?;
 
     check_mandatory_fields! {input, FreeBusy;
-        props.dt_stamp() => PropName::Rfc5545(Rfc5545PropName::DateTimeStamp),
+        props.timestamp() => PropName::Rfc5545(Rfc5545PropName::DateTimeStamp),
         props.uid() => PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier),
     }
 
@@ -953,6 +960,7 @@ where
                     $name,
                     $long_name,
                     Prop {
+                        derived: universals.derived.unwrap_or_default(),
                         value: $value,
                         params: $params,
                         unknown_params
@@ -961,7 +969,7 @@ where
             };
         }
 
-        step_inner! {state, TimeZone, prop, unknown_params;
+        step_inner! {state, TimeZone, prop, unknown_params, universals;
             ParserProp::Known(KnownProp::TzId(value)) => {
                 once!(TzId, PropName::Rfc5545(Rfc5545PropName::TimeZoneIdentifier), value, ())
             },
@@ -981,9 +989,9 @@ where
     where
         S: Hash + PartialEq + Debug + Equiv<LineFoldCaseless> + AsRef<[u8]>,
     {
-        define_local_helpers!(StandardOrDaylight, state, unknown_params);
+        define_local_helpers!(StandardOrDaylight, state, unknown_params, universals);
 
-        step_inner! {state, StandardOrDaylight, prop, unknown_params;
+        step_inner! {state, StandardOrDaylight, prop, unknown_params, universals;
             ParserProp::Known(KnownProp::DtStart(value, params)) => {
                 once!(DtStart, PropName::Rfc5545(Rfc5545PropName::DateTimeStart), value, params)
             },
@@ -1091,16 +1099,17 @@ where
     where
         S: Hash + PartialEq + Debug + Equiv<LineFoldCaseless> + AsRef<[u8]>,
     {
-        define_local_helpers!(Alarm, state, unknown_params);
+        define_local_helpers!(Alarm, state, unknown_params, universals);
 
-        step_inner! {state, Alarm, prop, unknown_params;
+        step_inner! {state, Alarm, prop, unknown_params, universals;
             ParserProp::Known(KnownProp::Action(value)) => {
+                let derived = universals.derived.unwrap_or_default();
                 let value = match value {
-                    AlarmAction::Audio => AlarmActionProp::Audio(Prop { value: AudioAction, params: (), unknown_params }),
-                    AlarmAction::Display => AlarmActionProp::Display(Prop { value: DisplayAction, params: (), unknown_params }),
-                    AlarmAction::Email => AlarmActionProp::Email(Prop { value: EmailAction, params: (), unknown_params }),
-                    AlarmAction::Iana(action) => AlarmActionProp::Other(Prop { value: UnknownAction::Iana(action), params: (), unknown_params}),
-                    AlarmAction::X(action) => AlarmActionProp::Other(Prop { value: UnknownAction::X(action), params: (), unknown_params}),
+                    AlarmAction::Audio => AlarmActionProp::Audio(Prop { derived, value: AudioAction, params: (), unknown_params }),
+                    AlarmAction::Display => AlarmActionProp::Display(Prop { derived, value: DisplayAction, params: (), unknown_params }),
+                    AlarmAction::Email => AlarmActionProp::Email(Prop { derived, value: EmailAction, params: (), unknown_params }),
+                    AlarmAction::Iana(action) => AlarmActionProp::Other(Prop { derived, value: UnknownAction::Iana(action), params: (), unknown_params}),
+                    AlarmAction::X(action) => AlarmActionProp::Other(Prop { derived, value: UnknownAction::X(action), params: (), unknown_params}),
                 };
 
                 try_insert_once!(state, Alarm, Action, PropName::Rfc5545(Rfc5545PropName::Action), value)
@@ -1109,12 +1118,14 @@ where
                 once!(Description, PropName::Rfc5545(Rfc5545PropName::Description), value, params)
             },
             ParserProp::Known(KnownProp::TriggerRelative(value, params)) => {
-                let prop = TriggerProp::Relative(Prop { value, params, unknown_params });
-                try_insert_once!(state, Alarm, Trigger, PropName::Rfc5545(Rfc5545PropName::Trigger), prop)
+                let derived = universals.derived.unwrap_or_default();
+                let prop = Prop { derived, value, params, unknown_params };
+                try_insert_once!(state, Alarm, TriggerRelative, PropName::Rfc5545(Rfc5545PropName::Trigger), prop)
             },
             ParserProp::Known(KnownProp::TriggerAbsolute(value)) => {
-                let prop = TriggerProp::Absolute(Prop { value, params: (), unknown_params });
-                try_insert_once!(state, Alarm, Trigger, PropName::Rfc5545(Rfc5545PropName::Trigger), prop)
+                let derived = universals.derived.unwrap_or_default();
+                let prop = Prop { derived, value, params: (), unknown_params };
+                try_insert_once!(state, Alarm, TriggerAbsolute, PropName::Rfc5545(Rfc5545PropName::Trigger), prop)
             },
             ParserProp::Known(KnownProp::Summary(value, params)) => {
                 once!(Summary, PropName::Rfc5545(Rfc5545PropName::Summary), value, params)
@@ -1390,7 +1401,7 @@ mod tests {
                 Duration, DurationKind, DurationTime, EmailAction, FormatType, Local, Period, Sign,
                 Text, TriggerRelation, TzId, Uid, Uri, Utc,
             },
-            property::{AttachParams, TriggerParams},
+            property::{AttachParams, TriggerParams, TriggerPropRef},
         },
         parser::escaped::AsEscaped,
         time, utc_offset,
@@ -1702,56 +1713,53 @@ mod tests {
         assert_eq!(
             fb.free_busy_periods(),
             Some(
-                [Prop::from_value(
-                    vec![
-                        Period::Start {
-                            start: DateTime {
-                                date: date!(1997;10;15),
-                                time: time!(5;00;00, Utc)
-                            },
-                            duration: Duration {
-                                sign: None,
-                                kind: DurationKind::Time {
-                                    time: DurationTime::HM {
-                                        hours: 8,
-                                        minutes: 30
-                                    }
+                [Prop::from_value(vec![
+                    Period::Start {
+                        start: DateTime {
+                            date: date!(1997;10;15),
+                            time: time!(5;00;00, Utc)
+                        },
+                        duration: Duration {
+                            sign: None,
+                            kind: DurationKind::Time {
+                                time: DurationTime::HM {
+                                    hours: 8,
+                                    minutes: 30
                                 }
                             }
+                        }
+                    },
+                    Period::Start {
+                        start: DateTime {
+                            date: date!(1997;10;15),
+                            time: time!(16;00;00, Utc)
                         },
-                        Period::Start {
-                            start: DateTime {
-                                date: date!(1997;10;15),
-                                time: time!(16;00;00, Utc)
-                            },
-                            duration: Duration {
-                                sign: None,
-                                kind: DurationKind::Time {
-                                    time: DurationTime::HM {
-                                        hours: 5,
-                                        minutes: 30
-                                    }
+                        duration: Duration {
+                            sign: None,
+                            kind: DurationKind::Time {
+                                time: DurationTime::HM {
+                                    hours: 5,
+                                    minutes: 30
                                 }
                             }
+                        }
+                    },
+                    Period::Start {
+                        start: DateTime {
+                            date: date!(1997;10;15),
+                            time: time!(22;30;00, Utc)
                         },
-                        Period::Start {
-                            start: DateTime {
-                                date: date!(1997;10;15),
-                                time: time!(22;30;00, Utc)
-                            },
-                            duration: Duration {
-                                sign: None,
-                                kind: DurationKind::Time {
-                                    time: DurationTime::HM {
-                                        hours: 6,
-                                        minutes: 30
-                                    }
+                        duration: Duration {
+                            sign: None,
+                            kind: DurationKind::Time {
+                                time: DurationTime::HM {
+                                    hours: 6,
+                                    minutes: 30
                                 }
                             }
-                        },
-                    ]
-                    .into()
-                )]
+                        }
+                    },
+                ])]
                 .as_slice()
             )
         );
@@ -1903,7 +1911,7 @@ mod tests {
 
         assert_eq!(
             alarm.trigger(),
-            &TriggerProp::Absolute(Prop::from_value(DateTime {
+            TriggerPropRef::Absolute(&Prop::from_value(DateTime {
                 date: date!(1997;3;17),
                 time: time!(13;30;00, Utc)
             }))
@@ -1912,6 +1920,7 @@ mod tests {
         assert_eq!(
             alarm.attachment(),
             Some(&Prop {
+                derived: false,
                 value: AttachValue::Uri(Uri(
                     "ftp://example.com/pub/\r\n sounds/bell-01.aud".as_escaped()
                 )),
@@ -1962,7 +1971,7 @@ mod tests {
 
         assert_eq!(
             alarm.trigger(),
-            &TriggerProp::Relative(Prop::from_value(Duration {
+            TriggerPropRef::Relative(&Prop::from_value(Duration {
                 sign: Some(Sign::Negative),
                 kind: DurationKind::Time {
                     time: DurationTime::M { minutes: 30 },
@@ -2015,7 +2024,8 @@ mod tests {
 
         assert_eq!(
             alarm.trigger(),
-            &TriggerProp::Relative(Prop {
+            TriggerPropRef::Relative(&Prop {
+                derived: false,
                 value: Duration {
                     sign: Some(Sign::Negative),
                     kind: DurationKind::Date {
@@ -2056,6 +2066,7 @@ mod tests {
             alarm.attachments(),
             Some(
                 [Prop {
+                    derived: false,
                     value: AttachValue::Uri(Uri(
                         "http://example.com/\r\n templates/agenda.doc".as_escaped()
                     )),

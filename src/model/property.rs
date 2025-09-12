@@ -3,6 +3,7 @@
 use crate::parser::parameter::ParamValue;
 
 use super::{
+    component::{MultMut, MultRef},
     parameter::UnknownParam,
     primitive::{
         CalAddress, CalendarUserType, DateTime, DisplayType, Duration, FeatureType, FormatType,
@@ -16,12 +17,15 @@ use super::{
 // architecturally? should Prop get a field corresponding to DERIVED? what if additional "universal"
 // parameters of this kind are added?
 
+pub type MultiProp<S, V, P = ()> = Prop<S, V, MultiParams<P>>;
+
 /// A property generic over values and parameters.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Prop<S, V, P = ()> {
+    pub derived: bool,
     pub params: P,
     pub value: V,
-    pub unknown_params: Box<[UnknownParam<S>]>,
+    pub unknown_params: Vec<UnknownParam<S>>,
 }
 
 impl<S, V, P> Prop<S, V, P> {
@@ -31,16 +35,45 @@ impl<S, V, P> Prop<S, V, P> {
     {
         Self {
             value,
+            derived: Default::default(),
             params: Default::default(),
             unknown_params: Default::default(),
         }
     }
 }
 
+/// The parameters of a property which can occur multiple times in the same component, and in
+/// particular can therefore include the ORDER parameter (RFC 9073 §5.1).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct MultiParams<P> {
+    /// The value of the ORDER parameter (RFC 9073 §5.1).
+    pub order: Option<PositiveInteger>,
+    /// The other statically known parameters.
+    pub known: P,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TriggerPropRef<'a, S> {
+    Relative(&'a Prop<S, Duration, TriggerParams>),
+    Absolute(&'a Prop<S, DateTime<Utc>>),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TriggerProp<S> {
-    Relative(Prop<S, Duration, TriggerParams>),
-    Absolute(Prop<S, DateTime<Utc>>),
+pub enum TriggerPropMultRef<'a, S> {
+    Relative(MultRef<'a, Prop<S, Duration, TriggerParams>>),
+    Absolute(MultRef<'a, Prop<S, DateTime<Utc>>>),
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum TriggerPropMut<'a, S> {
+    Relative(&'a mut Prop<S, Duration, TriggerParams>),
+    Absolute(&'a mut Prop<S, DateTime<Utc>>),
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum TriggerPropMultMut<'a, S> {
+    Relative(MultMut<'a, Prop<S, Duration, TriggerParams>>),
+    Absolute(MultMut<'a, Prop<S, DateTime<Utc>>>),
 }
 
 /// The parameters which are admissible on every property (assuming we do not know the multiplicity

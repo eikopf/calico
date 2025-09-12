@@ -27,30 +27,21 @@ use super::{
     },
     property::{
         AttachParams, AttendeeParams, ConfParams, DtParams, FBTypeParams, ImageParams, LangParams,
-        OrganizerParams, Prop, RecurrenceIdParams, RelTypeParams, TextParams, TriggerProp,
+        MultiProp, OrganizerParams, Prop, RecurrenceIdParams, RelTypeParams, TextParams,
+        TriggerParams, TriggerPropMultMut, TriggerPropMultRef, TriggerPropMut, TriggerPropRef,
     },
     rrule::RRule,
 };
 
 macro_rules! mandatory_accessors {
-    ($([$key:ident, $name:ident, $name_mut:ident, $ret:ty]),* $(,)?) => {
+    ($([$name:ident => $name_inner:ident, $name_mut:ident => $name_mut_inner:ident, $ret:ty]),* $(,)?) => {
         $(
             pub fn $name(&self) -> &$ret {
-                let raw_entry = self.props.get(PropKey::Static(StaticPropName::$key));
-
-                match raw_entry {
-                    Some(PropEntry::Static(StaticProp::$key(mult))) => mult.as_one().unwrap(),
-                    Some(_) | None => unreachable!(),
-                }
+                self.props.$name_inner().unwrap().as_one().unwrap()
             }
 
             pub fn $name_mut(&mut self) -> &mut $ret {
-                let raw_entry = self.props.get_mut(PropKey::Static(StaticPropName::$key));
-
-                match raw_entry {
-                    Some(PropEntry::Static(StaticProp::$key(mult))) => mult.as_one_mut().unwrap(),
-                    Some(_) | None => unreachable!(),
-                }
+                self.props.$name_mut_inner().unwrap().as_one_mut().unwrap()
             }
         )*
     };
@@ -143,8 +134,8 @@ where
     S: Hash + Equiv<LineFoldCaseless> + AsRef<[u8]>,
 {
     mandatory_accessors! {
-        [ProdId, prod_id, prod_id_mut, Prop<S, Text<S>>],
-        [Version, version, version_mut, Prop<S, ()>],
+        [prod_id => prod_id, prod_id_mut => prod_id_mut, Prop<S, Text<S>>],
+        [version => version, version_mut => version_mut, Prop<S, ()>],
     }
 
     optional_accessors! {
@@ -216,8 +207,8 @@ where
     S: Hash + Equiv<LineFoldCaseless> + AsRef<[u8]>,
 {
     mandatory_accessors! {
-        [DtStamp, timestamp, timestamp_mut, Prop<S, DateTime<Utc>>],
-        [Uid, uid, uid_mut, Prop<S, Uid<S>>],
+        [timestamp => timestamp, timestamp_mut => timestamp_mut, Prop<S, DateTime<Utc>>],
+        [uid => uid, uid_mut => uid_mut, Prop<S, Uid<S>>],
     }
 
     pub fn status(&self) -> Option<&Prop<S, EventStatus>> {
@@ -331,8 +322,8 @@ where
     S: Hash + Equiv<LineFoldCaseless> + AsRef<[u8]>,
 {
     mandatory_accessors! {
-        [DtStamp, timestamp, timestamp_mut, Prop<S, DateTime<Utc>>],
-        [Uid, uid, uid_mut, Prop<S, Uid<S>>],
+        [timestamp => timestamp, timestamp_mut => timestamp_mut, Prop<S, DateTime<Utc>>],
+        [uid => uid, uid_mut => uid_mut, Prop<S, Uid<S>>],
     }
 
     pub fn status(&self) -> Option<&Prop<S, TodoStatus>> {
@@ -441,7 +432,7 @@ impl<S> Alarm<S> {
     }
 }
 
-macro_rules! dur_rep_accessors {
+macro_rules! alarm_accessors {
     () => {
         pub fn duration_and_repeat(&self) -> Option<(&Prop<S, Duration>, &Prop<S, Integer>)> {
             let duration = self.duration();
@@ -452,6 +443,30 @@ macro_rules! dur_rep_accessors {
                 (Some(_), None) => panic!("DURATION without REPEAT in VALARM"),
                 (None, Some(_)) => panic!("REPEAT without DURATION in VALARM"),
                 (None, None) => None,
+            }
+        }
+
+        pub fn trigger(&self) -> TriggerPropRef<'_, S> {
+            match self.props.trigger() {
+                Some(TriggerPropMultRef::Absolute(MultRef::One(prop))) => {
+                    TriggerPropRef::Absolute(prop)
+                }
+                Some(TriggerPropMultRef::Relative(MultRef::One(prop))) => {
+                    TriggerPropRef::Relative(prop)
+                }
+                _ => unreachable!(),
+            }
+        }
+
+        pub fn trigger_mut(&mut self) -> TriggerPropMut<'_, S> {
+            match self.props.trigger_mut() {
+                Some(TriggerPropMultMut::Absolute(MultMut::One(prop))) => {
+                    TriggerPropMut::Absolute(prop)
+                }
+                Some(TriggerPropMultMut::Relative(MultMut::One(prop))) => {
+                    TriggerPropMut::Relative(prop)
+                }
+                _ => unreachable!(),
             }
         }
     };
@@ -498,7 +513,7 @@ where
     }
 
     mandatory_accessors! {
-        [Trigger, trigger, trigger_mut, TriggerProp<S>],
+        //[Trigger, trigger, trigger_mut, TriggerProp<S>],
     }
 
     optional_accessors! {
@@ -510,7 +525,7 @@ where
         [Proximity, proximity, proximity_mut, Prop<S, ProximityValue<S>>],
     }
 
-    dur_rep_accessors!();
+    alarm_accessors!();
 }
 
 /// A VALARM with the DISPLAY action.
@@ -554,8 +569,8 @@ where
     }
 
     mandatory_accessors! {
-        [Description, description, description_mut, Prop<S, Text<S>, TextParams<S>>],
-        [Trigger, trigger, trigger_mut, TriggerProp<S>],
+        [description => description, description_mut => description_mut, Prop<S, Text<S>, TextParams<S>>],
+        //[Trigger, trigger, trigger_mut, TriggerProp<S>],
     }
 
     optional_accessors! {
@@ -566,7 +581,7 @@ where
         [Proximity, proximity, proximity_mut, Prop<S, ProximityValue<S>>],
     }
 
-    dur_rep_accessors!();
+    alarm_accessors!();
 }
 
 /// A VALARM with the EMAIL action.
@@ -610,9 +625,9 @@ where
     }
 
     mandatory_accessors! {
-        [Description, description, description_mut, Prop<S, Text<S>, TextParams<S>>],
-        [Trigger, trigger, trigger_mut, TriggerProp<S>],
-        [Summary, summary, summary_mut, Prop<S, Text<S>, TextParams<S>>],
+        [description => description, description_mut => description_mut, Prop<S, Text<S>, TextParams<S>>],
+        //[Trigger, trigger, trigger_mut, TriggerProp<S>],
+        [summary => summary, summary_mut => summary_mut, Prop<S, Text<S>, TextParams<S>>],
     }
 
     optional_accessors! {
@@ -628,7 +643,7 @@ where
         [Attach, attachments, attachments_mut, Prop<S, AttachValue<S>, AttachParams<S>>],
     }
 
-    dur_rep_accessors!();
+    alarm_accessors!();
 }
 
 /// A VALARM with an action other than AUDIO, DISPLAY, or EMAIL.
@@ -672,9 +687,9 @@ where
     }
 
     mandatory_accessors! {
-        [Description, description, description_mut, Prop<S, Text<S>, TextParams<S>>],
-        [Trigger, trigger, trigger_mut, TriggerProp<S>],
-        [Summary, summary, summary_mut, Prop<S, Text<S>, TextParams<S>>],
+        [description => description, description_mut => description_mut, Prop<S, Text<S>, TextParams<S>>],
+        //[Trigger, trigger, trigger_mut, TriggerProp<S>],
+        [summary => summary, summary_mut => summary_mut, Prop<S, Text<S>, TextParams<S>>],
     }
 
     optional_accessors! {
@@ -690,7 +705,7 @@ where
         [Attach, attachments, attachments_mut, Prop<S, AttachValue<S>, AttachParams<S>>],
     }
 
-    dur_rep_accessors!();
+    alarm_accessors!();
 }
 
 /// A VJOURNAL component (RFC 5545 §3.6.3).
@@ -710,8 +725,8 @@ where
     S: Hash + Equiv<LineFoldCaseless> + AsRef<[u8]>,
 {
     mandatory_accessors! {
-        [DtStamp, timestamp, timestamp_mut, Prop<S, DateTime<Utc>>],
-        [Uid, uid, uid_mut, Prop<S, Uid<S>>],
+        [timestamp => timestamp, timestamp_mut => timestamp_mut, Prop<S, DateTime<Utc>>],
+        [uid => uid, uid_mut => uid_mut, Prop<S, Uid<S>>],
     }
 
     pub fn status(&self) -> Option<&Prop<S, JournalStatus>> {
@@ -778,8 +793,8 @@ where
     S: Hash + Equiv<LineFoldCaseless> + AsRef<[u8]>,
 {
     mandatory_accessors! {
-        [DtStamp, timestamp, timestamp_mut, Prop<S, DateTime<Utc>>],
-        [Uid, uid, uid_mut, Prop<S, Uid<S>>],
+        [timestamp => timestamp, timestamp_mut => timestamp_mut, Prop<S, DateTime<Utc>>],
+        [uid => uid, uid_mut => uid_mut, Prop<S, Uid<S>>],
     }
 
     optional_accessors! {
@@ -827,7 +842,7 @@ where
     S: Hash + Equiv<LineFoldCaseless> + AsRef<[u8]>,
 {
     mandatory_accessors! {
-        [TzId, id, id_mut, Prop<S, TzId<S>>],
+        [id => tz_id, id_mut => tz_id_mut, Prop<S, TzId<S>>],
     }
 
     optional_accessors! {
@@ -858,9 +873,9 @@ where
     S: Hash + Equiv<LineFoldCaseless> + AsRef<[u8]>,
 {
     mandatory_accessors! {
-        [DtStart, start, start_mut, Prop<S, DateTimeOrDate, DtParams<S>>],
-        [TzOffsetTo, offset_to, offset_to_mut, Prop<S, UtcOffset>],
-        [TzOffsetFrom, offset_from, offset_from_mut, Prop<S, UtcOffset>],
+        [start => dt_start, start_mut => dt_start_mut, Prop<S, DateTimeOrDate, DtParams<S>>],
+        [offset_to => tz_offset_to, offset_to_mut => tz_offset_to_mut, Prop<S, UtcOffset>],
+        [offset_from => tz_offset_from, offset_from_mut => tz_offset_from_mut, Prop<S, UtcOffset>],
     }
 
     optional_accessors! {
@@ -968,7 +983,7 @@ impl<S> Default for PropertyTable<S> {
 macro_rules! property_table_accessors {
     ($([$prop:ident, $name_ref:ident, $name_mut:ident, $ret_ty:ty]),* $(,)?) => {
         $(
-            pub fn $name_ref (&self) -> Option<&Mult<$ret_ty>>
+            pub fn $name_ref (&self) -> Option<MultRef<'_, $ret_ty>>
             where
                 S: Hash + Equiv<LineFoldCaseless> + AsRef<[u8]>,
             {
@@ -976,7 +991,7 @@ macro_rules! property_table_accessors {
                 let raw_entry = self.get(key);
 
                 match raw_entry {
-                    Some(PropEntry::Static(StaticProp::$prop(mult))) => Some(mult),
+                    Some(PropEntry::Static(StaticProp::$prop(mult))) => Some(mult.as_ref()),
                     Some(_) => unreachable!(),
                     None => None,
                 }
@@ -997,6 +1012,56 @@ macro_rules! property_table_accessors {
             }
         )*
     };
+}
+
+impl<S> PropertyTable<S>
+where
+    S: Hash + Equiv<LineFoldCaseless> + AsRef<[u8]>,
+{
+    pub fn trigger(&self) -> Option<TriggerPropMultRef<'_, S>> {
+        let rel = self
+            .get(PropKey::Static(StaticPropName::TriggerRelative))
+            .map(|entry| match entry {
+                PropEntry::Static(StaticProp::TriggerRelative(prop)) => {
+                    TriggerPropMultRef::Relative(prop.as_ref())
+                }
+                _ => unreachable!(),
+            });
+
+        let abs = || {
+            self.get(PropKey::Static(StaticPropName::TriggerAbsolute))
+                .map(|entry| match entry {
+                    PropEntry::Static(StaticProp::TriggerAbsolute(prop)) => {
+                        TriggerPropMultRef::Absolute(prop.as_ref())
+                    }
+                    _ => unreachable!(),
+                })
+        };
+
+        rel.or_else(abs)
+    }
+
+    pub fn trigger_mut(&mut self) -> Option<TriggerPropMultMut<'_, S>> {
+        match self.trigger() {
+            Some(TriggerPropMultRef::Absolute(_)) => self
+                .get_mut(PropKey::Static(StaticPropName::TriggerAbsolute))
+                .map(|entry| match entry {
+                    PropEntry::Static(StaticProp::TriggerAbsolute(prop)) => {
+                        TriggerPropMultMut::Absolute(prop.as_mut())
+                    }
+                    _ => unreachable!(),
+                }),
+            Some(TriggerPropMultRef::Relative(_)) => self
+                .get_mut(PropKey::Static(StaticPropName::TriggerRelative))
+                .map(|entry| match entry {
+                    PropEntry::Static(StaticProp::TriggerRelative(prop)) => {
+                        TriggerPropMultMut::Relative(prop.as_mut())
+                    }
+                    _ => unreachable!(),
+                }),
+            None => None,
+        }
+    }
 }
 
 impl<S> PropertyTable<S> {
@@ -1048,10 +1113,9 @@ impl<S> PropertyTable<S> {
         // ALARM COMPONENT PROPERTIES
         [Action, alarm_action, alarm_action_mut, AlarmActionProp<S>],
         [Repeat, repeat, repeat_mut, Prop<S, Integer>],
-        [Trigger, trigger, trigger_mut, TriggerProp<S>],
         // CHANGE MANAGEMENT COMPONENT PROPERTIES
         [Created, created, created_mut, Prop<S, DateTime<Utc>>],
-        [DtStamp, dt_stamp, dt_stamp_mut, Prop<S, DateTime<Utc>>],
+        [DtStamp, timestamp, timestamp_mut, Prop<S, DateTime<Utc>>],
         [LastModified, last_modified, last_modified_mut, Prop<S, DateTime<Utc>>],
         [Sequence, sequence, sequence_mut, Prop<S, Integer>],
         // MISCELLANEOUS COMPONENT PROPERTIES
@@ -1215,6 +1279,12 @@ impl<S> PropertyTable<S> {
     }
 }
 
+// #[derive(Debug, Clone, PartialEq, Eq)]
+// pub enum _Mult<S, V, P> {
+//     One(Prop<S, V, P>),
+//     Seq(Vec<MultiProp<S, V, P>>),
+// }
+//
 /// A multiplicity of `T`.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Mult<T> {
@@ -1224,7 +1294,39 @@ pub enum Mult<T> {
     Seq(Vec<T>),
 }
 
+/// A reference to a multiplicity of `T`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum MultRef<'a, T> {
+    /// Exactly one value.
+    One(&'a T),
+    /// Zero or more values.
+    Seq(&'a [T]),
+}
+
+/// A mutable reference to a multiplicity of `T`.
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum MultMut<'a, T> {
+    /// Exactly one value.
+    One(&'a mut T),
+    /// Zero or more values.
+    Seq(&'a mut Vec<T>),
+}
+
 impl<T> Mult<T> {
+    pub const fn as_ref(&self) -> MultRef<'_, T> {
+        match self {
+            Mult::One(x) => MultRef::One(x),
+            Mult::Seq(xs) => MultRef::Seq(xs.as_slice()),
+        }
+    }
+
+    pub const fn as_mut(&mut self) -> MultMut<'_, T> {
+        match self {
+            Mult::One(x) => MultMut::One(x),
+            Mult::Seq(xs) => MultMut::Seq(xs),
+        }
+    }
+
     pub const fn as_one(&self) -> Option<&T> {
         if let Self::One(v) = self {
             Some(v)
@@ -1280,6 +1382,42 @@ impl<T> Mult<T> {
                 let _vec = std::mem::replace(self, Mult::One(item));
                 Ok(())
             }
+        }
+    }
+}
+
+impl<'a, T> MultRef<'a, T> {
+    pub const fn as_one(&self) -> Option<&'a T> {
+        if let MultRef::One(x) = self {
+            Some(x)
+        } else {
+            None
+        }
+    }
+
+    pub const fn as_seq(&self) -> Option<&'a [T]> {
+        if let MultRef::Seq(x) = self {
+            Some(x)
+        } else {
+            None
+        }
+    }
+}
+
+impl<'a, T> MultMut<'a, T> {
+    pub const fn as_one(self) -> Option<&'a mut T> {
+        if let MultMut::One(x) = self {
+            Some(x)
+        } else {
+            None
+        }
+    }
+
+    pub const fn as_seq(self) -> Option<&'a mut Vec<T>> {
+        if let MultMut::Seq(x) = self {
+            Some(x)
+        } else {
+            None
         }
     }
 }
@@ -1548,9 +1686,10 @@ StaticPropName {
     RDate(Mult<Prop<S, RDateSeq, DtParams<S>>>),
     RRule(Mult<Prop<S, Box<RRule>>>),
     // ALARM COMPONENT PROPERTIES
-    Action(Mult<AlarmActionProp<S>>),
+    Action(Mult<AlarmActionProp<S>>), // TODO: break into Mult<Prop<_>> subtypes
     Repeat(Mult<Prop<S, Integer>>),
-    Trigger(Mult<TriggerProp<S>>),
+    TriggerRelative(Mult<Prop<S, Duration, TriggerParams>>),
+    TriggerAbsolute(Mult<Prop<S, DateTime<Utc>>>),
     // CHANGE MANAGEMENT COMPONENT PROPERTIES
     Created(Mult<Prop<S, DateTime<Utc>>>),
     DtStamp(Mult<Prop<S, DateTime<Utc>>>),
@@ -1581,8 +1720,8 @@ where
         macro_rules! one {
             ($scrut:expr, $prop:expr) => {
                 match $scrut {
-                    Some(Mult::One(x)) => Ok(x),
-                    Some(Mult::Seq(_)) => Err(CalendarParseError::MoreThanOneProp {
+                    Some(MultRef::One(x)) => Ok(x),
+                    Some(MultRef::Seq(_)) => Err(CalendarParseError::MoreThanOneProp {
                         prop: $prop,
                         component: ComponentKind::Alarm,
                     }),
@@ -1597,8 +1736,8 @@ where
         macro_rules! zero_or_one {
             ($scrut:expr, $prop:expr) => {
                 match $scrut {
-                    Some(Mult::One(x)) => Ok(Some(x)),
-                    Some(Mult::Seq(_)) => Err(CalendarParseError::MoreThanOneProp {
+                    Some(MultRef::One(x)) => Ok(Some(x)),
+                    Some(MultRef::Seq(_)) => Err(CalendarParseError::MoreThanOneProp {
                         prop: $prop,
                         component: ComponentKind::Alarm,
                     }),
@@ -1622,7 +1761,6 @@ where
         )?;
 
         // check multiplicities for other fields as necessary
-        let _ = one!(self.trigger(), PropName::Rfc5545(Rfc5545PropName::Trigger))?;
         let _ = zero_or_one!(
             self.uid(),
             PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier)
@@ -1635,6 +1773,20 @@ where
             self.proximity(),
             PropName::Rfc9074(Rfc9074PropName::Proximity)
         )?;
+
+        // check trigger multiplicity
+        let () = match self.trigger() {
+            Some(TriggerPropMultRef::Relative(MultRef::One(_)))
+            | Some(TriggerPropMultRef::Absolute(MultRef::One(_))) => Ok(()),
+            Some(_) => Err(CalendarParseError::MoreThanOneProp {
+                prop: PropName::Rfc5545(Rfc5545PropName::Trigger),
+                component: ComponentKind::Alarm,
+            }),
+            None => Err(CalendarParseError::MissingProp {
+                prop: PropName::Rfc5545(Rfc5545PropName::Trigger),
+                component: ComponentKind::Alarm,
+            }),
+        }?;
 
         // check that duration and repeat occur together
         let () = match (duration, repeat) {
