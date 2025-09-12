@@ -3,12 +3,13 @@
 use crate::parser::parameter::ParamValue;
 
 use super::{
-    component::{MultMut, MultRef},
+    component::{Mult, MultRef},
     parameter::UnknownParam,
     primitive::{
-        CalAddress, CalendarUserType, DateTime, DisplayType, Duration, FeatureType, FormatType,
-        FreeBusyType, Language, ParticipationRole, ParticipationStatus, PositiveInteger,
-        RelationshipType, ThisAndFuture, TriggerRelation, TzId, Uri, Utc,
+        AudioAction, Binary, CalAddress, CalendarUserType, DateTime, DisplayAction, DisplayType,
+        Duration, EmailAction, FeatureType, FormatType, FreeBusyType, Language, ParticipationRole,
+        ParticipationStatus, PositiveInteger, RelationshipType, Text, ThisAndFuture,
+        TriggerRelation, TzId, UnknownAction, Uri, Utc,
     },
 };
 
@@ -40,6 +41,53 @@ impl<S, V, P> Prop<S, V, P> {
             unknown_params: Default::default(),
         }
     }
+
+    /// Converts `self` into a [`MultiProp`] with no defined ORDER.
+    pub fn into_multi_prop(self) -> MultiProp<S, V, P> {
+        let Prop {
+            derived,
+            params,
+            value,
+            unknown_params,
+        } = self;
+
+        MultiProp {
+            derived,
+            value,
+            unknown_params,
+            params: MultiParams {
+                order: None,
+                known: params,
+            },
+        }
+    }
+}
+
+impl<S, V, P> MultiProp<S, V, P> {
+    /// Tries to convert `self` into a normal [`Prop`] by unwrapping the [`Self::params`] field.
+    /// This will fail if the [`MultiParams::order`] field is not [`None`].
+    pub fn try_into_single_prop(self) -> Option<Prop<S, V, P>> {
+        let MultiProp {
+            derived,
+            params:
+                MultiParams {
+                    order,
+                    known: params,
+                },
+            value,
+            unknown_params,
+        } = self;
+
+        match order {
+            Some(_) => None,
+            None => Some(Prop {
+                derived,
+                params,
+                value,
+                unknown_params,
+            }),
+        }
+    }
 }
 
 /// The parameters of a property which can occur multiple times in the same component, and in
@@ -53,6 +101,28 @@ pub struct MultiParams<P> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActionPropMultRef<'a, S> {
+    Audio(MultRef<'a, S, AudioAction>),
+    Display(MultRef<'a, S, DisplayAction>),
+    Email(MultRef<'a, S, EmailAction>),
+    Unknown(MultRef<'a, S, UnknownAction<S>>),
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum ActionPropMultMut<'a, S> {
+    Audio(&'a mut Mult<S, AudioAction>),
+    Display(&'a mut Mult<S, DisplayAction>),
+    Email(&'a mut Mult<S, EmailAction>),
+    Unknown(&'a mut Mult<S, UnknownAction<S>>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AnyTriggerProp<S> {
+    Relative(MultiProp<S, Duration, TriggerParams>),
+    Absolute(MultiProp<S, DateTime<Utc>>),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TriggerPropRef<'a, S> {
     Relative(&'a Prop<S, Duration, TriggerParams>),
     Absolute(&'a Prop<S, DateTime<Utc>>),
@@ -60,8 +130,8 @@ pub enum TriggerPropRef<'a, S> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TriggerPropMultRef<'a, S> {
-    Relative(MultRef<'a, Prop<S, Duration, TriggerParams>>),
-    Absolute(MultRef<'a, Prop<S, DateTime<Utc>>>),
+    Relative(MultRef<'a, S, Duration, TriggerParams>),
+    Absolute(MultRef<'a, S, DateTime<Utc>>),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -72,8 +142,15 @@ pub enum TriggerPropMut<'a, S> {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum TriggerPropMultMut<'a, S> {
-    Relative(MultMut<'a, Prop<S, Duration, TriggerParams>>),
-    Absolute(MultMut<'a, Prop<S, DateTime<Utc>>>),
+    Relative(&'a mut Mult<S, Duration, TriggerParams>),
+    Absolute(&'a mut Mult<S, DateTime<Utc>>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AnyStructuredDataProp<S> {
+    Binary(MultiProp<S, Binary<S>, StructuredDataParams<S>>),
+    Text(MultiProp<S, Text<S>, StructuredDataParams<S>>),
+    Uri(MultiProp<S, Uri<S>, UriStructuredDataParams<S>>),
 }
 
 /// The parameters which are admissible on every property (assuming we do not know the multiplicity

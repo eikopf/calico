@@ -241,12 +241,12 @@ pub enum UnknownProp<S> {
     Iana {
         name: S,
         value: Value<S>,
-        params: Box<[KnownParam<S>]>,
+        params: Vec<KnownParam<S>>,
     },
     X {
         name: S,
         value: Value<S>,
-        params: Box<[KnownParam<S>]>,
+        params: Vec<KnownParam<S>>,
     },
 }
 
@@ -1899,7 +1899,7 @@ where
                 Prop::Unknown(UnknownProp::Iana {
                     value: parse_value(res.value_type, input)?,
                     name: name.clone(),
-                    params: res.state.into_boxed_slice(),
+                    params: res.state,
                 }),
                 res.universals,
                 res.unknown_params,
@@ -1917,7 +1917,7 @@ where
                 Prop::Unknown(UnknownProp::X {
                     value: parse_value(res.value_type, input)?,
                     name: name.clone(),
-                    params: res.state.into_boxed_slice(),
+                    params: res.state,
                 }),
                 res.universals,
                 res.unknown_params,

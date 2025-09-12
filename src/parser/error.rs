@@ -96,6 +96,8 @@ pub enum ComponentKind<S> {
     StandardOrDaylight,
     Iana(S),
     X(S),
+    /// Iana or X without a specific name.
+    Unknown,
 }
 
 impl<S> From<TzRuleKind> for ComponentKind<S> {

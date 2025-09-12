@@ -20,15 +20,18 @@ use super::{
     css::Css3Color,
     parameter::KnownParam,
     primitive::{
-        AttachValue, AudioAction, CalAddress, ClassValue, CompletionPercentage, DateTime,
-        DateTimeOrDate, DisplayAction, Duration, EmailAction, EventStatus, ExDateSeq, Geo,
-        ImageData, Integer, JournalStatus, Method, Period, Priority, RDateSeq, RequestStatus,
-        Status, Text, TimeTransparency, TodoStatus, TzId, Uid, Uri, Utc, UtcOffset, Value,
+        AlarmAction, AttachValue, AudioAction, Binary, CalAddress, ClassValue,
+        CompletionPercentage, DateTime, DateTimeOrDate, DisplayAction, Duration, EmailAction,
+        EventStatus, ExDateSeq, Geo, ImageData, Integer, JournalStatus, Method, ParticipantType,
+        Period, Priority, RDateSeq, RequestStatus, ResourceType, Status, StyledDescriptionValue,
+        Text, TimeTransparency, TodoStatus, TzId, Uid, Uri, Utc, UtcOffset, Value,
     },
     property::{
-        AttachParams, AttendeeParams, ConfParams, DtParams, FBTypeParams, ImageParams, LangParams,
-        MultiProp, OrganizerParams, Prop, RecurrenceIdParams, RelTypeParams, TextParams,
-        TriggerParams, TriggerPropMultMut, TriggerPropMultRef, TriggerPropMut, TriggerPropRef,
+        ActionPropMultMut, ActionPropMultRef, AnyStructuredDataProp, AnyTriggerProp, AttachParams,
+        AttendeeParams, ConfParams, DtParams, FBTypeParams, ImageParams, LangParams, MultiProp,
+        OrganizerParams, Prop, RecurrenceIdParams, RelTypeParams, StructuredDataParams,
+        StyledDescriptionParams, TextParams, TriggerParams, TriggerPropMultMut, TriggerPropMultRef,
+        TriggerPropMut, TriggerPropRef, UriStructuredDataParams,
     },
     rrule::RRule,
 };
@@ -103,10 +106,10 @@ macro_rules! seq_accessors {
 type PropSeq<S, V, P = ()> = Vec<Prop<S, V, P>>;
 
 /// An unknown property value and parameter sequence.
-type UnknownProp<S> = Prop<S, Box<Value<S>>, Box<[KnownParam<S>]>>;
+type UnknownProp<S> = MultiProp<S, Box<Value<S>>, Vec<KnownParam<S>>>;
 
 /// A sequence of unknown property values and parameters.
-type UnknownPropSeq<S> = PropSeq<S, Box<Value<S>>, Box<[KnownParam<S>]>>;
+type UnknownPropSeq<S> = Vec<UnknownProp<S>>;
 
 /// An iCalendar object (RFC 5545 §3.4).
 #[derive(Debug, Clone)]
@@ -150,10 +153,10 @@ where
     }
 
     seq_accessors! {
-        [Name, names, names_mut, Prop<S, Text<S>, TextParams<S>>],
-        [Description, description, description_mut, Prop<S, Text<S>, TextParams<S>>],
-        [Categories, categories, categories_mut, Prop<S, Vec<Text<S>>, LangParams<S>>],
-        [Image, images, images_mut, Prop<S, ImageData<S>, ImageParams<S>>],
+        [Name, names, names_mut, MultiProp<S, Text<S>, TextParams<S>>],
+        [Description, description, description_mut, MultiProp<S, Text<S>, TextParams<S>>],
+        [Categories, categories, categories_mut, MultiProp<S, Vec<Text<S>>, LangParams<S>>],
+        [Image, images, images_mut, MultiProp<S, ImageData<S>, ImageParams<S>>],
     }
 }
 
@@ -165,8 +168,7 @@ pub enum Component<S> {
     Journal(Journal<S>),
     FreeBusy(FreeBusy<S>),
     TimeZone(TimeZone<S>),
-    Iana(OtherComponent<S>),
-    X(OtherComponent<S>),
+    Other(OtherComponent<S>),
 }
 
 /// A VEVENT component (RFC 5545 §3.6.1).
@@ -212,20 +214,19 @@ where
     }
 
     pub fn status(&self) -> Option<&Prop<S, EventStatus>> {
-        match self.props.get(PropKey::Static(StaticPropName::Status)) {
-            Some(PropEntry::Static(StaticProp::Status(mult))) => {
-                mult.as_one().and_then(StatusProp::as_event)
-            }
+        match self.props.get(PropKey::Static(StaticPropName::EventStatus)) {
+            Some(PropEntry::Static(StaticProp::EventStatus(mult))) => mult.as_one(),
             Some(_) => unreachable!(),
             None => None,
         }
     }
 
     pub fn status_mut(&mut self) -> Option<&mut Prop<S, EventStatus>> {
-        match self.props.get_mut(PropKey::Static(StaticPropName::Status)) {
-            Some(PropEntry::Static(StaticProp::Status(mult))) => {
-                mult.as_one_mut().and_then(StatusProp::as_event_mut)
-            }
+        match self
+            .props
+            .get_mut(PropKey::Static(StaticPropName::EventStatus))
+        {
+            Some(PropEntry::Static(StaticProp::EventStatus(mult))) => mult.as_one_mut(),
             Some(_) => unreachable!(),
             None => None,
         }
@@ -268,19 +269,19 @@ where
     }
 
     seq_accessors! {
-        [Attach, attachments, attachments_mut, Prop<S, AttachValue<S>, AttachParams<S>>],
-        [Attendee, attendees, attendees_mut, Prop<S, CalAddress<S>, Box<AttendeeParams<S>>>],
-        [Categories, categories, categories_mut, Prop<S, Vec<Text<S>>, LangParams<S>>],
-        [Comment, comments, comments_mut, Prop<S, Text<S>, TextParams<S>>],
-        [Contact, contacts, contacts_mut, Prop<S, Text<S>, TextParams<S>>],
-        [RRule, rrule, rrule_mut, Prop<S, Box<RRule>>],
-        [ExDate, exception_dates, exception_dates_mut, Prop<S, ExDateSeq, DtParams<S>>],
-        [RequestStatus, request_statuses, request_statuses_mut, Prop<S, RequestStatus<S>, LangParams<S>>],
-        [RelatedTo, relateds, relateds_mut, Prop<S, Text<S>, RelTypeParams<S>>],
-        [Resources, resources, resources_mut, Prop<S, Vec<Text<S>>, TextParams<S>>],
-        [RDate, recurrence_dates, recurrence_dates_mut, Prop<S, RDateSeq, DtParams<S>>],
-        [Conference, conferences, conferences_mut, Prop<S, Uri<S>, ConfParams<S>>],
-        [Image, images, images_mut, Prop<S, ImageData<S>, ImageParams<S>>],
+        [Attach, attachments, attachments_mut, MultiProp<S, AttachValue<S>, AttachParams<S>>],
+        [Attendee, attendees, attendees_mut, MultiProp<S, CalAddress<S>, Box<AttendeeParams<S>>>],
+        [Categories, categories, categories_mut, MultiProp<S, Vec<Text<S>>, LangParams<S>>],
+        [Comment, comments, comments_mut, MultiProp<S, Text<S>, TextParams<S>>],
+        [Contact, contacts, contacts_mut, MultiProp<S, Text<S>, TextParams<S>>],
+        [RRule, rrule, rrule_mut, MultiProp<S, Box<RRule>>],
+        [ExDate, exception_dates, exception_dates_mut, MultiProp<S, ExDateSeq, DtParams<S>>],
+        [RequestStatus, request_statuses, request_statuses_mut, MultiProp<S, RequestStatus<S>, LangParams<S>>],
+        [RelatedTo, relateds, relateds_mut, MultiProp<S, Text<S>, RelTypeParams<S>>],
+        [Resources, resources, resources_mut, MultiProp<S, Vec<Text<S>>, TextParams<S>>],
+        [RDate, recurrence_dates, recurrence_dates_mut, MultiProp<S, RDateSeq, DtParams<S>>],
+        [Conference, conferences, conferences_mut, MultiProp<S, Uri<S>, ConfParams<S>>],
+        [Image, images, images_mut, MultiProp<S, ImageData<S>, ImageParams<S>>],
     }
 }
 
@@ -327,20 +328,19 @@ where
     }
 
     pub fn status(&self) -> Option<&Prop<S, TodoStatus>> {
-        match self.props.get(PropKey::Static(StaticPropName::Status)) {
-            Some(PropEntry::Static(StaticProp::Status(mult))) => {
-                mult.as_one().and_then(StatusProp::as_todo)
-            }
+        match self.props.get(PropKey::Static(StaticPropName::TodoStatus)) {
+            Some(PropEntry::Static(StaticProp::TodoStatus(mult))) => mult.as_one(),
             Some(_) => unreachable!(),
             None => None,
         }
     }
 
     pub fn status_mut(&mut self) -> Option<&mut Prop<S, TodoStatus>> {
-        match self.props.get_mut(PropKey::Static(StaticPropName::Status)) {
-            Some(PropEntry::Static(StaticProp::Status(mult))) => {
-                mult.as_one_mut().and_then(StatusProp::as_todo_mut)
-            }
+        match self
+            .props
+            .get_mut(PropKey::Static(StaticPropName::TodoStatus))
+        {
+            Some(PropEntry::Static(StaticProp::TodoStatus(mult))) => mult.as_one_mut(),
             Some(_) => unreachable!(),
             None => None,
         }
@@ -384,19 +384,19 @@ where
     }
 
     seq_accessors! {
-        [Attach, attachments, attachments_mut, Prop<S, AttachValue<S>, AttachParams<S>>],
-        [Attendee, attendees, attendees_mut, Prop<S, CalAddress<S>, Box<AttendeeParams<S>>>],
-        [Categories, categories, categories_mut, Prop<S, Vec<Text<S>>, LangParams<S>>],
-        [Comment, comments, comments_mut, Prop<S, Text<S>, TextParams<S>>],
-        [Contact, contacts, contacts_mut, Prop<S, Text<S>, TextParams<S>>],
-        [RRule, rrule, rrule_mut, Prop<S, Box<RRule>>],
-        [ExDate, exception_dates, exception_dates_mut, Prop<S, ExDateSeq, DtParams<S>>],
-        [RequestStatus, request_statuses, request_statuses_mut, Prop<S, RequestStatus<S>, LangParams<S>>],
-        [RelatedTo, relateds, relateds_mut, Prop<S, Text<S>, RelTypeParams<S>>],
-        [Resources, resources, resources_mut, Prop<S, Vec<Text<S>>, TextParams<S>>],
-        [RDate, recurrence_dates, recurrence_dates_mut, Prop<S, RDateSeq, DtParams<S>>],
-        [Conference, conferences, conferences_mut, Prop<S, Uri<S>, ConfParams<S>>],
-        [Image, images, images_mut, Prop<S, ImageData<S>, ImageParams<S>>],
+        [Attach, attachments, attachments_mut, MultiProp<S, AttachValue<S>, AttachParams<S>>],
+        [Attendee, attendees, attendees_mut, MultiProp<S, CalAddress<S>, Box<AttendeeParams<S>>>],
+        [Categories, categories, categories_mut, MultiProp<S, Vec<Text<S>>, LangParams<S>>],
+        [Comment, comments, comments_mut, MultiProp<S, Text<S>, TextParams<S>>],
+        [Contact, contacts, contacts_mut, MultiProp<S, Text<S>, TextParams<S>>],
+        [RRule, rrule, rrule_mut, MultiProp<S, Box<RRule>>],
+        [ExDate, exception_dates, exception_dates_mut, MultiProp<S, ExDateSeq, DtParams<S>>],
+        [RequestStatus, request_statuses, request_statuses_mut, MultiProp<S, RequestStatus<S>, LangParams<S>>],
+        [RelatedTo, relateds, relateds_mut, MultiProp<S, Text<S>, RelTypeParams<S>>],
+        [Resources, resources, resources_mut, MultiProp<S, Vec<Text<S>>, TextParams<S>>],
+        [RDate, recurrence_dates, recurrence_dates_mut, MultiProp<S, RDateSeq, DtParams<S>>],
+        [Conference, conferences, conferences_mut, MultiProp<S, Uri<S>, ConfParams<S>>],
+        [Image, images, images_mut, MultiProp<S, ImageData<S>, ImageParams<S>>],
     }
 }
 
@@ -413,7 +413,7 @@ pub enum Alarm<S> {
 }
 
 impl<S> Alarm<S> {
-    pub const fn subcomponents(&self) -> &[ExtComponent<S>] {
+    pub const fn subcomponents(&self) -> &[OtherComponent<S>] {
         match self {
             Alarm::Audio(alarm) => alarm.subcomponents(),
             Alarm::Display(alarm) => alarm.subcomponents(),
@@ -422,7 +422,7 @@ impl<S> Alarm<S> {
         }
     }
 
-    pub const fn subcomponents_mut(&mut self) -> &mut Vec<ExtComponent<S>> {
+    pub const fn subcomponents_mut(&mut self) -> &mut Vec<OtherComponent<S>> {
         match self {
             Alarm::Audio(alarm) => alarm.subcomponents_mut(),
             Alarm::Display(alarm) => alarm.subcomponents_mut(),
@@ -460,10 +460,10 @@ macro_rules! alarm_accessors {
 
         pub fn trigger_mut(&mut self) -> TriggerPropMut<'_, S> {
             match self.props.trigger_mut() {
-                Some(TriggerPropMultMut::Absolute(MultMut::One(prop))) => {
+                Some(TriggerPropMultMut::Absolute(Mult::One(prop))) => {
                     TriggerPropMut::Absolute(prop)
                 }
-                Some(TriggerPropMultMut::Relative(MultMut::One(prop))) => {
+                Some(TriggerPropMultMut::Relative(Mult::One(prop))) => {
                     TriggerPropMut::Relative(prop)
                 }
                 _ => unreachable!(),
@@ -476,15 +476,15 @@ macro_rules! alarm_accessors {
 #[derive(Debug, Clone)]
 pub struct AudioAlarm<S> {
     props: PropertyTable<S>,
-    subcomponents: Vec<ExtComponent<S>>,
+    subcomponents: Vec<OtherComponent<S>>,
 }
 
 impl<S> AudioAlarm<S> {
-    pub const fn subcomponents(&self) -> &[ExtComponent<S>] {
+    pub const fn subcomponents(&self) -> &[OtherComponent<S>] {
         self.subcomponents.as_slice()
     }
 
-    pub const fn subcomponents_mut(&mut self) -> &mut Vec<ExtComponent<S>> {
+    pub const fn subcomponents_mut(&mut self) -> &mut Vec<OtherComponent<S>> {
         &mut self.subcomponents
     }
 }
@@ -494,20 +494,18 @@ where
     S: Hash + Equiv<LineFoldCaseless> + AsRef<[u8]>,
 {
     pub fn action(&self) -> &Prop<S, AudioAction> {
-        match self.props.get(PropKey::Static(StaticPropName::Action)) {
-            Some(PropEntry::Static(StaticProp::Action(mult))) => {
-                mult.as_one().and_then(AlarmActionProp::as_audio).unwrap()
-            }
+        match self.props.get(PropKey::Static(StaticPropName::AudioAction)) {
+            Some(PropEntry::Static(StaticProp::AudioAction(mult))) => mult.as_one().unwrap(),
             Some(_) | None => unreachable!(),
         }
     }
 
     pub fn action_mut(&mut self) -> &mut Prop<S, AudioAction> {
-        match self.props.get_mut(PropKey::Static(StaticPropName::Action)) {
-            Some(PropEntry::Static(StaticProp::Action(mult))) => mult
-                .as_one_mut()
-                .and_then(AlarmActionProp::as_audio_mut)
-                .unwrap(),
+        match self
+            .props
+            .get_mut(PropKey::Static(StaticPropName::AudioAction))
+        {
+            Some(PropEntry::Static(StaticProp::AudioAction(mult))) => mult.as_one_mut().unwrap(),
             Some(_) | None => unreachable!(),
         }
     }
@@ -532,15 +530,15 @@ where
 #[derive(Debug, Clone)]
 pub struct DisplayAlarm<S> {
     props: PropertyTable<S>,
-    subcomponents: Vec<ExtComponent<S>>,
+    subcomponents: Vec<OtherComponent<S>>,
 }
 
 impl<S> DisplayAlarm<S> {
-    pub const fn subcomponents(&self) -> &[ExtComponent<S>] {
+    pub const fn subcomponents(&self) -> &[OtherComponent<S>] {
         self.subcomponents.as_slice()
     }
 
-    pub const fn subcomponents_mut(&mut self) -> &mut Vec<ExtComponent<S>> {
+    pub const fn subcomponents_mut(&mut self) -> &mut Vec<OtherComponent<S>> {
         &mut self.subcomponents
     }
 }
@@ -550,20 +548,21 @@ where
     S: Hash + Equiv<LineFoldCaseless> + AsRef<[u8]>,
 {
     pub fn action(&self) -> &Prop<S, DisplayAction> {
-        match self.props.get(PropKey::Static(StaticPropName::Action)) {
-            Some(PropEntry::Static(StaticProp::Action(mult))) => {
-                mult.as_one().and_then(AlarmActionProp::as_display).unwrap()
-            }
+        match self
+            .props
+            .get(PropKey::Static(StaticPropName::DisplayAction))
+        {
+            Some(PropEntry::Static(StaticProp::DisplayAction(mult))) => mult.as_one().unwrap(),
             Some(_) | None => unreachable!(),
         }
     }
 
     pub fn action_mut(&mut self) -> &mut Prop<S, DisplayAction> {
-        match self.props.get_mut(PropKey::Static(StaticPropName::Action)) {
-            Some(PropEntry::Static(StaticProp::Action(mult))) => mult
-                .as_one_mut()
-                .and_then(AlarmActionProp::as_display_mut)
-                .unwrap(),
+        match self
+            .props
+            .get_mut(PropKey::Static(StaticPropName::DisplayAction))
+        {
+            Some(PropEntry::Static(StaticProp::DisplayAction(mult))) => mult.as_one_mut().unwrap(),
             Some(_) | None => unreachable!(),
         }
     }
@@ -588,15 +587,15 @@ where
 #[derive(Debug, Clone)]
 pub struct EmailAlarm<S> {
     props: PropertyTable<S>,
-    subcomponents: Vec<ExtComponent<S>>,
+    subcomponents: Vec<OtherComponent<S>>,
 }
 
 impl<S> EmailAlarm<S> {
-    pub const fn subcomponents(&self) -> &[ExtComponent<S>] {
+    pub const fn subcomponents(&self) -> &[OtherComponent<S>] {
         self.subcomponents.as_slice()
     }
 
-    pub const fn subcomponents_mut(&mut self) -> &mut Vec<ExtComponent<S>> {
+    pub const fn subcomponents_mut(&mut self) -> &mut Vec<OtherComponent<S>> {
         &mut self.subcomponents
     }
 }
@@ -606,20 +605,18 @@ where
     S: Hash + Equiv<LineFoldCaseless> + AsRef<[u8]>,
 {
     pub fn action(&self) -> &Prop<S, EmailAction> {
-        match self.props.get(PropKey::Static(StaticPropName::Action)) {
-            Some(PropEntry::Static(StaticProp::Action(mult))) => {
-                mult.as_one().and_then(AlarmActionProp::as_email).unwrap()
-            }
+        match self.props.get(PropKey::Static(StaticPropName::EmailAction)) {
+            Some(PropEntry::Static(StaticProp::EmailAction(mult))) => mult.as_one().unwrap(),
             Some(_) | None => unreachable!(),
         }
     }
 
     pub fn action_mut(&mut self) -> &mut Prop<S, EmailAction> {
-        match self.props.get_mut(PropKey::Static(StaticPropName::Action)) {
-            Some(PropEntry::Static(StaticProp::Action(mult))) => mult
-                .as_one_mut()
-                .and_then(AlarmActionProp::as_email_mut)
-                .unwrap(),
+        match self
+            .props
+            .get_mut(PropKey::Static(StaticPropName::EmailAction))
+        {
+            Some(PropEntry::Static(StaticProp::EmailAction(mult))) => mult.as_one_mut().unwrap(),
             Some(_) | None => unreachable!(),
         }
     }
@@ -639,8 +636,8 @@ where
     }
 
     seq_accessors! {
-        [Attendee, attendees, attendees_mut, Prop<S, CalAddress<S>, Box<AttendeeParams<S>>>],
-        [Attach, attachments, attachments_mut, Prop<S, AttachValue<S>, AttachParams<S>>],
+        [Attendee, attendees, attendees_mut, MultiProp<S, CalAddress<S>, Box<AttendeeParams<S>>>],
+        [Attach, attachments, attachments_mut, MultiProp<S, AttachValue<S>, AttachParams<S>>],
     }
 
     alarm_accessors!();
@@ -650,15 +647,15 @@ where
 #[derive(Debug, Clone)]
 pub struct OtherAlarm<S> {
     props: PropertyTable<S>,
-    subcomponents: Vec<ExtComponent<S>>,
+    subcomponents: Vec<OtherComponent<S>>,
 }
 
 impl<S> OtherAlarm<S> {
-    pub const fn subcomponents(&self) -> &[ExtComponent<S>] {
+    pub const fn subcomponents(&self) -> &[OtherComponent<S>] {
         self.subcomponents.as_slice()
     }
 
-    pub const fn subcomponents_mut(&mut self) -> &mut Vec<ExtComponent<S>> {
+    pub const fn subcomponents_mut(&mut self) -> &mut Vec<OtherComponent<S>> {
         &mut self.subcomponents
     }
 }
@@ -668,20 +665,21 @@ where
     S: Hash + Equiv<LineFoldCaseless> + AsRef<[u8]>,
 {
     pub fn action(&self) -> &Prop<S, UnknownAction<S>> {
-        match self.props.get(PropKey::Static(StaticPropName::Action)) {
-            Some(PropEntry::Static(StaticProp::Action(mult))) => {
-                mult.as_one().and_then(AlarmActionProp::as_other).unwrap()
-            }
+        match self
+            .props
+            .get(PropKey::Static(StaticPropName::UnknownAction))
+        {
+            Some(PropEntry::Static(StaticProp::UnknownAction(mult))) => mult.as_one().unwrap(),
             Some(_) | None => unreachable!(),
         }
     }
 
     pub fn action_mut(&mut self) -> &mut Prop<S, UnknownAction<S>> {
-        match self.props.get_mut(PropKey::Static(StaticPropName::Action)) {
-            Some(PropEntry::Static(StaticProp::Action(mult))) => mult
-                .as_one_mut()
-                .and_then(AlarmActionProp::as_other_mut)
-                .unwrap(),
+        match self
+            .props
+            .get_mut(PropKey::Static(StaticPropName::UnknownAction))
+        {
+            Some(PropEntry::Static(StaticProp::UnknownAction(mult))) => mult.as_one_mut().unwrap(),
             Some(_) | None => unreachable!(),
         }
     }
@@ -701,8 +699,8 @@ where
     }
 
     seq_accessors! {
-        [Attendee, attendees, attendees_mut, Prop<S, CalAddress<S>, Box<AttendeeParams<S>>>],
-        [Attach, attachments, attachments_mut, Prop<S, AttachValue<S>, AttachParams<S>>],
+        [Attendee, attendees, attendees_mut, MultiProp<S, CalAddress<S>, Box<AttendeeParams<S>>>],
+        [Attach, attachments, attachments_mut, MultiProp<S, AttachValue<S>, AttachParams<S>>],
     }
 
     alarm_accessors!();
@@ -730,20 +728,22 @@ where
     }
 
     pub fn status(&self) -> Option<&Prop<S, JournalStatus>> {
-        match self.props.get(PropKey::Static(StaticPropName::Status)) {
-            Some(PropEntry::Static(StaticProp::Status(mult))) => {
-                mult.as_one().and_then(StatusProp::as_journal)
-            }
+        match self
+            .props
+            .get(PropKey::Static(StaticPropName::JournalStatus))
+        {
+            Some(PropEntry::Static(StaticProp::JournalStatus(mult))) => mult.as_one(),
             Some(_) => unreachable!(),
             None => None,
         }
     }
 
     pub fn status_mut(&mut self) -> Option<&mut Prop<S, JournalStatus>> {
-        match self.props.get_mut(PropKey::Static(StaticPropName::Status)) {
-            Some(PropEntry::Static(StaticProp::Status(mult))) => {
-                mult.as_one_mut().and_then(StatusProp::as_journal_mut)
-            }
+        match self
+            .props
+            .get_mut(PropKey::Static(StaticPropName::JournalStatus))
+        {
+            Some(PropEntry::Static(StaticProp::JournalStatus(mult))) => mult.as_one_mut(),
             Some(_) => unreachable!(),
             None => None,
         }
@@ -763,16 +763,16 @@ where
     }
 
     seq_accessors! {
-        [Attach, attachments, attachments_mut, Prop<S, AttachValue<S>, AttachParams<S>>],
-        [Attendee, attendees, attendees_mut, Prop<S, CalAddress<S>, Box<AttendeeParams<S>>>],
-        [Categories, categories, categories_mut, Prop<S, Vec<Text<S>>, LangParams<S>>],
-        [Comment, comments, comments_mut, Prop<S, Text<S>, TextParams<S>>],
-        [Contact, contacts, contacts_mut, Prop<S, Text<S>, TextParams<S>>],
-        [Description, descriptions, descriptions_mut, Prop<S, Text<S>, TextParams<S>>],
-        [ExDate, exception_dates, exception_dates_mut, Prop<S, ExDateSeq, DtParams<S>>],
-        [RelatedTo, relateds, relateds_mut, Prop<S, Text<S>, RelTypeParams<S>>],
-        [RDate, recurrence_dates, recurrence_dates_mut, Prop<S, RDateSeq, DtParams<S>>],
-        [RequestStatus, request_statuses, request_statuses_mut, Prop<S, RequestStatus<S>, LangParams<S>>],
+        [Attach, attachments, attachments_mut, MultiProp<S, AttachValue<S>, AttachParams<S>>],
+        [Attendee, attendees, attendees_mut, MultiProp<S, CalAddress<S>, Box<AttendeeParams<S>>>],
+        [Categories, categories, categories_mut, MultiProp<S, Vec<Text<S>>, LangParams<S>>],
+        [Comment, comments, comments_mut, MultiProp<S, Text<S>, TextParams<S>>],
+        [Contact, contacts, contacts_mut, MultiProp<S, Text<S>, TextParams<S>>],
+        [Description, descriptions, descriptions_mut, MultiProp<S, Text<S>, TextParams<S>>],
+        [ExDate, exception_dates, exception_dates_mut, MultiProp<S, ExDateSeq, DtParams<S>>],
+        [RelatedTo, relateds, relateds_mut, MultiProp<S, Text<S>, RelTypeParams<S>>],
+        [RDate, recurrence_dates, recurrence_dates_mut, MultiProp<S, RDateSeq, DtParams<S>>],
+        [RequestStatus, request_statuses, request_statuses_mut, MultiProp<S, RequestStatus<S>, LangParams<S>>],
     }
 }
 
@@ -806,10 +806,10 @@ where
     }
 
     seq_accessors! {
-        [Attendee, attendees, attendees_mut, Prop<S, CalAddress<S>, Box<AttendeeParams<S>>>],
-        [Comment, comments, comments_mut, Prop<S, Text<S>, TextParams<S>>],
-        [FreeBusy, free_busy_periods, free_busy_periods_mut, Prop<S, Vec<Period>, FBTypeParams<S>>],
-        [RequestStatus, request_statuses, request_statuses_mut, Prop<S, RequestStatus<S>, LangParams<S>>],
+        [Attendee, attendees, attendees_mut, MultiProp<S, CalAddress<S>, Box<AttendeeParams<S>>>],
+        [Comment, comments, comments_mut, MultiProp<S, Text<S>, TextParams<S>>],
+        [FreeBusy, free_busy_periods, free_busy_periods_mut, MultiProp<S, Vec<Period>, FBTypeParams<S>>],
+        [RequestStatus, request_statuses, request_statuses_mut, MultiProp<S, RequestStatus<S>, LangParams<S>>],
     }
 }
 
@@ -883,9 +883,9 @@ where
     }
 
     seq_accessors! {
-        [Comment, comments, comments_mut, Prop<S, Text<S>, TextParams<S>>],
-        [RDate, recurrence_dates, recurrence_dates_mut, Prop<S, RDateSeq, DtParams<S>>],
-        [TzName, names, names_mut, Prop<S, Text<S>, LangParams<S>>],
+        [Comment, comments, comments_mut, MultiProp<S, Text<S>, TextParams<S>>],
+        [RDate, recurrence_dates, recurrence_dates_mut, MultiProp<S, RDateSeq, DtParams<S>>],
+        [TzName, names, names_mut, MultiProp<S, Text<S>, LangParams<S>>],
     }
 }
 
@@ -901,34 +901,33 @@ pub enum TzRuleKind {
 
 /// An arbitrary component which may have any properties and subcomponents.
 #[derive(Debug, Clone)]
-pub enum ExtComponent<S> {
-    Iana(OtherComponent<S>),
-    X(OtherComponent<S>),
-}
-
-/// An arbitrary component which may have any properties and subcomponents.
-#[derive(Debug, Clone)]
 pub struct OtherComponent<S> {
-    name: S,
+    name: UnknownName<S>,
     props: PropertyTable<S>,
     subcomponents: Vec<OtherComponent<S>>,
 }
 
+// TODO: define accessor methods for OtherComponent
+
 impl<S> OtherComponent<S> {
-    pub const fn name(&self) -> &S {
+    pub(crate) const fn new(
+        name: UnknownName<S>,
+        props: PropertyTable<S>,
+        subcomponents: Vec<OtherComponent<S>>,
+    ) -> Self {
+        Self {
+            name,
+            props,
+            subcomponents,
+        }
+    }
+
+    pub const fn name(&self) -> &UnknownName<S> {
         &self.name
     }
 
-    pub const fn name_mut(&mut self) -> &mut S {
+    pub const fn name_mut(&mut self) -> &mut UnknownName<S> {
         &mut self.name
-    }
-
-    pub const fn props(&self) -> &PropertyTable<S> {
-        &self.props
-    }
-
-    pub const fn props_mut(&mut self) -> &mut PropertyTable<S> {
-        &mut self.props
     }
 
     pub const fn subcomponents(&self) -> &[OtherComponent<S>] {
@@ -937,6 +936,21 @@ impl<S> OtherComponent<S> {
 
     pub const fn subcomponents_mut(&mut self) -> &mut Vec<OtherComponent<S>> {
         &mut self.subcomponents
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnknownName<S> {
+    Iana(S),
+    X(S),
+}
+
+impl<S> UnknownName<S> {
+    pub const fn inner(&self) -> &S {
+        match self {
+            UnknownName::Iana(x) => x,
+            UnknownName::X(x) => x,
+        }
     }
 }
 
@@ -981,9 +995,9 @@ impl<S> Default for PropertyTable<S> {
 }
 
 macro_rules! property_table_accessors {
-    ($([$prop:ident, $name_ref:ident, $name_mut:ident, $ret_ty:ty]),* $(,)?) => {
+    ($([$prop:ident, $name_ref:ident, $name_mut:ident, $value_ty:ty, $param_ty:ty]),* $(,)?) => {
         $(
-            pub fn $name_ref (&self) -> Option<MultRef<'_, $ret_ty>>
+            pub fn $name_ref (&self) -> Option<MultRef<'_, S, $value_ty, $param_ty>>
             where
                 S: Hash + Equiv<LineFoldCaseless> + AsRef<[u8]>,
             {
@@ -997,7 +1011,7 @@ macro_rules! property_table_accessors {
                 }
             }
 
-            pub fn $name_mut (&mut self) -> Option<&mut Mult<$ret_ty>>
+            pub fn $name_mut (&mut self) -> Option<&mut Mult<S, $value_ty, $param_ty>>
             where
                 S: Hash + Equiv<LineFoldCaseless> + AsRef<[u8]>,
             {
@@ -1014,122 +1028,204 @@ macro_rules! property_table_accessors {
     };
 }
 
+// TODO: modify the macro above to make some methods non-public, so we can hide e.g.
+// trigger_absolute from the public API for PropertyTable
+
 impl<S> PropertyTable<S>
 where
     S: Hash + Equiv<LineFoldCaseless> + AsRef<[u8]>,
 {
-    pub fn trigger(&self) -> Option<TriggerPropMultRef<'_, S>> {
-        let rel = self
-            .get(PropKey::Static(StaticPropName::TriggerRelative))
+    pub fn action(&self) -> Option<ActionPropMultRef<'_, S>> {
+        self.audio_action()
+            .map(ActionPropMultRef::Audio)
+            .or_else(|| self.display_action().map(ActionPropMultRef::Display))
+            .or_else(|| self.email_action().map(ActionPropMultRef::Email))
+            .or_else(|| self.unknown_action().map(ActionPropMultRef::Unknown))
+    }
+
+    pub fn action_mut(&mut self) -> Option<ActionPropMultMut<'_, S>> {
+        match self.action()? {
+            ActionPropMultRef::Audio(_) => self.audio_action_mut().map(ActionPropMultMut::Audio),
+            ActionPropMultRef::Display(_) => {
+                self.display_action_mut().map(ActionPropMultMut::Display)
+            }
+            ActionPropMultRef::Email(_) => self.email_action_mut().map(ActionPropMultMut::Email),
+            ActionPropMultRef::Unknown(_) => {
+                self.unknown_action_mut().map(ActionPropMultMut::Unknown)
+            }
+        }
+    }
+
+    /// Returns a mutable reference to the value of the AnyAction variant, initializing it if
+    /// necessary.
+    pub(crate) fn any_action_mut_or_init(&mut self) -> &mut Vec<MultiProp<S, AlarmAction<S>>> {
+        // initialize the field if it's empty
+        let key = PropKey::Static(StaticPropName::AnyAction);
+        if self.get(key).is_none() {
+            let _prev = self.insert(PropEntry::Static(StaticProp::AnyAction(Vec::new())));
+            debug_assert!(_prev.is_none());
+        }
+
+        self.get_mut(key)
             .map(|entry| match entry {
-                PropEntry::Static(StaticProp::TriggerRelative(prop)) => {
-                    TriggerPropMultRef::Relative(prop.as_ref())
-                }
+                PropEntry::Static(StaticProp::AnyAction(props)) => props,
                 _ => unreachable!(),
-            });
+            })
+            .unwrap()
+    }
 
-        let abs = || {
-            self.get(PropKey::Static(StaticPropName::TriggerAbsolute))
-                .map(|entry| match entry {
-                    PropEntry::Static(StaticProp::TriggerAbsolute(prop)) => {
-                        TriggerPropMultRef::Absolute(prop.as_ref())
-                    }
-                    _ => unreachable!(),
-                })
-        };
-
-        rel.or_else(abs)
+    pub fn trigger(&self) -> Option<TriggerPropMultRef<'_, S>> {
+        self.trigger_relative()
+            .map(TriggerPropMultRef::Relative)
+            .or_else(|| self.trigger_absolute().map(TriggerPropMultRef::Absolute))
     }
 
     pub fn trigger_mut(&mut self) -> Option<TriggerPropMultMut<'_, S>> {
-        match self.trigger() {
-            Some(TriggerPropMultRef::Absolute(_)) => self
-                .get_mut(PropKey::Static(StaticPropName::TriggerAbsolute))
-                .map(|entry| match entry {
-                    PropEntry::Static(StaticProp::TriggerAbsolute(prop)) => {
-                        TriggerPropMultMut::Absolute(prop.as_mut())
-                    }
-                    _ => unreachable!(),
-                }),
-            Some(TriggerPropMultRef::Relative(_)) => self
-                .get_mut(PropKey::Static(StaticPropName::TriggerRelative))
-                .map(|entry| match entry {
-                    PropEntry::Static(StaticProp::TriggerRelative(prop)) => {
-                        TriggerPropMultMut::Relative(prop.as_mut())
-                    }
-                    _ => unreachable!(),
-                }),
-            None => None,
+        match self.trigger()? {
+            TriggerPropMultRef::Relative(_) => self
+                .trigger_relative_mut()
+                .map(TriggerPropMultMut::Relative),
+            TriggerPropMultRef::Absolute(_) => self
+                .trigger_absolute_mut()
+                .map(TriggerPropMultMut::Absolute),
         }
+    }
+
+    /// Returns a mutable reference to the value of the AnyTrigger variant, initializing it if
+    /// necessary.
+    pub(crate) fn any_trigger_mut_or_init(&mut self) -> &mut Vec<AnyTriggerProp<S>> {
+        // initialize the field if necessary
+        let key = PropKey::Static(StaticPropName::AnyTrigger);
+        if self.get(key).is_none() {
+            let _prev = self.insert(PropEntry::Static(StaticProp::AnyTrigger(Vec::new())));
+            debug_assert!(_prev.is_none());
+        }
+
+        self.get_mut(key)
+            .map(|entry| match entry {
+                PropEntry::Static(StaticProp::AnyTrigger(props)) => props,
+                _ => unreachable!(),
+            })
+            .unwrap()
+    }
+
+    /// Returns `true` iff `self` contains a STATUS value.
+    pub(crate) fn has_status(&self) -> bool {
+        self.event_status().is_some()
+            || self.todo_status().is_some()
+            || self.journal_status().is_some()
+            || self.status().is_some()
+    }
+
+    /// Returns a mutable reference to the value of the OtherStatus variant, initializing it if
+    /// necessary. This function will panic if the variant is active and set to a Mult::One value.
+    pub(crate) fn status_mut_or_init(&mut self) -> &mut Vec<MultiProp<S, Status>> {
+        // initialize the field if it's missing
+        if self.status().is_none() {
+            let _prev = self.insert(PropEntry::Static(StaticProp::OtherStatus(Mult::Seq(
+                Vec::new(),
+            ))));
+            debug_assert!(_prev.is_none());
+        }
+
+        match self.status_mut() {
+            Some(Mult::Seq(props)) => props,
+            _ => unreachable!(),
+        }
+    }
+
+    /// Returns a mutable reference to the value of the AnyStructuredData variant, initializing it
+    /// if necessary.
+    pub(crate) fn any_structured_data_mut_or_init(&mut self) -> &mut Vec<AnyStructuredDataProp<S>> {
+        let key = PropKey::Static(StaticPropName::AnyStructuredData);
+        if self.get(key).is_none() {
+            let _prev = self.insert(PropEntry::Static(StaticProp::AnyStructuredData(Vec::new())));
+            debug_assert!(_prev.is_none());
+        }
+
+        self.get_mut(key)
+            .map(|entry| match entry {
+                PropEntry::Static(StaticProp::AnyStructuredData(props)) => props,
+                _ => unreachable!(),
+            })
+            .unwrap()
     }
 }
 
 impl<S> PropertyTable<S> {
     property_table_accessors! {
         // CALENDAR PROPERTIES
-        [CalScale, cal_scale, cal_scale_mut, Prop<S, ()>],
-        [Method, method, method_mut, Prop<S, Method<S>>],
-        [ProdId, prod_id, prod_id_mut, Prop<S, Text<S>>],
-        [Version, version, version_mut, Prop<S, ()>],
+        [CalScale, cal_scale, cal_scale_mut, (), ()],
+        [Method, method, method_mut, Method<S>, ()],
+        [ProdId, prod_id, prod_id_mut, Text<S>, ()],
+        [Version, version, version_mut, (), ()],
         // DESCRIPTIVE COMPONENT PROPERTIES
-        [Attach, attachment, attachment_mut, Prop<S, AttachValue<S>, AttachParams<S>>],
-        [Categories, categories, categories_mut, Prop<S, Vec<Text<S>>, LangParams<S>>],
-        [Class, class, class_mut, Prop<S, ClassValue<S>>],
-        [Comment, comment, comment_mut, Prop<S, Text<S>, TextParams<S>>],
-        [Description, description, description_mut, Prop<S, Text<S>, TextParams<S>>],
-        [Geo, geo, geo_mut, Prop<S, Geo>],
-        [Location, location, location_mut, Prop<S, Text<S>, TextParams<S>>],
-        [PercentComplete, percent_complete, percent_complete_mut, Prop<S, CompletionPercentage>],
-        [Priority, priority, priority_mut, Prop<S, Priority>],
-        [Resources, resources, resources_mut, Prop<S, Vec<Text<S>>, TextParams<S>>],
-        [Status, status, status_mut, StatusProp<S>],
-        [Summary, summary, summary_mut, Prop<S, Text<S>, TextParams<S>>],
+        [Attach, attachment, attachment_mut, AttachValue<S>, AttachParams<S>],
+        [Categories, categories, categories_mut, Vec<Text<S>>, LangParams<S>],
+        [Class, class, class_mut, ClassValue<S>, ()],
+        [Comment, comment, comment_mut, Text<S>, TextParams<S>],
+        [Description, description, description_mut, Text<S>, TextParams<S>],
+        [Geo, geo, geo_mut, Geo, ()],
+        [Location, location, location_mut, Text<S>, TextParams<S>],
+        [PercentComplete, percent_complete, percent_complete_mut, CompletionPercentage, ()],
+        [Priority, priority, priority_mut, Priority, ()],
+        [Resources, resources, resources_mut, Vec<Text<S>>, TextParams<S>],
+        [OtherStatus, status, status_mut, Status, ()],
+        [EventStatus, event_status, event_status_mut, EventStatus, ()],
+        [TodoStatus, todo_status, todo_status_mut, TodoStatus, ()],
+        [JournalStatus, journal_status, journal_status_mut, JournalStatus, ()],
+        [Summary, summary, summary_mut, Text<S>, TextParams<S>],
         // DATE AND TIME COMPONENT PROPERTIES
-        [DtCompleted, dt_completed, dt_completed_mut, Prop<S, DateTime<Utc>>],
-        [DtEnd, dt_end, dt_end_mut, Prop<S, DateTimeOrDate, DtParams<S>>],
-        [DtDue, dt_due, dt_due_mut, Prop<S, DateTimeOrDate, DtParams<S>>],
-        [DtStart, dt_start, dt_start_mut, Prop<S, DateTimeOrDate, DtParams<S>>],
-        [Duration, duration, duration_mut, Prop<S, Duration>],
-        [FreeBusy, free_busy, free_busy_mut, Prop<S, Vec<Period>, FBTypeParams<S>>],
-        [Transp, time_transparency, time_transparency_mut, Prop<S, TimeTransparency>],
+        [DtCompleted, dt_completed, dt_completed_mut, DateTime<Utc>, ()],
+        [DtEnd, dt_end, dt_end_mut, DateTimeOrDate, DtParams<S>],
+        [DtDue, dt_due, dt_due_mut, DateTimeOrDate, DtParams<S>],
+        [DtStart, dt_start, dt_start_mut, DateTimeOrDate, DtParams<S>],
+        [Duration, duration, duration_mut, Duration, ()],
+        [FreeBusy, free_busy, free_busy_mut, Vec<Period>, FBTypeParams<S>],
+        [Transp, time_transparency, time_transparency_mut, TimeTransparency, ()],
         // TIME ZONE COMPONENT PROPERTIES
-        [TzId, tz_id, tz_id_mut, Prop<S, TzId<S>>],
-        [TzName, tz_name, tz_name_mut, Prop<S, Text<S>, LangParams<S>>],
-        [TzOffsetFrom, tz_offset_from, tz_offset_from_mut, Prop<S, UtcOffset>],
-        [TzOffsetTo, tz_offset_to, tz_offset_to_mut, Prop<S, UtcOffset>],
-        [TzUrl, tz_url, tz_url_mut, Prop<S, Uri<S>>],
+        [TzId, tz_id, tz_id_mut, TzId<S>, ()],
+        [TzName, tz_name, tz_name_mut, Text<S>, LangParams<S>],
+        [TzOffsetFrom, tz_offset_from, tz_offset_from_mut, UtcOffset, ()],
+        [TzOffsetTo, tz_offset_to, tz_offset_to_mut, UtcOffset, ()],
+        [TzUrl, tz_url, tz_url_mut, Uri<S>, ()],
         // RELATIONSHIP COMPONENT PROPERTIES
-        [Attendee, attendee, attendee_mut, Prop<S, CalAddress<S>, Box<AttendeeParams<S>>>],
-        [Contact, contact, contact_mut, Prop<S, Text<S>, TextParams<S>>],
-        [Organizer, organizer, organizer_mut, Prop<S, CalAddress<S>, Box<OrganizerParams<S>>>],
-        [RecurId, recurrence_id, recurrence_id_mut, Prop<S, DateTimeOrDate, RecurrenceIdParams<S>>],
-        [RelatedTo, related_to, related_to_mut, Prop<S, Text<S>, RelTypeParams<S>>],
-        [Url, url, url_mut, Prop<S, Uri<S>>],
-        [Uid, uid, uid_mut, Prop<S, Uid<S>>],
+        [Attendee, attendee, attendee_mut, CalAddress<S>, Box<AttendeeParams<S>>],
+        [Contact, contact, contact_mut, Text<S>, TextParams<S>],
+        [Organizer, organizer, organizer_mut, CalAddress<S>, Box<OrganizerParams<S>>],
+        [RecurId, recurrence_id, recurrence_id_mut, DateTimeOrDate, RecurrenceIdParams<S>],
+        [RelatedTo, related_to, related_to_mut, Text<S>, RelTypeParams<S>],
+        [Url, url, url_mut, Uri<S>, ()],
+        [Uid, uid, uid_mut, Uid<S>, ()],
         // RECURRENCE COMPONENT PROPERTIES
-        [ExDate, exception_dates, exception_dates_mut, Prop<S, ExDateSeq, DtParams<S>>],
-        [RDate, recurrence_dates, recurrence_dates_mut, Prop<S, RDateSeq, DtParams<S>>],
-        [RRule, rrule, rrule_mut, Prop<S, Box<RRule>>],
+        [ExDate, exception_dates, exception_dates_mut, ExDateSeq, DtParams<S>],
+        [RDate, recurrence_dates, recurrence_dates_mut, RDateSeq, DtParams<S>],
+        [RRule, rrule, rrule_mut, Box<RRule>, ()],
         // ALARM COMPONENT PROPERTIES
-        [Action, alarm_action, alarm_action_mut, AlarmActionProp<S>],
-        [Repeat, repeat, repeat_mut, Prop<S, Integer>],
+        [AudioAction, audio_action, audio_action_mut, AudioAction, ()],
+        [DisplayAction, display_action, display_action_mut, DisplayAction, ()],
+        [EmailAction, email_action, email_action_mut, EmailAction, ()],
+        [UnknownAction, unknown_action, unknown_action_mut, UnknownAction<S>, ()],
+        [TriggerRelative, trigger_relative, trigger_relative_mut, Duration, TriggerParams],
+        [TriggerAbsolute, trigger_absolute, trigger_absolute_mut, DateTime<Utc>, ()],
+        [Repeat, repeat, repeat_mut, Integer, ()],
         // CHANGE MANAGEMENT COMPONENT PROPERTIES
-        [Created, created, created_mut, Prop<S, DateTime<Utc>>],
-        [DtStamp, timestamp, timestamp_mut, Prop<S, DateTime<Utc>>],
-        [LastModified, last_modified, last_modified_mut, Prop<S, DateTime<Utc>>],
-        [Sequence, sequence, sequence_mut, Prop<S, Integer>],
+        [Created, created, created_mut, DateTime<Utc>, ()],
+        [DtStamp, timestamp, timestamp_mut, DateTime<Utc>, ()],
+        [LastModified, last_modified, last_modified_mut, DateTime<Utc>, ()],
+        [Sequence, sequence, sequence_mut, Integer, ()],
         // MISCELLANEOUS COMPONENT PROPERTIES
-        [RequestStatus, request_status, request_status_mut, Prop<S, RequestStatus<S>, LangParams<S>>],
+        [RequestStatus, request_status, request_status_mut, RequestStatus<S>, LangParams<S>],
         // RFC 7986 PROPERTIES
-        [Name, name, name_mut, Prop<S, Text<S>, TextParams<S>>],
-        [RefreshInterval, refresh_interval, refresh_interval_mut, Prop<S, Duration>],
-        [Source, source, source_mut, Prop<S, Uri<S>>],
-        [Color, color, color_mut, Prop<S, Css3Color>],
-        [Image, image, image_mut, Prop<S, ImageData<S>, ImageParams<S>>],
-        [Conference, conference, conference_mut, Prop<S, Uri<S>, ConfParams<S>>],
+        [Name, name, name_mut, Text<S>, TextParams<S>],
+        [RefreshInterval, refresh_interval, refresh_interval_mut, Duration, ()],
+        [Source, source, source_mut, Uri<S>, ()],
+        [Color, color, color_mut, Css3Color, ()],
+        [Image, image, image_mut, ImageData<S>, ImageParams<S>],
+        [Conference, conference, conference_mut, Uri<S>, ConfParams<S>],
         // RFC 9074 PROPERTIES
-        [Acknowledged, acknowledged, acknowledged_mut, Prop<S, DateTime<Utc>>],
-        [Proximity, proximity, proximity_mut, Prop<S, ProximityValue<S>>],
+        [Acknowledged, acknowledged, acknowledged_mut, DateTime<Utc>, ()],
+        [Proximity, proximity, proximity_mut, ProximityValue<S>, ()],
     }
 
     /// Returns an empty table; does not allocate.
@@ -1279,55 +1375,31 @@ impl<S> PropertyTable<S> {
     }
 }
 
-// #[derive(Debug, Clone, PartialEq, Eq)]
-// pub enum _Mult<S, V, P> {
-//     One(Prop<S, V, P>),
-//     Seq(Vec<MultiProp<S, V, P>>),
-// }
-//
-/// A multiplicity of `T`.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Mult<T> {
-    /// Exactly one value.
-    One(T),
-    /// Zero or more values.
-    Seq(Vec<T>),
+/// A distinct multiplicity of properties.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Mult<S, V, P = ()> {
+    One(Prop<S, V, P>),
+    Seq(Vec<MultiProp<S, V, P>>),
 }
 
 /// A reference to a multiplicity of `T`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum MultRef<'a, T> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MultRef<'a, S, V, P = ()> {
     /// Exactly one value.
-    One(&'a T),
+    One(&'a Prop<S, V, P>),
     /// Zero or more values.
-    Seq(&'a [T]),
+    Seq(&'a [MultiProp<S, V, P>]),
 }
 
-/// A mutable reference to a multiplicity of `T`.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum MultMut<'a, T> {
-    /// Exactly one value.
-    One(&'a mut T),
-    /// Zero or more values.
-    Seq(&'a mut Vec<T>),
-}
-
-impl<T> Mult<T> {
-    pub const fn as_ref(&self) -> MultRef<'_, T> {
+impl<S, V, P> Mult<S, V, P> {
+    pub const fn as_ref(&self) -> MultRef<'_, S, V, P> {
         match self {
             Mult::One(x) => MultRef::One(x),
             Mult::Seq(xs) => MultRef::Seq(xs.as_slice()),
         }
     }
 
-    pub const fn as_mut(&mut self) -> MultMut<'_, T> {
-        match self {
-            Mult::One(x) => MultMut::One(x),
-            Mult::Seq(xs) => MultMut::Seq(xs),
-        }
-    }
-
-    pub const fn as_one(&self) -> Option<&T> {
+    pub const fn as_one(&self) -> Option<&Prop<S, V, P>> {
         if let Self::One(v) = self {
             Some(v)
         } else {
@@ -1335,7 +1407,7 @@ impl<T> Mult<T> {
         }
     }
 
-    pub const fn as_one_mut(&mut self) -> Option<&mut T> {
+    pub const fn as_one_mut(&mut self) -> Option<&mut Prop<S, V, P>> {
         if let Self::One(v) = self {
             Some(v)
         } else {
@@ -1343,7 +1415,7 @@ impl<T> Mult<T> {
         }
     }
 
-    pub const fn as_seq(&self) -> Option<&[T]> {
+    pub const fn as_seq(&self) -> Option<&[MultiProp<S, V, P>]> {
         if let Self::Seq(v) = self {
             Some(v.as_slice())
         } else {
@@ -1351,7 +1423,7 @@ impl<T> Mult<T> {
         }
     }
 
-    pub const fn as_seq_mut(&mut self) -> Option<&mut Vec<T>> {
+    pub const fn as_seq_mut(&mut self) -> Option<&mut Vec<MultiProp<S, V, P>>> {
         if let Self::Seq(v) = self {
             Some(v)
         } else {
@@ -1366,19 +1438,23 @@ impl<T> Mult<T> {
             let Mult::One(value) = std::mem::replace(self, vec) else {
                 unreachable!()
             };
-            self.as_seq_mut().unwrap().push(value);
+            self.as_seq_mut().unwrap().push(value.into_multi_prop());
         }
     }
 
     /// Tries to convert `self` into a [`Mult::One`]. If `self` is a [`Mult::Seq`] with a number of
-    /// elements other than 1, this fails, and the number of elements is returned.
-    pub fn one_in_place(&mut self) -> Result<(), usize> {
+    /// elements other than 1, this fails, and the number of elements is returned. If `self` has
+    /// exactly one element, but that element has an ORDER value, this fails and the returned error
+    /// is [`None`].
+    pub fn one_in_place(&mut self) -> Result<(), Option<usize>> {
         match self {
             Mult::One(_) => Ok(()),
-            Mult::Seq(items) if items.len() != 1 => Err(items.len()),
+            Mult::Seq(items) if items.len() != 1 => Err(Some(items.len())),
             Mult::Seq(items) => {
-                let item = items.pop().unwrap();
-                debug_assert!(items.is_empty());
+                let item = match items.pop().unwrap().try_into_single_prop() {
+                    Some(item) => item,
+                    None => return Err(None),
+                };
                 let _vec = std::mem::replace(self, Mult::One(item));
                 Ok(())
             }
@@ -1386,8 +1462,8 @@ impl<T> Mult<T> {
     }
 }
 
-impl<'a, T> MultRef<'a, T> {
-    pub const fn as_one(&self) -> Option<&'a T> {
+impl<'a, S, V, P> MultRef<'a, S, V, P> {
+    pub const fn as_one(&self) -> Option<&'a Prop<S, V, P>> {
         if let MultRef::One(x) = self {
             Some(x)
         } else {
@@ -1395,175 +1471,9 @@ impl<'a, T> MultRef<'a, T> {
         }
     }
 
-    pub const fn as_seq(&self) -> Option<&'a [T]> {
+    pub const fn as_seq(&self) -> Option<&'a [MultiProp<S, V, P>]> {
         if let MultRef::Seq(x) = self {
             Some(x)
-        } else {
-            None
-        }
-    }
-}
-
-impl<'a, T> MultMut<'a, T> {
-    pub const fn as_one(self) -> Option<&'a mut T> {
-        if let MultMut::One(x) = self {
-            Some(x)
-        } else {
-            None
-        }
-    }
-
-    pub const fn as_seq(self) -> Option<&'a mut Vec<T>> {
-        if let MultMut::Seq(x) = self {
-            Some(x)
-        } else {
-            None
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AlarmActionProp<S> {
-    Audio(Prop<S, AudioAction>),
-    Display(Prop<S, DisplayAction>),
-    Email(Prop<S, EmailAction>),
-    Other(Prop<S, UnknownAction<S>>),
-}
-
-impl<S> AlarmActionProp<S> {
-    pub const fn as_audio(&self) -> Option<&Prop<S, AudioAction>> {
-        if let Self::Audio(v) = self {
-            Some(v)
-        } else {
-            None
-        }
-    }
-
-    pub const fn as_audio_mut(&mut self) -> Option<&mut Prop<S, AudioAction>> {
-        if let Self::Audio(v) = self {
-            Some(v)
-        } else {
-            None
-        }
-    }
-
-    pub const fn as_display(&self) -> Option<&Prop<S, DisplayAction>> {
-        if let Self::Display(v) = self {
-            Some(v)
-        } else {
-            None
-        }
-    }
-
-    pub const fn as_display_mut(&mut self) -> Option<&mut Prop<S, DisplayAction>> {
-        if let Self::Display(v) = self {
-            Some(v)
-        } else {
-            None
-        }
-    }
-
-    pub const fn as_email(&self) -> Option<&Prop<S, EmailAction>> {
-        if let Self::Email(v) = self {
-            Some(v)
-        } else {
-            None
-        }
-    }
-
-    pub const fn as_email_mut(&mut self) -> Option<&mut Prop<S, EmailAction>> {
-        if let Self::Email(v) = self {
-            Some(v)
-        } else {
-            None
-        }
-    }
-
-    pub const fn as_other(&self) -> Option<&Prop<S, UnknownAction<S>>> {
-        if let Self::Other(v) = self {
-            Some(v)
-        } else {
-            None
-        }
-    }
-
-    pub const fn as_other_mut(&mut self) -> Option<&mut Prop<S, UnknownAction<S>>> {
-        if let Self::Other(v) = self {
-            Some(v)
-        } else {
-            None
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum StatusProp<S> {
-    Event(Prop<S, EventStatus>),
-    Todo(Prop<S, TodoStatus>),
-    Journal(Prop<S, JournalStatus>),
-    Other(Prop<S, Status>),
-}
-
-impl<S> StatusProp<S> {
-    pub const fn as_event(&self) -> Option<&Prop<S, EventStatus>> {
-        if let Self::Event(v) = self {
-            Some(v)
-        } else {
-            None
-        }
-    }
-
-    pub const fn as_event_mut(&mut self) -> Option<&mut Prop<S, EventStatus>> {
-        if let Self::Event(v) = self {
-            Some(v)
-        } else {
-            None
-        }
-    }
-
-    pub const fn as_todo(&self) -> Option<&Prop<S, TodoStatus>> {
-        if let Self::Todo(v) = self {
-            Some(v)
-        } else {
-            None
-        }
-    }
-
-    pub const fn as_todo_mut(&mut self) -> Option<&mut Prop<S, TodoStatus>> {
-        if let Self::Todo(v) = self {
-            Some(v)
-        } else {
-            None
-        }
-    }
-
-    pub const fn as_journal(&self) -> Option<&Prop<S, JournalStatus>> {
-        if let Self::Journal(v) = self {
-            Some(v)
-        } else {
-            None
-        }
-    }
-
-    pub const fn as_journal_mut(&mut self) -> Option<&mut Prop<S, JournalStatus>> {
-        if let Self::Journal(v) = self {
-            Some(v)
-        } else {
-            None
-        }
-    }
-
-    pub const fn as_other(&self) -> Option<&Prop<S, Status>> {
-        if let Self::Other(v) = self {
-            Some(v)
-        } else {
-            None
-        }
-    }
-
-    pub const fn as_other_mut(&mut self) -> Option<&mut Prop<S, Status>> {
-        if let Self::Other(v) = self {
-            Some(v)
         } else {
             None
         }
@@ -1642,71 +1552,94 @@ StaticProp<S>,
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 StaticPropName {
     // CALENDAR PROPERTIES
-    CalScale(Mult<Prop<S, ()>>),
-    Method(Mult<Prop<S, Method<S>>>),
-    ProdId(Mult<Prop<S, Text<S>>>),
-    Version(Mult<Prop<S, ()>>),
+    CalScale(Mult<S, ()>),
+    Method(Mult<S, Method<S>>),
+    ProdId(Mult<S, Text<S>>),
+    Version(Mult<S, ()>),
     // DESCRIPTIVE COMPONENT PROPERTIES
-    Attach(Mult<Prop<S, AttachValue<S>, AttachParams<S>>>),
-    Categories(Mult<Prop<S, Vec<Text<S>>, LangParams<S>>>),
-    Class(Mult<Prop<S, ClassValue<S>>>),
-    Comment(Mult<Prop<S, Text<S>, TextParams<S>>>),
-    Description(Mult<Prop<S, Text<S>, TextParams<S>>>),
-    Geo(Mult<Prop<S, Geo>>),
-    Location(Mult<Prop<S, Text<S>, TextParams<S>>>),
-    PercentComplete(Mult<Prop<S, CompletionPercentage>>),
-    Priority(Mult<Prop<S, Priority>>),
-    Resources(Mult<Prop<S, Vec<Text<S>>, TextParams<S>>>),
-    Status(Mult<StatusProp<S>>),
-    Summary(Mult<Prop<S, Text<S>, TextParams<S>>>),
+    Attach(Mult<S, AttachValue<S>, AttachParams<S>>),
+    Categories(Mult<S, Vec<Text<S>>, LangParams<S>>),
+    Class(Mult<S, ClassValue<S>>),
+    Comment(Mult<S, Text<S>, TextParams<S>>),
+    Description(Mult<S, Text<S>, TextParams<S>>),
+    Geo(Mult<S, Geo>),
+    Location(Mult<S, Text<S>, TextParams<S>>),
+    PercentComplete(Mult<S, CompletionPercentage>),
+    Priority(Mult<S, Priority>),
+    Resources(Mult<S, Vec<Text<S>>, TextParams<S>>),
+    EventStatus(Mult<S, EventStatus>),
+    TodoStatus(Mult<S, TodoStatus>),
+    JournalStatus(Mult<S, JournalStatus>),
+    OtherStatus(Mult<S, Status>),
+    Summary(Mult<S, Text<S>, TextParams<S>>),
     // DATE AND TIME COMPONENT PROPERTIES
-    DtCompleted(Mult<Prop<S, DateTime<Utc>>>),
-    DtEnd(Mult<Prop<S, DateTimeOrDate, DtParams<S>>>),
-    DtDue(Mult<Prop<S, DateTimeOrDate, DtParams<S>>>),
-    DtStart(Mult<Prop<S, DateTimeOrDate, DtParams<S>>>),
-    Duration(Mult<Prop<S, Duration>>),
-    FreeBusy(Mult<Prop<S, Vec<Period>, FBTypeParams<S>>>),
-    Transp(Mult<Prop<S, TimeTransparency>>),
+    DtCompleted(Mult<S, DateTime<Utc>>),
+    DtEnd(Mult<S, DateTimeOrDate, DtParams<S>>),
+    DtDue(Mult<S, DateTimeOrDate, DtParams<S>>),
+    DtStart(Mult<S, DateTimeOrDate, DtParams<S>>),
+    Duration(Mult<S, Duration>),
+    FreeBusy(Mult<S, Vec<Period>, FBTypeParams<S>>),
+    Transp(Mult<S, TimeTransparency>),
     // TIME ZONE COMPONENT PROPERTIES
-    TzId(Mult<Prop<S, TzId<S>>>),
-    TzName(Mult<Prop<S, Text<S>, LangParams<S>>>),
-    TzOffsetFrom(Mult<Prop<S, UtcOffset>>),
-    TzOffsetTo(Mult<Prop<S, UtcOffset>>),
-    TzUrl(Mult<Prop<S, Uri<S>>>),
+    TzId(Mult<S, TzId<S>>),
+    TzName(Mult<S, Text<S>, LangParams<S>>),
+    TzOffsetFrom(Mult<S, UtcOffset>),
+    TzOffsetTo(Mult<S, UtcOffset>),
+    TzUrl(Mult<S, Uri<S>>),
     // RELATIONSHIP COMPONENT PROPERTIES
-    Attendee(Mult<Prop<S, CalAddress<S>, Box<AttendeeParams<S>>>>),
-    Contact(Mult<Prop<S, Text<S>, TextParams<S>>>),
-    Organizer(Mult<Prop<S, CalAddress<S>, Box<OrganizerParams<S>>>>),
-    RecurId(Mult<Prop<S, DateTimeOrDate, RecurrenceIdParams<S>>>),
-    RelatedTo(Mult<Prop<S, Text<S>, RelTypeParams<S>>>),
-    Url(Mult<Prop<S, Uri<S>>>),
-    Uid(Mult<Prop<S, Uid<S>>>),
+    Attendee(Mult<S, CalAddress<S>, Box<AttendeeParams<S>>>),
+    Contact(Mult<S, Text<S>, TextParams<S>>),
+    Organizer(Mult<S, CalAddress<S>, Box<OrganizerParams<S>>>),
+    RecurId(Mult<S, DateTimeOrDate, RecurrenceIdParams<S>>),
+    RelatedTo(Mult<S, Text<S>, RelTypeParams<S>>),
+    Url(Mult<S, Uri<S>>),
+    Uid(Mult<S, Uid<S>>),
     // RECURRENCE COMPONENT PROPERTIES
-    ExDate(Mult<Prop<S, ExDateSeq, DtParams<S>>>),
-    RDate(Mult<Prop<S, RDateSeq, DtParams<S>>>),
-    RRule(Mult<Prop<S, Box<RRule>>>),
+    ExDate(Mult<S, ExDateSeq, DtParams<S>>),
+    RDate(Mult<S, RDateSeq, DtParams<S>>),
+    RRule(Mult<S, Box<RRule>>),
     // ALARM COMPONENT PROPERTIES
-    Action(Mult<AlarmActionProp<S>>), // TODO: break into Mult<Prop<_>> subtypes
-    Repeat(Mult<Prop<S, Integer>>),
-    TriggerRelative(Mult<Prop<S, Duration, TriggerParams>>),
-    TriggerAbsolute(Mult<Prop<S, DateTime<Utc>>>),
+    AudioAction(Mult<S, AudioAction>),
+    DisplayAction(Mult<S, DisplayAction>),
+    EmailAction(Mult<S, EmailAction>),
+    UnknownAction(Mult<S, UnknownAction<S>>),
+    Repeat(Mult<S, Integer>),
+    TriggerRelative(Mult<S, Duration, TriggerParams>),
+    TriggerAbsolute(Mult<S, DateTime<Utc>>),
     // CHANGE MANAGEMENT COMPONENT PROPERTIES
-    Created(Mult<Prop<S, DateTime<Utc>>>),
-    DtStamp(Mult<Prop<S, DateTime<Utc>>>),
-    LastModified(Mult<Prop<S, DateTime<Utc>>>),
-    Sequence(Mult<Prop<S, Integer>>),
+    Created(Mult<S, DateTime<Utc>>),
+    DtStamp(Mult<S, DateTime<Utc>>),
+    LastModified(Mult<S, DateTime<Utc>>),
+    Sequence(Mult<S, Integer>),
     // MISCELLANEOUS COMPONENT PROPERTIES
-    RequestStatus(Mult<Prop<S, RequestStatus<S>, LangParams<S>>>),
+    RequestStatus(Mult<S, RequestStatus<S>, LangParams<S>>),
     // RFC 7986 PROPERTIES
-    Name(Mult<Prop<S, Text<S>, TextParams<S>>>),
-    RefreshInterval(Mult<Prop<S, Duration>>),
-    Source(Mult<Prop<S, Uri<S>>>),
-    Color(Mult<Prop<S, Css3Color>>),
-    Image(Mult<Prop<S, ImageData<S>, ImageParams<S>>>),
-    Conference(Mult<Prop<S, Uri<S>, ConfParams<S>>>),
+    Name(Mult<S, Text<S>, TextParams<S>>),
+    RefreshInterval(Mult<S, Duration>),
+    Source(Mult<S, Uri<S>>),
+    Color(Mult<S, Css3Color>),
+    Image(Mult<S, ImageData<S>, ImageParams<S>>),
+    Conference(Mult<S, Uri<S>, ConfParams<S>>),
+    // RFC 9073 PROPERTIES
+    LocationType(Mult<S, Vec<Text<S>>>),
+    ParticipantType(Mult<S, ParticipantType<S>>),
+    ResourceType(Mult<S, ResourceType<S>>),
+    CalendarAddress(Mult<S, CalAddress<S>>),
+    StyledDescription(Mult<S, StyledDescriptionValue<S>, StyledDescriptionParams<S>>),
+    StructuredDataBinary(Prop<S, Binary<S>, StructuredDataParams<S>>),
+    StructuredDataText(Prop<S, Text<S>, StructuredDataParams<S>>),
+    StructuredDataUri(Prop<S, Uri<S>, UriStructuredDataParams<S>>),
     // RFC 9074 PROPERTIES
-    Acknowledged(Mult<Prop<S, DateTime<Utc>>>), // RFC 9074 §6
-    Proximity(Mult<Prop<S, ProximityValue<S>>>) // RFC 9074 §8.1
+    Acknowledged(Mult<S, DateTime<Utc>>),
+    Proximity(Mult<S, ProximityValue<S>>),
+
+    // UNKNOWN PSEUDOPROPERTIES
+    // These properties are used only as collection types for unknown components, and are inactive
+    // otherwise. Note that we don't have a separate variant for the STATUS property, since we can
+    // rely on the OtherStatus variant.
+    AnyAction(Vec<MultiProp<S, AlarmAction<S>>>),
+    AnyTrigger(Vec<AnyTriggerProp<S>>),
+    AnyStructuredData(Vec<AnyStructuredDataProp<S>>)
 }}
 
 impl<S> PropertyTable<S>
@@ -1715,7 +1648,7 @@ where
 {
     pub(crate) fn try_into_alarm(
         mut self,
-        subcomponents: Vec<ExtComponent<S>>,
+        subcomponents: Vec<OtherComponent<S>>,
     ) -> Result<Alarm<S>, CalendarParseError<S>> {
         macro_rules! one {
             ($scrut:expr, $prop:expr) => {
@@ -1747,10 +1680,6 @@ where
         }
 
         // get references to fields that need to be inspected
-        let action = one!(
-            self.alarm_action(),
-            PropName::Rfc5545(Rfc5545PropName::Action)
-        )?;
         let duration = zero_or_one!(
             self.duration(),
             PropName::Rfc5545(Rfc5545PropName::Duration)
@@ -1773,6 +1702,29 @@ where
             self.proximity(),
             PropName::Rfc9074(Rfc9074PropName::Proximity)
         )?;
+
+        enum ActionKind {
+            Audio,
+            Display,
+            Email,
+            Unknown,
+        }
+
+        // get reference to action with correct multiplicity
+        let action = match self.action() {
+            Some(ActionPropMultRef::Audio(MultRef::One(_))) => Ok(ActionKind::Audio),
+            Some(ActionPropMultRef::Display(MultRef::One(_))) => Ok(ActionKind::Display),
+            Some(ActionPropMultRef::Email(MultRef::One(_))) => Ok(ActionKind::Email),
+            Some(ActionPropMultRef::Unknown(MultRef::One(_))) => Ok(ActionKind::Unknown),
+            Some(_) => Err(CalendarParseError::MoreThanOneProp {
+                prop: PropName::Rfc5545(Rfc5545PropName::Action),
+                component: ComponentKind::Alarm,
+            }),
+            None => Err(CalendarParseError::MissingProp {
+                prop: PropName::Rfc5545(Rfc5545PropName::Action),
+                component: ComponentKind::Alarm,
+            }),
+        }?;
 
         // check trigger multiplicity
         let () = match self.trigger() {
@@ -1797,7 +1749,7 @@ where
         }?;
 
         Ok(match action {
-            AlarmActionProp::Audio(_) => {
+            ActionKind::Audio => {
                 // props: attachments (0-1)
 
                 let () = match self.attachment_mut().map(Mult::one_in_place) {
@@ -1810,7 +1762,7 @@ where
                     subcomponents,
                 })
             }
-            AlarmActionProp::Display(_) => {
+            ActionKind::Display => {
                 // props: description (1)
 
                 let _ = one!(
@@ -1823,7 +1775,7 @@ where
                     subcomponents,
                 })
             }
-            AlarmActionProp::Email(_) => {
+            ActionKind::Email => {
                 // props: description (1), summary (1), attendees (1+)
 
                 let _ = one!(
@@ -1850,7 +1802,7 @@ where
                     subcomponents,
                 })
             }
-            AlarmActionProp::Other(_) => Alarm::Other(OtherAlarm {
+            ActionKind::Unknown => Alarm::Other(OtherAlarm {
                 props: self,
                 subcomponents,
             }),
