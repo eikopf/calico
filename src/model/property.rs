@@ -4,12 +4,12 @@ use crate::parser::parameter::ParamValue;
 
 use super::{
     component::{Mult, MultRef},
-    parameter::UnknownParam,
+    parameter::{KnownParam, UnknownParam},
     primitive::{
         AudioAction, Binary, CalAddress, CalendarUserType, DateTime, DisplayAction, DisplayType,
         Duration, EmailAction, FeatureType, FormatType, FreeBusyType, Language, ParticipationRole,
         ParticipationStatus, PositiveInteger, RelationshipType, Text, ThisAndFuture,
-        TriggerRelation, TzId, UnknownAction, Uri, Utc,
+        TriggerRelation, TzId, UnknownAction, Uri, Utc, Value,
     },
 };
 
@@ -19,6 +19,19 @@ use super::{
 // parameters of this kind are added?
 
 pub type MultiProp<S, V, P = ()> = Prop<S, V, MultiParams<P>>;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnknownProp<S> {
+    pub value: Box<Value<S>>,
+    pub params: Vec<KnownParam<S>>,
+    pub unknown_params: Vec<UnknownParam<S>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnknownPropKind {
+    Iana,
+    X,
+}
 
 /// A property generic over values and parameters.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]

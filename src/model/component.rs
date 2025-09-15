@@ -36,6 +36,8 @@ use super::{
     rrule::RRule,
 };
 
+mod internal;
+
 macro_rules! mandatory_accessors {
     ($([$name:ident => $name_inner:ident, $name_mut:ident => $name_mut_inner:ident, $ret:ty]),* $(,)?) => {
         $(
