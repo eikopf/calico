@@ -6,6 +6,7 @@ use std::{
 };
 
 use hashbrown::{HashTable, hash_table::Entry};
+use winnow::stream::Stream;
 
 use crate::{
     model::{
@@ -26,8 +27,19 @@ use crate::{
         },
         rrule::RRule,
     },
-    parser::escaped::{Equiv, LineFoldCaseless},
+    parser::escaped::{Equiv, Escaped, LineFoldCaseless},
 };
+
+/// An uninhabited type implementing `AsRef<[u8]>` that can be passed to [`PropKey`] when the type
+/// of the `Unknown` variant is unknown or arbitrary.
+#[derive(Hash)]
+pub enum EmptyName {}
+
+impl AsRef<[u8]> for EmptyName {
+    fn as_ref(&self) -> &[u8] {
+        unreachable!()
+    }
+}
 
 #[derive(Clone)]
 pub struct PropertyTable<S>(HashTable<PropEntry<S>>, RandomState);
@@ -67,11 +79,11 @@ impl<S> PropertyTable<S> {
 
     pub fn insert(&mut self, value: PropEntry<S>) -> Option<PropEntry<S>>
     where
-        S: Hash + Equiv<LineFoldCaseless> + AsRef<[u8]>,
+        S: HashCaseless + Equiv<LineFoldCaseless> + AsRef<[u8]>,
     {
         let hash = Self::hash_entry(&self.1);
         let key = value.as_key();
-        let eq = Self::eq(key);
+        let eq = Self::eq(&key);
 
         match self.0.entry(hash(&value), eq, hash) {
             Entry::Occupied(mut entry) => Some(std::mem::replace(entry.get_mut(), value)),
@@ -84,11 +96,11 @@ impl<S> PropertyTable<S> {
 
     pub fn insert_unknown(&mut self, name: S, kind: UnknownPropKind, prop: UnknownProp<S>)
     where
-        S: Hash + Equiv<LineFoldCaseless> + AsRef<[u8]>,
+        S: HashCaseless + Equiv<LineFoldCaseless> + AsRef<[u8]>,
     {
         let key = PropKey::Unknown(&name);
 
-        match self.get_mut(key) {
+        match self.get_mut(&key) {
             Some(PropEntry::Unknown {
                 props,
                 kind: current_kind,
@@ -110,40 +122,51 @@ impl<S> PropertyTable<S> {
         }
     }
 
-    pub fn get<T>(&self, key: PropKey<&T>) -> Option<&PropEntry<S>>
+    pub fn get<T>(&self, key: &PropKey<T>) -> Option<&PropEntry<S>>
     where
-        T: ?Sized + Hash + AsRef<[u8]>,
+        T: HashCaseless + AsRef<[u8]>,
         S: AsRef<[u8]>,
         for<'a> &'a T: Equiv<LineFoldCaseless, &'a S>,
     {
         let hash = Self::hash_key(&self.1);
         let eq = Self::eq(key);
 
-        self.0.find(hash(key), eq)
+        self.0.find(hash(key.as_ref()), eq)
     }
 
-    pub fn get_mut<T>(&mut self, key: PropKey<&T>) -> Option<&mut PropEntry<S>>
+    pub fn get_mut<T>(&mut self, key: &PropKey<T>) -> Option<&mut PropEntry<S>>
     where
-        T: Hash + AsRef<[u8]>,
+        T: HashCaseless + AsRef<[u8]>,
         S: AsRef<[u8]>,
         for<'a> &'a T: Equiv<LineFoldCaseless, &'a S>,
     {
         let hash = Self::hash_key(&self.1);
         let eq = Self::eq(key);
 
-        self.0.find_mut(hash(key), eq)
+        self.0.find_mut(hash(key.as_ref()), eq)
     }
 
-    pub fn remove<T>(&mut self, key: PropKey<&T>) -> Option<PropEntry<S>>
+    pub fn get_known(&self, key: StaticProp) -> Option<&PropEntry<S>>
     where
-        T: Hash + AsRef<[u8]>,
-        S: Hash + AsRef<[u8]>,
+        S: HashCaseless + AsRef<[u8]>,
+    {
+        let key = PropKey::Known::<EmptyName>(key);
+        let hash = Self::hash_key(&self.1);
+        let eq = Self::eq(&key);
+
+        self.0.find(hash(key.as_ref()), eq)
+    }
+
+    pub fn remove<T>(&mut self, key: &PropKey<T>) -> Option<PropEntry<S>>
+    where
+        T: HashCaseless + AsRef<[u8]>,
+        S: HashCaseless + AsRef<[u8]>,
         for<'a> &'a T: Equiv<LineFoldCaseless, &'a S>,
     {
         let hash_key = Self::hash_key(&self.1);
         let hash = Self::hash_entry(&self.1);
         let eq = Self::eq(key);
-        let table_entry = self.0.entry(hash_key(key), eq, hash);
+        let table_entry = self.0.entry(hash_key(key.as_ref()), eq, hash);
 
         match table_entry {
             Entry::Vacant(_) => None,
@@ -154,29 +177,31 @@ impl<S> PropertyTable<S> {
         }
     }
 
-    fn eq<T>(lhs: PropKey<&T>) -> impl for<'b> Fn(&'b PropEntry<S>) -> bool
+    fn eq<T>(lhs: &PropKey<T>) -> impl for<'b> Fn(&'b PropEntry<S>) -> bool
     where
-        T: ?Sized + AsRef<[u8]>,
+        T: AsRef<[u8]>,
         S: AsRef<[u8]>,
         for<'a> &'a T: Equiv<LineFoldCaseless, &'a S>,
     {
         move |rhs| match rhs.as_key() {
-            PropKey::Known(r) => matches!(lhs, PropKey::Known(l) if l == r),
+            PropKey::Known(r) => matches!(lhs, PropKey::Known(l) if *l == r),
             PropKey::Unknown(r) => {
                 matches!(lhs, PropKey::Unknown(l) if l.equiv(r, LineFoldCaseless))
             }
         }
     }
 
-    fn hash_entry(hasher: &impl BuildHasher) -> impl for<'b> Fn(&'b PropEntry<S>) -> u64
-    where
-        S: Hash,
-    {
+    // TODO: maybe i can replace the Hash bound here with a different trait (HashCaseless) that
+    // handles str, [u8], Escaped, etc. all correctly?
+
+    fn hash_entry<T: HashCaseless>(
+        hasher: &impl BuildHasher,
+    ) -> impl for<'a> Fn(&'a PropEntry<T>) -> u64 {
         let h = Self::hash_key(hasher);
         move |entry| h(entry.as_key())
     }
 
-    fn hash_key<T: ?Sized + Hash>(
+    fn hash_key<T: HashCaseless>(
         hasher: &impl BuildHasher,
     ) -> impl for<'a> Fn(PropKey<&'a T>) -> u64 {
         |key| {
@@ -184,7 +209,7 @@ impl<S> PropertyTable<S> {
 
             match key {
                 PropKey::Known(name) => name.hash(&mut hasher),
-                PropKey::Unknown(name) => name.hash(&mut hasher),
+                PropKey::Unknown(name) => name.hash_caseless(&mut hasher),
             };
 
             hasher.finish()
@@ -192,7 +217,62 @@ impl<S> PropertyTable<S> {
     }
 }
 
-#[derive(Debug, Clone)]
+/// A type that can be case-insensitively hashed.
+pub trait HashCaseless {
+    fn hash_caseless(&self, state: &mut impl Hasher);
+}
+
+impl HashCaseless for EmptyName {
+    fn hash_caseless(&self, _state: &mut impl Hasher) {
+        unreachable!()
+    }
+}
+
+impl HashCaseless for str {
+    fn hash_caseless(&self, state: &mut impl Hasher) {
+        for byte in self.bytes() {
+            byte.to_ascii_lowercase().hash(state);
+        }
+    }
+}
+
+impl HashCaseless for String {
+    fn hash_caseless(&self, state: &mut impl Hasher) {
+        self.as_str().hash_caseless(state)
+    }
+}
+
+impl HashCaseless for [u8] {
+    fn hash_caseless(&self, state: &mut impl Hasher) {
+        for byte in self {
+            byte.to_ascii_lowercase().hash(state);
+        }
+    }
+}
+
+impl<const N: usize> HashCaseless for [u8; N] {
+    fn hash_caseless(&self, state: &mut impl Hasher) {
+        for byte in self {
+            byte.to_ascii_lowercase().hash(state);
+        }
+    }
+}
+
+impl HashCaseless for Escaped<'_> {
+    fn hash_caseless(&self, state: &mut impl Hasher) {
+        for (_, byte) in self.iter_offsets() {
+            byte.to_ascii_lowercase().hash(state);
+        }
+    }
+}
+
+impl<T: ?Sized + HashCaseless> HashCaseless for &T {
+    fn hash_caseless(&self, state: &mut impl Hasher) {
+        (*self).hash_caseless(state)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PropEntry<S> {
     Known {
         key: StaticProp,
@@ -226,6 +306,21 @@ impl<S> PropEntry<S> {
 pub enum PropKey<S> {
     Known(StaticProp),
     Unknown(S),
+}
+
+impl<S> From<StaticProp> for PropKey<S> {
+    fn from(value: StaticProp) -> Self {
+        Self::Known(value)
+    }
+}
+
+impl<S> PropKey<S> {
+    pub const fn as_ref(&self) -> PropKey<&S> {
+        match self {
+            PropKey::Known(name) => PropKey::Known(*name),
+            PropKey::Unknown(name) => PropKey::Unknown(name),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -304,6 +399,12 @@ pub enum StaticProp {
     Proximity,
 }
 
+impl StaticProp {
+    pub const fn as_key(self) -> PropKey<EmptyName> {
+        PropKey::Known(self)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RawValue<S> {
     // PRIMITIVES
@@ -371,7 +472,7 @@ pub enum RawValue<S> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{date, time};
+    use crate::{date, model::primitive::Value, parser::escaped::AsEscaped, time};
 
     use super::*;
 
@@ -400,14 +501,54 @@ mod tests {
         assert_eq!(props.0.len(), 2);
 
         let uid_ref = props
-            .get(PropKey::Known::<&str>(StaticProp::Uid))
+            .get(&StaticProp::Uid.as_key())
             .and_then(PropEntry::as_raw_value);
 
         let dtstamp_ref = props
-            .get(PropKey::Known::<&str>(StaticProp::DtStamp))
+            .get(&StaticProp::DtStamp.as_key())
             .and_then(PropEntry::as_raw_value);
 
         assert_eq!(Some(&uid), uid_ref);
         assert_eq!(Some(&dtstamp), dtstamp_ref);
+    }
+
+    #[test]
+    fn property_table_get_unknown() {
+        let mut props = PropertyTable::new();
+
+        let unknown_prop = UnknownProp {
+            value: Box::new(Value::Boolean(true)),
+            params: vec![],
+            unknown_params: vec![],
+        };
+
+        props.insert_unknown("X-A-RANDOM-BOOLEAN", UnknownPropKind::X, unknown_prop);
+
+        assert_eq!(
+            props.get(&PropKey::Unknown("X-A-RANDOM-BOOLEAN")),
+            props.get(&PropKey::Unknown("x-a-random-boolean")),
+        );
+
+        assert_eq!(
+            props.get(&PropKey::Unknown("X-A-RANDOM-BOOLEAN")),
+            props.get(&PropKey::Unknown(b"X-a-RaNdOm-BoOlEaN")),
+        );
+
+        assert_eq!(
+            props.get(&PropKey::Unknown("X-A-RANDOM-BOOLEAN")),
+            props.get(&PropKey::Unknown("X-a-RaNdOm-BoOlEaN".as_bytes())),
+        );
+
+        assert_eq!(
+            props.get(&PropKey::Unknown("X-A-RANDOM-BOOLEAN")),
+            props.get(&PropKey::Unknown("X-a-RANDOM-boolean".to_string())),
+        );
+
+        assert_eq!(
+            props.get(&PropKey::Unknown("X-A-RANDOM-BOOLEAN")),
+            props.get(&PropKey::Unknown(
+                "x-a-ra\r\n\tndo\r\n m-boolean".as_escaped()
+            )),
+        );
     }
 }
