@@ -85,7 +85,7 @@ impl AsEscaped for [u8] {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Escaped<'a>(pub &'a [u8]);
 
 impl<'a> Escaped<'a> {
@@ -95,6 +95,21 @@ impl<'a> Escaped<'a> {
 
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
+    }
+}
+
+// NOTE: this Hash impl is intended to match the impl for `str`, which uses the fact that UTF-8
+// strings cannot contain 0xFF to make the hash prefix free by writing 0xFFu8 into the hasher after
+// the bytes of the string. this behaviour has been stable and unchanged since rustc v1.0.0, but
+// i'm extremely nervous that i might have assumed some invariant that isn't actually guaranteed.
+
+impl<'a> std::hash::Hash for Escaped<'a> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        for (_offset, byte) in self.iter_offsets() {
+            state.write_u8(byte);
+        }
+
+        state.write_u8(0xFF);
     }
 }
 
