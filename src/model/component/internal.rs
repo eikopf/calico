@@ -405,8 +405,72 @@ impl StaticProp {
     }
 }
 
+/// Defines an enum generic over the parameter `S` with [`From`] and [`TryFrom`] impls for each of
+/// the variants in the enum. This will cause a compiler error if the same type occurs in multiple
+/// variants.
+macro_rules! define_value_type {
+    (
+        $(#[$m:meta])*
+        $v:vis
+        $name:ident
+        { $($variant:ident ($field:ty)),* $(,)? }
+    ) => {
+        $(#[$m])*
+        $v enum $name <S> {
+            $($variant ($field)),*
+        }
+
+        $(
+            impl<S> From<$field> for $name <S> {
+                fn from(value: $field) -> Self {
+                    Self::$variant(value)
+                }
+            }
+        )*
+
+        $(
+            impl<S> TryFrom<$name<S>> for $field {
+                type Error = ();
+
+                fn try_from(value: $name<S>) -> Result<$field, Self::Error> {
+                    if let $name::$variant(x) = value {
+                        Ok(x)
+                    } else {
+                        Err(())
+                    }
+                }
+            }
+
+            impl<'a, S> TryFrom<&'a $name<S>> for &'a $field {
+                type Error = ();
+
+                fn try_from(value: &'a $name<S>) -> Result<&'a $field, Self::Error> {
+                    if let $name::$variant(x) = value {
+                        Ok(x)
+                    } else {
+                        Err(())
+                    }
+                }
+            }
+
+            impl<'a, S> TryFrom<&'a mut $name<S>> for &'a mut $field {
+                type Error = ();
+
+                fn try_from(value: &'a mut $name<S>) -> Result<&'a mut $field, Self::Error> {
+                    if let $name::$variant(x) = value {
+                        Ok(x)
+                    } else {
+                        Err(())
+                    }
+                }
+            }
+        )*
+    };
+}
+
+define_value_type! {
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RawValue<S> {
+pub RawValue {
     // PRIMITIVES
     CalAddress(Prop<S, CalAddress<S>>),
     Color(Prop<S, Css3Color>),
@@ -468,7 +532,7 @@ pub enum RawValue<S> {
     // OTHER VARIANTS
     Attach1(Prop<S, AttachValue<S>, AttachParams<S>>), // used by audio alarms
     TriggerRelative(Prop<S, Duration, TriggerParams>),
-}
+}}
 
 #[cfg(test)]
 mod tests {
