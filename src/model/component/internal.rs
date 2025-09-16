@@ -22,8 +22,8 @@ use crate::{
         property::{
             AttachParams, AttendeeParams, ConfParams, DtParams, FBTypeParams, ImageParams,
             LangParams, MultiProp, OrganizerParams, Prop, RecurrenceIdParams, RelTypeParams,
-            StructuredDataParams, StyledDescriptionParams, TextParams, TriggerParams, UnknownProp,
-            UnknownPropKind, UriStructuredDataParams,
+            StructuredDataParams, StyledDescriptionParams, TextParams, TriggerParams,
+            TriggerPropMut, TriggerPropRef, UnknownProp, UnknownPropKind, UriStructuredDataParams,
         },
         rrule::RRule,
     },
@@ -146,7 +146,7 @@ impl<S> PropertyTable<S> {
         self.0.find_mut(hash(key.as_ref()), eq)
     }
 
-    pub fn get_known(&self, key: StaticProp) -> Option<&PropEntry<S>>
+    pub fn get_known(&self, key: StaticProp) -> Option<&RawValue<S>>
     where
         S: HashCaseless + AsRef<[u8]>,
     {
@@ -154,7 +154,22 @@ impl<S> PropertyTable<S> {
         let hash = Self::hash_key(&self.1);
         let eq = Self::eq(&key);
 
-        self.0.find(hash(key.as_ref()), eq)
+        self.0
+            .find(hash(key.as_ref()), eq)
+            .and_then(PropEntry::as_raw_value)
+    }
+
+    pub fn get_known_mut(&mut self, key: StaticProp) -> Option<&mut RawValue<S>>
+    where
+        S: HashCaseless + AsRef<[u8]>,
+    {
+        let key = PropKey::Known::<EmptyName>(key);
+        let hash = Self::hash_key(&self.1);
+        let eq = Self::eq(&key);
+
+        self.0
+            .find_mut(hash(key.as_ref()), eq)
+            .and_then(PropEntry::as_raw_value_mut)
     }
 
     pub fn remove<T>(&mut self, key: &PropKey<T>) -> Option<PropEntry<S>>
@@ -190,9 +205,6 @@ impl<S> PropertyTable<S> {
             }
         }
     }
-
-    // TODO: maybe i can replace the Hash bound here with a different trait (HashCaseless) that
-    // handles str, [u8], Escaped, etc. all correctly?
 
     fn hash_entry<T: HashCaseless>(
         hasher: &impl BuildHasher,
@@ -294,6 +306,14 @@ impl<S> PropEntry<S> {
     }
 
     pub const fn as_raw_value(&self) -> Option<&RawValue<S>> {
+        if let Self::Known { value, .. } = self {
+            Some(value)
+        } else {
+            None
+        }
+    }
+
+    pub const fn as_raw_value_mut(&mut self) -> Option<&mut RawValue<S>> {
         if let Self::Known { value, .. } = self {
             Some(value)
         } else {
@@ -412,18 +432,21 @@ macro_rules! define_value_type {
     (
         $(#[$m:meta])*
         $v:vis
-        $name:ident
+        $name:ident ($name_inner:ident)
         { $($variant:ident ($field:ty)),* $(,)? }
     ) => {
         $(#[$m])*
-        $v enum $name <S> {
+        $v struct $name<S>($name_inner<S>);
+
+        $(#[$m])*
+        enum $name_inner <S> {
             $($variant ($field)),*
         }
 
         $(
             impl<S> From<$field> for $name <S> {
                 fn from(value: $field) -> Self {
-                    Self::$variant(value)
+                    Self($name_inner::$variant(value))
                 }
             }
         )*
@@ -433,7 +456,7 @@ macro_rules! define_value_type {
                 type Error = ();
 
                 fn try_from(value: $name<S>) -> Result<$field, Self::Error> {
-                    if let $name::$variant(x) = value {
+                    if let $name($name_inner::$variant(x)) = value {
                         Ok(x)
                     } else {
                         Err(())
@@ -445,7 +468,7 @@ macro_rules! define_value_type {
                 type Error = ();
 
                 fn try_from(value: &'a $name<S>) -> Result<&'a $field, Self::Error> {
-                    if let $name::$variant(x) = value {
+                    if let $name($name_inner::$variant(x)) = value {
                         Ok(x)
                     } else {
                         Err(())
@@ -457,7 +480,7 @@ macro_rules! define_value_type {
                 type Error = ();
 
                 fn try_from(value: &'a mut $name<S>) -> Result<&'a mut $field, Self::Error> {
-                    if let $name::$variant(x) = value {
+                    if let $name($name_inner::$variant(x)) = value {
                         Ok(x)
                     } else {
                         Err(())
@@ -470,7 +493,7 @@ macro_rules! define_value_type {
 
 define_value_type! {
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub RawValue {
+pub RawValue(__RawValueInner) {
     // PRIMITIVES
     CalAddress(Prop<S, CalAddress<S>>),
     Color(Prop<S, Css3Color>),
@@ -488,13 +511,13 @@ pub RawValue {
     Attach(Vec<MultiProp<S, AttachValue<S>, AttachParams<S>>>),
     Attendee(Vec<MultiProp<S, CalAddress<S>, Box<AttendeeParams<S>>>>),
     Class(Prop<S, ClassValue<S>>),
-    Conference(Prop<S, Uri<S>, ConfParams<S>>),
+    Conf(Prop<S, Uri<S>, ConfParams<S>>),
     ExDate(Vec<MultiProp<S, ExDateSeq, DtParams<S>>>),
     FreeBusy(Vec<MultiProp<S, Vec<Period>, FBTypeParams<S>>>),
     Geo(Prop<S, Geo>),
     Image(Prop<S, ImageData<S>, ImageParams<S>>),
     Method(Prop<S, Method<S>>),
-    Organizer(Vec<MultiProp<S, CalAddress<S>, Box<OrganizerParams<S>>>>),
+    Organizer(Prop<S, CalAddress<S>, Box<OrganizerParams<S>>>),
     ParticipantType(Prop<S, ParticipantType<S>>),
     PercentComplete(Prop<S, CompletionPercentage>),
     Priority(Prop<S, Priority>),
@@ -503,8 +526,8 @@ pub RawValue {
     RecurId(Prop<S, DateTimeOrDate, RecurrenceIdParams<S>>),
     RelatedTo(Prop<S, Text<S>, RelTypeParams<S>>),
     ResourceType(Prop<S, ResourceType<S>>),
-    RequestStatus(Prop<S, RequestStatus<S>, LangParams<S>>),
-    RRule(Prop<S, Box<RRule>>),
+    RequestStatus(Vec<MultiProp<S, RequestStatus<S>, LangParams<S>>>),
+    RRule(Vec<MultiProp<S, Box<RRule>>>),
     StyledDescription(Prop<S, StyledDescriptionValue<S>, StyledDescriptionParams<S>>),
     Transp(Prop<S, TimeTransparency>),
     TzId(Prop<S, TzId<S>>),
@@ -515,6 +538,7 @@ pub RawValue {
     TextTextN(Vec<MultiProp<S, Text<S>, TextParams<S>>>),
     TextSeqTextN(Vec<MultiProp<S, Vec<Text<S>>, TextParams<S>>>),
     TextLang(Prop<S, Text<S>, LangParams<S>>),
+    TextLangN(Vec<MultiProp<S, Text<S>, LangParams<S>>>),
     TextSeqLangN(Vec<MultiProp<S, Vec<Text<S>>, LangParams<S>>>),
     // STATUS VARIANTS
     EventStatus(Prop<S, EventStatus>),
@@ -532,7 +556,34 @@ pub RawValue {
     // OTHER VARIANTS
     Attach1(Prop<S, AttachValue<S>, AttachParams<S>>), // used by audio alarms
     TriggerRelative(Prop<S, Duration, TriggerParams>),
+    ImageN(Vec<MultiProp<S, ImageData<S>, ImageParams<S>>>),
+    ConfN(Vec<MultiProp<S, Uri<S>, ConfParams<S>>>),
+    RelatedToN(Vec<MultiProp<S, Text<S>, RelTypeParams<S>>>),
 }}
+
+impl<'a, S> TryFrom<&'a RawValue<S>> for TriggerPropRef<'a, S> {
+    type Error = ();
+
+    fn try_from(value: &'a RawValue<S>) -> Result<Self, Self::Error> {
+        match &value.0 {
+            __RawValueInner::TriggerRelative(prop) => Ok(Self::Relative(prop)),
+            __RawValueInner::DtUtc(prop) => Ok(Self::Absolute(prop)),
+            _ => Err(()),
+        }
+    }
+}
+
+impl<'a, S> TryFrom<&'a mut RawValue<S>> for TriggerPropMut<'a, S> {
+    type Error = ();
+
+    fn try_from(value: &'a mut RawValue<S>) -> Result<Self, Self::Error> {
+        match &mut value.0 {
+            __RawValueInner::TriggerRelative(prop) => Ok(Self::Relative(prop)),
+            __RawValueInner::DtUtc(prop) => Ok(Self::Absolute(prop)),
+            _ => Err(()),
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -544,8 +595,8 @@ mod tests {
     fn basic_property_table_usage() {
         let mut props = PropertyTable::new();
 
-        let uid = RawValue::Uid(Prop::from_value(Uid("some-identifier")));
-        let dtstamp = RawValue::DtUtc(Prop::from_value(DateTime {
+        let uid = RawValue::from(Prop::from_value(Uid("some-identifier")));
+        let dtstamp = RawValue::from(Prop::from_value(DateTime {
             date: date!(1997;12;24),
             time: time!(15;20;12, Utc),
         }));

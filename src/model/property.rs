@@ -3,7 +3,6 @@
 use crate::parser::parameter::ParamValue;
 
 use super::{
-    component::{Mult, MultRef},
     parameter::{KnownParam, UnknownParam},
     primitive::{
         AudioAction, Binary, CalAddress, CalendarUserType, DateTime, DisplayAction, DisplayType,
@@ -114,49 +113,15 @@ pub struct MultiParams<P> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ActionPropMultRef<'a, S> {
-    Audio(MultRef<'a, S, AudioAction>),
-    Display(MultRef<'a, S, DisplayAction>),
-    Email(MultRef<'a, S, EmailAction>),
-    Unknown(MultRef<'a, S, UnknownAction<S>>),
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum ActionPropMultMut<'a, S> {
-    Audio(&'a mut Mult<S, AudioAction>),
-    Display(&'a mut Mult<S, DisplayAction>),
-    Email(&'a mut Mult<S, EmailAction>),
-    Unknown(&'a mut Mult<S, UnknownAction<S>>),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AnyTriggerProp<S> {
-    Relative(MultiProp<S, Duration, TriggerParams>),
-    Absolute(MultiProp<S, DateTime<Utc>>),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TriggerPropRef<'a, S> {
     Relative(&'a Prop<S, Duration, TriggerParams>),
     Absolute(&'a Prop<S, DateTime<Utc>>),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TriggerPropMultRef<'a, S> {
-    Relative(MultRef<'a, S, Duration, TriggerParams>),
-    Absolute(MultRef<'a, S, DateTime<Utc>>),
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum TriggerPropMut<'a, S> {
     Relative(&'a mut Prop<S, Duration, TriggerParams>),
     Absolute(&'a mut Prop<S, DateTime<Utc>>),
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum TriggerPropMultMut<'a, S> {
-    Relative(&'a mut Mult<S, Duration, TriggerParams>),
-    Absolute(&'a mut Mult<S, DateTime<Utc>>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
