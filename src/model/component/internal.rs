@@ -11,23 +11,28 @@ use winnow::stream::Stream;
 use crate::{
     model::{
         css::Css3Color,
+        parameter::UnknownParam,
         primitive::{
             AlarmAction, AttachValue, AudioAction, Binary, CalAddress, ClassValue,
             CompletionPercentage, DateTime, DateTimeOrDate, DisplayAction, Duration, EmailAction,
             EventStatus, ExDateSeq, Geo, ImageData, Integer, JournalStatus, Method,
             ParticipantType, Period, PositiveInteger, Priority, ProximityValue, RDateSeq,
-            RequestStatus, ResourceType, StyledDescriptionValue, Text, TimeTransparency,
+            RequestStatus, ResourceType, Status, StyledDescriptionValue, Text, TimeTransparency,
             TodoStatus, TzId, Uid, UnknownAction, Uri, Utc, UtcOffset,
         },
         property::{
             AttachParams, AttendeeParams, ConfParams, DtParams, FBTypeParams, ImageParams,
-            LangParams, MultiProp, OrganizerParams, Prop, RecurrenceIdParams, RelTypeParams,
-            StructuredDataParams, StyledDescriptionParams, TextParams, TriggerParams,
-            TriggerPropMut, TriggerPropRef, UnknownProp, UnknownPropKind, UriStructuredDataParams,
+            LangParams, MultiParams, MultiProp, OrganizerParams, Prop, RecurrenceIdParams,
+            RelTypeParams, StructuredDataMultiProp, StructuredDataParams, StyledDescriptionParams,
+            TextParams, TriggerMultiProp, TriggerParams, TriggerPropMut, TriggerPropRef,
+            UniversalParams, UnknownProp, UnknownPropKind, UriStructuredDataParams,
         },
         rrule::RRule,
     },
-    parser::escaped::{Equiv, Escaped, LineFoldCaseless},
+    parser::{
+        escaped::{Equiv, Escaped, LineFoldCaseless},
+        property::KnownProp,
+    },
 };
 
 /// An uninhabited type implementing `AsRef<[u8]>` that can be passed to [`PropKey`] when the type
@@ -476,6 +481,75 @@ impl StaticProp {
     }
 }
 
+impl<S> From<&KnownProp<S>> for StaticProp {
+    fn from(value: &KnownProp<S>) -> Self {
+        match value {
+            KnownProp::CalScale => Self::CalScale,
+            KnownProp::Method(..) => Self::Method,
+            KnownProp::ProdId(..) => Self::ProdId,
+            KnownProp::Version => Self::Version,
+            KnownProp::Attach(..) => Self::Attach,
+            KnownProp::Categories(..) => Self::Categories,
+            KnownProp::Class(..) => Self::Class,
+            KnownProp::Comment(..) => Self::Comment,
+            KnownProp::Description(..) => Self::Description,
+            KnownProp::Geo(..) => Self::Geo,
+            KnownProp::Location(..) => Self::Location,
+            KnownProp::PercentComplete(..) => Self::PercentComplete,
+            KnownProp::Priority(..) => Self::Priority,
+            KnownProp::Resources(..) => Self::Resources,
+            KnownProp::Status(..) => Self::Status,
+            KnownProp::Summary(..) => Self::Summary,
+            KnownProp::DtCompleted(..) => Self::DtCompleted,
+            KnownProp::DtEnd(..) => Self::DtEnd,
+            KnownProp::DtDue(..) => Self::DtDue,
+            KnownProp::DtStart(..) => Self::DtStart,
+            KnownProp::Duration(..) => Self::Duration,
+            KnownProp::FreeBusy(..) => Self::FreeBusy,
+            KnownProp::Transparency(..) => Self::Transp,
+            KnownProp::TzId(..) => Self::TzId,
+            KnownProp::TzName(..) => Self::TzName,
+            KnownProp::TzOffsetFrom(..) => Self::TzOffsetFrom,
+            KnownProp::TzOffsetTo(..) => Self::TzOffsetTo,
+            KnownProp::TzUrl(..) => Self::TzUrl,
+            KnownProp::Attendee(..) => Self::Attendee,
+            KnownProp::Contact(..) => Self::Contact,
+            KnownProp::Organizer(..) => Self::Organizer,
+            KnownProp::RecurrenceId(..) => Self::RecurId,
+            KnownProp::RelatedTo(..) => Self::RelatedTo,
+            KnownProp::Url(..) => Self::Url,
+            KnownProp::Uid(..) => Self::Uid,
+            KnownProp::ExDate(..) => Self::ExDate,
+            KnownProp::RDate(..) => Self::RDate,
+            KnownProp::RRule(..) => Self::RRule,
+            KnownProp::Action(..) => Self::Action,
+            KnownProp::Repeat(..) => Self::Repeat,
+            KnownProp::TriggerRelative(..) | KnownProp::TriggerAbsolute(..) => Self::Trigger,
+            KnownProp::Created(..) => Self::Created,
+            KnownProp::DtStamp(..) => Self::DtStamp,
+            KnownProp::LastModified(..) => Self::LastModified,
+            KnownProp::Sequence(..) => Self::Sequence,
+            KnownProp::RequestStatus(..) => Self::RequestStatus,
+            KnownProp::Name(..) => Self::Name,
+            KnownProp::RefreshInterval(..) => Self::RefreshInterval,
+            KnownProp::Source(..) => Self::Source,
+            KnownProp::Color(..) => Self::Color,
+            KnownProp::Image(..) => Self::Image,
+            KnownProp::Conference(..) => Self::Conference,
+            KnownProp::LocationType(..) => Self::LocationType,
+            KnownProp::ParticipantType(..) => Self::ParticipantType,
+            KnownProp::ResourceType(..) => Self::ResourceType,
+            KnownProp::CalendarAddress(..) => Self::CalendarAddress,
+            KnownProp::StyledDescription(..) => Self::StyledDescription,
+            KnownProp::StructuredDataBinary(..)
+            | KnownProp::StructuredDataText(..)
+            | KnownProp::StructuredDataUri(..) => Self::StructuredData,
+            KnownProp::Acknowledged(..) => Self::Acknowledged,
+            KnownProp::Proximity(..) => Self::Proximity,
+        }
+    }
+}
+
 /// Defines an enum generic over the parameter `S` with [`From`] and [`TryFrom`] impls for each of
 /// the variants in the enum. This will cause a compiler error if the same type occurs in multiple
 /// variants.
@@ -544,7 +618,7 @@ macro_rules! define_value_type {
 
 define_value_type! {
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub RawValue(__RawValueInner) {
+pub RawValue(RawValueInner) {
     // PRIMITIVES
     CalAddress(Prop<S, CalAddress<S>>),
     Color(Prop<S, Css3Color>),
@@ -570,7 +644,7 @@ pub RawValue(__RawValueInner) {
     Method(Prop<S, Method<S>>),
     Organizer(Prop<S, CalAddress<S>, Box<OrganizerParams<S>>>),
     ParticipantType(Prop<S, ParticipantType<S>>),
-    PercentComplete(Prop<S, CompletionPercentage>),
+    Percent(Prop<S, CompletionPercentage>),
     Priority(Prop<S, Priority>),
     Proximity(Prop<S, ProximityValue<S>>),
     RDate(Vec<MultiProp<S, RDateSeq, DtParams<S>>>),
@@ -583,19 +657,24 @@ pub RawValue(__RawValueInner) {
     Transp(Prop<S, TimeTransparency>),
     TzId(Prop<S, TzId<S>>),
     // TEXT VARIANTS
-    TextN(Prop<S, Vec<Text<S>>>),
+    TextN(Vec<MultiProp<S, Text<S>>>),
+    TextSeq(Prop<S, Vec<Text<S>>>),
+    TextSeqN(Vec<MultiProp<S, Vec<Text<S>>>>),
     TextText(Prop<S, Text<S>, TextParams<S>>),
     TextSeqText(Prop<S, Vec<Text<S>>, TextParams<S>>),
     TextTextN(Vec<MultiProp<S, Text<S>, TextParams<S>>>),
     TextSeqTextN(Vec<MultiProp<S, Vec<Text<S>>, TextParams<S>>>),
     TextLang(Prop<S, Text<S>, LangParams<S>>),
     TextLangN(Vec<MultiProp<S, Text<S>, LangParams<S>>>),
+    TextSeqLang(Prop<S, Vec<Text<S>>, LangParams<S>>),
     TextSeqLangN(Vec<MultiProp<S, Vec<Text<S>>, LangParams<S>>>),
     // STATUS VARIANTS
+    Status(Prop<S, Status>),
     EventStatus(Prop<S, EventStatus>),
     TodoStatus(Prop<S, TodoStatus>),
     JournalStatus(Prop<S, JournalStatus>),
     // ACTION VARIANTS
+    Action(Prop<S, AlarmAction<S>>),
     AudioAction(Prop<S, AudioAction>),
     DisplayAction(Prop<S, DisplayAction>),
     EmailAction(Prop<S, EmailAction>),
@@ -607,20 +686,230 @@ pub RawValue(__RawValueInner) {
     // OTHER VARIANTS
     Attach1(Prop<S, AttachValue<S>, AttachParams<S>>), // used by audio alarms
     TriggerRelative(Prop<S, Duration, TriggerParams>),
+    // FREE MULTIPLICITY VARIANTS
     ImageN(Vec<MultiProp<S, ImageData<S>, ImageParams<S>>>),
     ConfN(Vec<MultiProp<S, Uri<S>, ConfParams<S>>>),
     RelatedToN(Vec<MultiProp<S, Text<S>, RelTypeParams<S>>>),
+    UnitN(Vec<MultiProp<S, ()>>),
+    MethodN(Vec<MultiProp<S, Method<S>>>),
+    ClassN(Vec<MultiProp<S, ClassValue<S>>>),
+    GeoN(Vec<MultiProp<S, Geo>>),
+    DtUtcN(Vec<MultiProp<S, DateTime<Utc>>>),
+    UidN(Vec<MultiProp<S, Uid<S>>>),
+    UriN(Vec<MultiProp<S, Uri<S>>>),
+    PriorityN(Vec<MultiProp<S, Priority>>),
+    PercentN(Vec<MultiProp<S, CompletionPercentage>>),
+    DtOrDateDtN(Vec<MultiProp<S, DateTimeOrDate, DtParams<S>>>),
+    DurationN(Vec<MultiProp<S, Duration>>),
+    StatusN(Vec<MultiProp<S, Status>>),
+    TranspN(Vec<MultiProp<S, TimeTransparency>>),
+    TzIdN(Vec<MultiProp<S, TzId<S>>>),
+    UtcOffsetN(Vec<MultiProp<S, UtcOffset>>),
+    OrganizerN(Vec<MultiProp<S, CalAddress<S>, Box<OrganizerParams<S>>>>),
+    RecurIdN(Vec<MultiProp<S, DateTimeOrDate, RecurrenceIdParams<S>>>),
+    ActionN(Vec<MultiProp<S, AlarmAction<S>>>),
+    IntegerN(Vec<MultiProp<S, Integer>>),
+    PositiveIntegerN(Vec<MultiProp<S, PositiveInteger>>),
+    ProximityN(Vec<MultiProp<S, ProximityValue<S>>>),
+    ColorN(Vec<MultiProp<S, Css3Color>>),
+    ParticipantTypeN(Vec<MultiProp<S, ParticipantType<S>>>),
+    ResourceTypeN(Vec<MultiProp<S, ResourceType<S>>>),
+    CalAddressN(Vec<MultiProp<S, CalAddress<S>>>),
+    StyledDescriptionN(Vec<MultiProp<S, StyledDescriptionValue<S>, StyledDescriptionParams<S>>>),
+    // HETEROGENEOUS FREE MULTIPLICITY VARIANTS
+    AnyTriggerN(Vec<TriggerMultiProp<S>>),
+    AnyStructuredDataN(Vec<StructuredDataMultiProp<S>>),
 }}
+
+impl<S> RawValue<S> {
+    /// Updates the given `raw_value` (if any) with a [`MultiProp`] derived from the other
+    /// parameters, or initialises a new value with the `MultiProp` if it is [`None`]. All values
+    /// returned by this method are sequential, even when only a single value is present.
+    ///
+    /// The point of this method is to be a fallback for the construction of PropertyTables when a
+    /// given component doesn't explicitly handle a certain [`KnownProp`]. Every property may be
+    /// admissible for a given component so long as that component does not explicitly disallow
+    /// them; notice that RFC 9074 introduced the usage of UID on VALARM components and this was
+    /// **not** considered a backwards-incompatible change—rather, it was previously treated as an
+    /// unknown IANA-registered property.
+    pub(crate) fn append_known_prop(
+        raw_value: Option<Self>,
+        known_prop: KnownProp<S>,
+        univ: UniversalParams,
+        unknown_params: Vec<UnknownParam<S>>,
+    ) -> Option<Self> {
+        macro_rules! prop {
+            ($value:expr, $params:expr) => {
+                Prop {
+                    derived: univ.derived.unwrap_or_default(),
+                    value: $value,
+                    params: MultiParams {
+                        order: univ.order,
+                        known: $params,
+                    },
+                    unknown_params,
+                }
+            };
+        }
+
+        macro_rules! both {
+            ($var1:ident, $varN:ident, $new_prop:expr) => {
+                match raw_value {
+                    Some(RawValue(RawValueInner::$varN(mut props))) => {
+                        props.push($new_prop);
+                        Some(props.into())
+                    }
+                    Some(RawValue(RawValueInner::$var1(prop))) => {
+                        Some(vec![prop.into_multi_prop(), $new_prop].into())
+                    }
+                    None => Some(vec![$new_prop].into()),
+                    Some(_) => None,
+                }
+            };
+        }
+
+        macro_rules! seq {
+            ($var:ident, $new_prop:expr) => {
+                match raw_value {
+                    Some(RawValue(RawValueInner::$var(mut props))) => {
+                        props.push($new_prop);
+                        Some(props.into())
+                    }
+                    None => Some(vec![$new_prop].into()),
+                    Some(_) => None,
+                }
+            };
+        }
+
+        macro_rules! trigger {
+            ($new_prop:expr) => {{
+                let mut vec = match raw_value {
+                    Some(RawValue(RawValueInner::AnyTriggerN(props))) => Some(props),
+                    None => Some(Vec::with_capacity(1)),
+                    Some(_) => None,
+                }?;
+
+                vec.push($new_prop.into());
+                Some(RawValue(RawValueInner::AnyTriggerN(vec)))
+            }};
+        }
+
+        macro_rules! structured_data {
+            ($new_prop:expr) => {{
+                let mut vec = match raw_value {
+                    Some(RawValue(RawValueInner::AnyStructuredDataN(props))) => Some(props),
+                    None => Some(Vec::with_capacity(1)),
+                    Some(_) => None,
+                }?;
+
+                vec.push($new_prop.into());
+                Some(RawValue(RawValueInner::AnyStructuredDataN(vec)))
+            }};
+        }
+
+        match known_prop {
+            KnownProp::CalScale | KnownProp::Version => both!(Unit, UnitN, prop!((), ())),
+            KnownProp::Method(value) => both!(Method, MethodN, prop!(value, ())),
+            KnownProp::ProdId(value) => both!(Text, TextN, prop!(value, ())),
+            KnownProp::Attach(value, params) => both!(Attach1, Attach, prop!(value, params)),
+            KnownProp::Categories(value, params) => {
+                both!(TextSeqLang, TextSeqLangN, prop!(value, params))
+            }
+            KnownProp::Class(value) => both!(Class, ClassN, prop!(value, ())),
+            KnownProp::Comment(value, params)
+            | KnownProp::Description(value, params)
+            | KnownProp::Location(value, params)
+            | KnownProp::Summary(value, params)
+            | KnownProp::Contact(value, params)
+            | KnownProp::Name(value, params) => {
+                both!(TextText, TextTextN, prop!(value, params))
+            }
+            KnownProp::Geo(value) => both!(Geo, GeoN, prop!(value, ())),
+            KnownProp::PercentComplete(value) => both!(Percent, PercentN, prop!(value, ())),
+            KnownProp::Priority(value) => both!(Priority, PriorityN, prop!(value, ())),
+            KnownProp::Resources(value, params) => {
+                both!(TextSeqText, TextSeqTextN, prop!(value, params))
+            }
+            KnownProp::Status(value) => both!(Status, StatusN, prop!(value, ())),
+            KnownProp::DtCompleted(value)
+            | KnownProp::Created(value)
+            | KnownProp::DtStamp(value)
+            | KnownProp::LastModified(value)
+            | KnownProp::Acknowledged(value) => both!(DtUtc, DtUtcN, prop!(value, ())),
+            KnownProp::DtEnd(value, params)
+            | KnownProp::DtDue(value, params)
+            | KnownProp::DtStart(value, params) => {
+                both!(DtOrDateDt, DtOrDateDtN, prop!(value, params))
+            }
+            KnownProp::Duration(value) | KnownProp::RefreshInterval(value) => {
+                both!(Duration, DurationN, prop!(value, ()))
+            }
+            KnownProp::FreeBusy(value, params) => seq!(FreeBusy, prop!(value, params)),
+            KnownProp::Transparency(value) => both!(Transp, TranspN, prop!(value, ())),
+            KnownProp::TzId(value) => both!(TzId, TzIdN, prop!(value, ())),
+            KnownProp::TzName(value, params) => both!(TextLang, TextLangN, prop!(value, params)),
+            KnownProp::TzOffsetFrom(value) | KnownProp::TzOffsetTo(value) => {
+                both!(UtcOffset, UtcOffsetN, prop!(value, ()))
+            }
+            KnownProp::TzUrl(value) | KnownProp::Url(value) | KnownProp::Source(value) => {
+                both!(Uri, UriN, prop!(value, ()))
+            }
+            KnownProp::Attendee(value, params) => seq!(Attendee, prop!(value, Box::new(params))),
+            KnownProp::Organizer(value, params) => {
+                both!(Organizer, OrganizerN, prop!(value, Box::new(params)))
+            }
+            KnownProp::RecurrenceId(value, params) => {
+                both!(RecurId, RecurIdN, prop!(value, params))
+            }
+            KnownProp::RelatedTo(value, params) => {
+                both!(RelatedTo, RelatedToN, prop!(value, params))
+            }
+            KnownProp::Uid(value) => both!(Uid, UidN, prop!(value, ())),
+            KnownProp::ExDate(value, params) => seq!(ExDate, prop!(value, params)),
+            KnownProp::RDate(value, params) => seq!(RDate, prop!(value, params)),
+            KnownProp::RRule(value) => seq!(RRule, prop!(Box::new(value), ())),
+            KnownProp::Action(value) => both!(Action, ActionN, prop!(value, ())),
+            KnownProp::Repeat(value) | KnownProp::Sequence(value) => {
+                both!(Integer, IntegerN, prop!(value, ()))
+            }
+            KnownProp::TriggerRelative(value, params) => trigger!(prop!(value, params)),
+            KnownProp::TriggerAbsolute(value) => trigger!(prop!(value, ())),
+            KnownProp::RequestStatus(value, params) => seq!(RequestStatus, prop!(value, params)),
+            KnownProp::Color(value) => both!(Color, ColorN, prop!(value, ())),
+            KnownProp::Image(value, params) => both!(Image, ImageN, prop!(value, params)),
+            KnownProp::Conference(value, params) => both!(Conf, ConfN, prop!(value, params)),
+            KnownProp::LocationType(value) => both!(TextSeq, TextSeqN, prop!(value, ())),
+            KnownProp::ParticipantType(value) => {
+                both!(ParticipantType, ParticipantTypeN, prop!(value, ()))
+            }
+            KnownProp::ResourceType(value) => both!(ResourceType, ResourceTypeN, prop!(value, ())),
+            KnownProp::CalendarAddress(value) => both!(CalAddress, CalAddressN, prop!(value, ())),
+            KnownProp::StyledDescription(value, params) => {
+                both!(StyledDescription, StyledDescriptionN, prop!(value, params))
+            }
+            KnownProp::StructuredDataBinary(value, params) => {
+                structured_data!(prop!(value, params))
+            }
+            KnownProp::StructuredDataText(value, params) => {
+                structured_data!(prop!(value, params))
+            }
+            KnownProp::StructuredDataUri(value, params) => {
+                structured_data!(prop!(value, params))
+            }
+            KnownProp::Proximity(value) => both!(Proximity, ProximityN, prop!(value, ())),
+        }
+    }
+}
 
 impl<'a, S> TryFrom<&'a RawValue<S>> for AlarmAction<&'a S> {
     type Error = ();
 
     fn try_from(value: &'a RawValue<S>) -> Result<Self, Self::Error> {
         match &value.0 {
-            __RawValueInner::AudioAction(_) => Ok(Self::Audio),
-            __RawValueInner::DisplayAction(_) => Ok(Self::Display),
-            __RawValueInner::EmailAction(_) => Ok(Self::Email),
-            __RawValueInner::UnknownAction(Prop { value, .. }) => match value.as_ref() {
+            RawValueInner::AudioAction(_) => Ok(Self::Audio),
+            RawValueInner::DisplayAction(_) => Ok(Self::Display),
+            RawValueInner::EmailAction(_) => Ok(Self::Email),
+            RawValueInner::UnknownAction(Prop { value, .. }) => match value.as_ref() {
                 UnknownAction::Iana(action) => Ok(Self::Iana(action)),
                 UnknownAction::X(action) => Ok(Self::X(action)),
             },
@@ -634,8 +923,8 @@ impl<'a, S> TryFrom<&'a RawValue<S>> for TriggerPropRef<'a, S> {
 
     fn try_from(value: &'a RawValue<S>) -> Result<Self, Self::Error> {
         match &value.0 {
-            __RawValueInner::TriggerRelative(prop) => Ok(Self::Relative(prop)),
-            __RawValueInner::DtUtc(prop) => Ok(Self::Absolute(prop)),
+            RawValueInner::TriggerRelative(prop) => Ok(Self::Relative(prop)),
+            RawValueInner::DtUtc(prop) => Ok(Self::Absolute(prop)),
             _ => Err(()),
         }
     }
@@ -646,8 +935,8 @@ impl<'a, S> TryFrom<&'a mut RawValue<S>> for TriggerPropMut<'a, S> {
 
     fn try_from(value: &'a mut RawValue<S>) -> Result<Self, Self::Error> {
         match &mut value.0 {
-            __RawValueInner::TriggerRelative(prop) => Ok(Self::Relative(prop)),
-            __RawValueInner::DtUtc(prop) => Ok(Self::Absolute(prop)),
+            RawValueInner::TriggerRelative(prop) => Ok(Self::Relative(prop)),
+            RawValueInner::DtUtc(prop) => Ok(Self::Absolute(prop)),
             _ => Err(()),
         }
     }

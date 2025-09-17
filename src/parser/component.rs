@@ -53,10 +53,12 @@ macro_rules! step_inner {
                 $p => $body,
             )*
             ParserProp::Known(prop) => {
-                Err(CalendarParseError::UnexpectedProp {
-                    prop: prop.name(),
-                    component: super::error::ComponentKind::$comp_kind,
-                })
+                let key: StaticProp = (&prop).into();
+                let value = $state.remove_known(key);
+                let value = RawValue::append_known_prop(value, prop, $univ, $unknown_params);
+                let _prev = $state.insert_known(key, value.unwrap());
+                debug_assert!(_prev.is_none());
+                Ok(())
             }
             ParserProp::Unknown(UnknownParserProp::Iana {
                 name,
@@ -2079,6 +2081,7 @@ mod tests {
             "TRIGGER:-PT30M",
             "REPEAT:2",
             "DURATION:PT15M",
+            "PRIORITY:3",
             "ACTION:DISPLAY",
             "DESCRIPTION:Breakfast meeting with executive\\n",
             " team at 8:30 AM EST.",

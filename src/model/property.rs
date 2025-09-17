@@ -5,10 +5,10 @@ use crate::parser::parameter::ParamValue;
 use super::{
     parameter::{KnownParam, UnknownParam},
     primitive::{
-        AudioAction, Binary, CalAddress, CalendarUserType, DateTime, DisplayAction, DisplayType,
-        Duration, EmailAction, FeatureType, FormatType, FreeBusyType, Language, ParticipationRole,
-        ParticipationStatus, PositiveInteger, RelationshipType, Text, ThisAndFuture,
-        TriggerRelation, TzId, UnknownAction, Uri, Utc, Value,
+        Binary, CalAddress, CalendarUserType, DateTime, DisplayType, Duration, FeatureType,
+        FormatType, FreeBusyType, Language, ParticipationRole, ParticipationStatus,
+        PositiveInteger, RelationshipType, Text, ThisAndFuture, TriggerRelation, TzId, Uri, Utc,
+        Value,
     },
 };
 
@@ -112,6 +112,24 @@ pub struct MultiParams<P> {
     pub known: P,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TriggerMultiProp<S> {
+    Relative(MultiProp<S, Duration, TriggerParams>),
+    Absolute(MultiProp<S, DateTime<Utc>>),
+}
+
+impl<S> From<MultiProp<S, DateTime<Utc>>> for TriggerMultiProp<S> {
+    fn from(v: MultiProp<S, DateTime<Utc>>) -> Self {
+        Self::Absolute(v)
+    }
+}
+
+impl<S> From<MultiProp<S, Duration, TriggerParams>> for TriggerMultiProp<S> {
+    fn from(v: MultiProp<S, Duration, TriggerParams>) -> Self {
+        Self::Relative(v)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TriggerPropRef<'a, S> {
     Relative(&'a Prop<S, Duration, TriggerParams>),
@@ -125,10 +143,28 @@ pub enum TriggerPropMut<'a, S> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AnyStructuredDataProp<S> {
+pub enum StructuredDataMultiProp<S> {
     Binary(MultiProp<S, Binary<S>, StructuredDataParams<S>>),
     Text(MultiProp<S, Text<S>, StructuredDataParams<S>>),
     Uri(MultiProp<S, Uri<S>, UriStructuredDataParams<S>>),
+}
+
+impl<S> From<MultiProp<S, Uri<S>, UriStructuredDataParams<S>>> for StructuredDataMultiProp<S> {
+    fn from(v: MultiProp<S, Uri<S>, UriStructuredDataParams<S>>) -> Self {
+        Self::Uri(v)
+    }
+}
+
+impl<S> From<MultiProp<S, Text<S>, StructuredDataParams<S>>> for StructuredDataMultiProp<S> {
+    fn from(v: MultiProp<S, Text<S>, StructuredDataParams<S>>) -> Self {
+        Self::Text(v)
+    }
+}
+
+impl<S> From<MultiProp<S, Binary<S>, StructuredDataParams<S>>> for StructuredDataMultiProp<S> {
+    fn from(v: MultiProp<S, Binary<S>, StructuredDataParams<S>>) -> Self {
+        Self::Binary(v)
+    }
 }
 
 /// The parameters which are admissible on every property (assuming we do not know the multiplicity
