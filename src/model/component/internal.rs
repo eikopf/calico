@@ -12,12 +12,12 @@ use crate::{
     model::{
         css::Css3Color,
         primitive::{
-            AttachValue, AudioAction, Binary, CalAddress, ClassValue, CompletionPercentage,
-            DateTime, DateTimeOrDate, DisplayAction, Duration, EmailAction, EventStatus, ExDateSeq,
-            Geo, ImageData, Integer, JournalStatus, Method, ParticipantType, Period,
-            PositiveInteger, Priority, ProximityValue, RDateSeq, RequestStatus, ResourceType,
-            StyledDescriptionValue, Text, TimeTransparency, TodoStatus, TzId, Uid, UnknownAction,
-            Uri, Utc, UtcOffset,
+            AlarmAction, AttachValue, AudioAction, Binary, CalAddress, ClassValue,
+            CompletionPercentage, DateTime, DateTimeOrDate, DisplayAction, Duration, EmailAction,
+            EventStatus, ExDateSeq, Geo, ImageData, Integer, JournalStatus, Method,
+            ParticipantType, Period, PositiveInteger, Priority, ProximityValue, RDateSeq,
+            RequestStatus, ResourceType, StyledDescriptionValue, Text, TimeTransparency,
+            TodoStatus, TzId, Uid, UnknownAction, Uri, Utc, UtcOffset,
         },
         property::{
             AttachParams, AttendeeParams, ConfParams, DtParams, FBTypeParams, ImageParams,
@@ -77,6 +77,22 @@ impl<S> PropertyTable<S> {
         self.0.is_empty()
     }
 
+    pub fn contains_key<T>(&self, key: &PropKey<T>) -> bool
+    where
+        T: HashCaseless + AsRef<[u8]>,
+        S: AsRef<[u8]>,
+        for<'a> &'a T: Equiv<LineFoldCaseless, &'a S>,
+    {
+        self.get(key).is_some()
+    }
+
+    pub fn contains_known(&self, key: StaticProp) -> bool
+    where
+        S: HashCaseless + AsRef<[u8]>,
+    {
+        self.get_known(key).is_some()
+    }
+
     pub fn insert(&mut self, value: PropEntry<S>) -> Option<PropEntry<S>>
     where
         S: HashCaseless + Equiv<LineFoldCaseless> + AsRef<[u8]>,
@@ -92,6 +108,13 @@ impl<S> PropertyTable<S> {
                 None
             }
         }
+    }
+
+    pub fn insert_known(&mut self, key: StaticProp, value: RawValue<S>) -> Option<PropEntry<S>>
+    where
+        S: HashCaseless + Equiv<LineFoldCaseless> + AsRef<[u8]>,
+    {
+        self.insert(PropEntry::Known { key, value })
     }
 
     pub fn insert_unknown(&mut self, name: S, kind: UnknownPropKind, prop: UnknownProp<S>)
@@ -192,6 +215,14 @@ impl<S> PropertyTable<S> {
         }
     }
 
+    pub fn remove_known(&mut self, key: StaticProp) -> Option<RawValue<S>>
+    where
+        S: HashCaseless + AsRef<[u8]>,
+    {
+        let key = key.as_key();
+        self.remove(&key).and_then(PropEntry::into_raw_value)
+    }
+
     fn eq<T>(lhs: &PropKey<T>) -> impl for<'b> Fn(&'b PropEntry<S>) -> bool
     where
         T: AsRef<[u8]>,
@@ -284,6 +315,18 @@ impl<T: ?Sized + HashCaseless> HashCaseless for &T {
     }
 }
 
+impl<T: ?Sized + HashCaseless> HashCaseless for &mut T {
+    fn hash_caseless(&self, state: &mut impl Hasher) {
+        (**self).hash_caseless(state)
+    }
+}
+
+impl<T: ?Sized + HashCaseless> HashCaseless for Box<T> {
+    fn hash_caseless(&self, state: &mut impl Hasher) {
+        self.as_ref().hash_caseless(state)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PropEntry<S> {
     Known {
@@ -302,6 +345,14 @@ impl<S> PropEntry<S> {
         match self {
             PropEntry::Known { key, .. } => PropKey::Known(*key),
             PropEntry::Unknown { key, .. } => PropKey::Unknown(key),
+        }
+    }
+
+    pub fn into_raw_value(self) -> Option<RawValue<S>> {
+        if let Self::Known { value, .. } = self {
+            Some(value)
+        } else {
+            None
         }
     }
 
@@ -561,6 +612,23 @@ pub RawValue(__RawValueInner) {
     RelatedToN(Vec<MultiProp<S, Text<S>, RelTypeParams<S>>>),
 }}
 
+impl<'a, S> TryFrom<&'a RawValue<S>> for AlarmAction<&'a S> {
+    type Error = ();
+
+    fn try_from(value: &'a RawValue<S>) -> Result<Self, Self::Error> {
+        match &value.0 {
+            __RawValueInner::AudioAction(_) => Ok(Self::Audio),
+            __RawValueInner::DisplayAction(_) => Ok(Self::Display),
+            __RawValueInner::EmailAction(_) => Ok(Self::Email),
+            __RawValueInner::UnknownAction(Prop { value, .. }) => match value.as_ref() {
+                UnknownAction::Iana(action) => Ok(Self::Iana(action)),
+                UnknownAction::X(action) => Ok(Self::X(action)),
+            },
+            _ => Err(()),
+        }
+    }
+}
+
 impl<'a, S> TryFrom<&'a RawValue<S>> for TriggerPropRef<'a, S> {
     type Error = ();
 
@@ -625,6 +693,21 @@ mod tests {
 
         assert_eq!(Some(&uid), uid_ref);
         assert_eq!(Some(&dtstamp), dtstamp_ref);
+    }
+
+    #[test]
+    fn property_table_get_known() {
+        let mut props: PropertyTable<&'static str> = PropertyTable::new();
+        let action = Prop::from_value(AudioAction);
+        props.insert_known(StaticProp::Action, RawValue::from(action));
+        dbg![props.get_known(StaticProp::Action)];
+
+        let prop: Prop<_, AudioAction> = props
+            .remove_known(StaticProp::Action)
+            .unwrap()
+            .try_into()
+            .unwrap();
+        dbg![prop];
     }
 
     #[test]

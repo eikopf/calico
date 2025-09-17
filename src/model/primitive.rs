@@ -447,6 +447,15 @@ pub enum UnknownAction<S> {
     X(S),
 }
 
+impl<S> UnknownAction<S> {
+    pub const fn as_ref(&self) -> UnknownAction<&S> {
+        match self {
+            UnknownAction::Iana(action) => UnknownAction::Iana(action),
+            UnknownAction::X(action) => UnknownAction::X(action),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AlarmAction<S> {
     Audio,

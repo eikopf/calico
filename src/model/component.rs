@@ -2,7 +2,7 @@
 
 use std::fmt::Debug;
 
-use internal::{HashCaseless, PropertyTable, StaticProp};
+pub(crate) use internal::{HashCaseless, PropertyTable, RawValue, StaticProp};
 
 use crate::{
     model::primitive::{ProximityValue, UnknownAction},
@@ -414,6 +414,16 @@ pub struct AudioAlarm<S> {
 }
 
 impl<S> AudioAlarm<S> {
+    pub(crate) const fn new(
+        props: PropertyTable<S>,
+        subcomponents: Vec<OtherComponent<S>>,
+    ) -> Self {
+        Self {
+            props,
+            subcomponents,
+        }
+    }
+
     pub const fn subcomponents(&self) -> &[OtherComponent<S>] {
         self.subcomponents.as_slice()
     }
@@ -429,7 +439,6 @@ where
 {
     mandatory_accessors! {
         [Action, action, action_mut, Prop<S, AudioAction>],
-        //[Trigger, trigger, trigger_mut, TriggerProp<S>],
     }
 
     optional_accessors! {
@@ -452,6 +461,16 @@ pub struct DisplayAlarm<S> {
 }
 
 impl<S> DisplayAlarm<S> {
+    pub(crate) const fn new(
+        props: PropertyTable<S>,
+        subcomponents: Vec<OtherComponent<S>>,
+    ) -> Self {
+        Self {
+            props,
+            subcomponents,
+        }
+    }
+
     pub const fn subcomponents(&self) -> &[OtherComponent<S>] {
         self.subcomponents.as_slice()
     }
@@ -468,7 +487,6 @@ where
     mandatory_accessors! {
         [Action, action, action_mut, Prop<S, DisplayAction>],
         [Description, description, description_mut, Prop<S, Text<S>, TextParams<S>>],
-        //[Trigger, trigger, trigger_mut, TriggerProp<S>],
     }
 
     optional_accessors! {
@@ -490,6 +508,16 @@ pub struct EmailAlarm<S> {
 }
 
 impl<S> EmailAlarm<S> {
+    pub(crate) const fn new(
+        props: PropertyTable<S>,
+        subcomponents: Vec<OtherComponent<S>>,
+    ) -> Self {
+        Self {
+            props,
+            subcomponents,
+        }
+    }
+
     pub const fn subcomponents(&self) -> &[OtherComponent<S>] {
         self.subcomponents.as_slice()
     }
@@ -506,7 +534,6 @@ where
     mandatory_accessors! {
         [Action, action, action_mut, Prop<S, EmailAction>],
         [Description, description, description_mut, Prop<S, Text<S>, TextParams<S>>],
-        //[Trigger, trigger, trigger_mut, TriggerProp<S>],
         [Summary, summary, summary_mut, Prop<S, Text<S>, TextParams<S>>],
     }
 
@@ -534,6 +561,16 @@ pub struct OtherAlarm<S> {
 }
 
 impl<S> OtherAlarm<S> {
+    pub(crate) const fn new(
+        props: PropertyTable<S>,
+        subcomponents: Vec<OtherComponent<S>>,
+    ) -> Self {
+        Self {
+            props,
+            subcomponents,
+        }
+    }
+
     pub const fn subcomponents(&self) -> &[OtherComponent<S>] {
         self.subcomponents.as_slice()
     }
@@ -794,171 +831,3 @@ impl<S> UnknownName<S> {
         }
     }
 }
-
-// impl<S> PropertyTable<S>
-// where
-//     S: Hash + Equiv<LineFoldCaseless> + AsRef<[u8]>,
-// {
-//     pub(crate) fn try_into_alarm(
-//         mut self,
-//         subcomponents: Vec<OtherComponent<S>>,
-//     ) -> Result<Alarm<S>, CalendarParseError<S>> {
-//         macro_rules! one {
-//             ($scrut:expr, $prop:expr) => {
-//                 match $scrut {
-//                     Some(MultRef::One(x)) => Ok(x),
-//                     Some(MultRef::Seq(_)) => Err(CalendarParseError::MoreThanOneProp {
-//                         prop: $prop,
-//                         component: ComponentKind::Alarm,
-//                     }),
-//                     None => Err(CalendarParseError::MissingProp {
-//                         prop: $prop,
-//                         component: ComponentKind::Alarm,
-//                     }),
-//                 }
-//             };
-//         }
-//
-//         macro_rules! zero_or_one {
-//             ($scrut:expr, $prop:expr) => {
-//                 match $scrut {
-//                     Some(MultRef::One(x)) => Ok(Some(x)),
-//                     Some(MultRef::Seq(_)) => Err(CalendarParseError::MoreThanOneProp {
-//                         prop: $prop,
-//                         component: ComponentKind::Alarm,
-//                     }),
-//                     None => Ok(None),
-//                 }
-//             };
-//         }
-//
-//         // get references to fields that need to be inspected
-//         let duration = zero_or_one!(
-//             self.duration(),
-//             PropName::Rfc5545(Rfc5545PropName::Duration)
-//         )?;
-//         let repeat = zero_or_one!(
-//             self.repeat(),
-//             PropName::Rfc5545(Rfc5545PropName::RepeatCount)
-//         )?;
-//
-//         // check multiplicities for other fields as necessary
-//         let _ = zero_or_one!(
-//             self.uid(),
-//             PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier)
-//         )?;
-//         let _ = zero_or_one!(
-//             self.acknowledged(),
-//             PropName::Rfc9074(Rfc9074PropName::Acknowledged)
-//         )?;
-//         let _ = zero_or_one!(
-//             self.proximity(),
-//             PropName::Rfc9074(Rfc9074PropName::Proximity)
-//         )?;
-//
-//         enum ActionKind {
-//             Audio,
-//             Display,
-//             Email,
-//             Unknown,
-//         }
-//
-//         // get reference to action with correct multiplicity
-//         let action = match self.action() {
-//             Some(ActionPropMultRef::Audio(MultRef::One(_))) => Ok(ActionKind::Audio),
-//             Some(ActionPropMultRef::Display(MultRef::One(_))) => Ok(ActionKind::Display),
-//             Some(ActionPropMultRef::Email(MultRef::One(_))) => Ok(ActionKind::Email),
-//             Some(ActionPropMultRef::Unknown(MultRef::One(_))) => Ok(ActionKind::Unknown),
-//             Some(_) => Err(CalendarParseError::MoreThanOneProp {
-//                 prop: PropName::Rfc5545(Rfc5545PropName::Action),
-//                 component: ComponentKind::Alarm,
-//             }),
-//             None => Err(CalendarParseError::MissingProp {
-//                 prop: PropName::Rfc5545(Rfc5545PropName::Action),
-//                 component: ComponentKind::Alarm,
-//             }),
-//         }?;
-//
-//         // check trigger multiplicity
-//         let () = match self.trigger() {
-//             Some(TriggerPropMultRef::Relative(MultRef::One(_)))
-//             | Some(TriggerPropMultRef::Absolute(MultRef::One(_))) => Ok(()),
-//             Some(_) => Err(CalendarParseError::MoreThanOneProp {
-//                 prop: PropName::Rfc5545(Rfc5545PropName::Trigger),
-//                 component: ComponentKind::Alarm,
-//             }),
-//             None => Err(CalendarParseError::MissingProp {
-//                 prop: PropName::Rfc5545(Rfc5545PropName::Trigger),
-//                 component: ComponentKind::Alarm,
-//             }),
-//         }?;
-//
-//         // check that duration and repeat occur together
-//         let () = match (duration, repeat) {
-//             (Some(_), Some(_)) => Ok(()),
-//             (None, None) => Ok(()),
-//             (None, Some(_)) => Err(CalendarParseError::RepeatWithoutDuration),
-//             (Some(_), None) => Err(CalendarParseError::DurationWithoutRepeat),
-//         }?;
-//
-//         Ok(match action {
-//             ActionKind::Audio => {
-//                 // props: attachments (0-1)
-//
-//                 let () = match self.attachment_mut().map(Mult::one_in_place) {
-//                     Some(Ok(())) | None => Ok(()),
-//                     Some(Err(_)) => Err(CalendarParseError::TooManyAttachmentsOnAudioAlarm),
-//                 }?;
-//
-//                 Alarm::Audio(AudioAlarm {
-//                     props: self,
-//                     subcomponents,
-//                 })
-//             }
-//             ActionKind::Display => {
-//                 // props: description (1)
-//
-//                 let _ = one!(
-//                     self.description(),
-//                     PropName::Rfc5545(Rfc5545PropName::Description)
-//                 )?;
-//
-//                 Alarm::Display(DisplayAlarm {
-//                     props: self,
-//                     subcomponents,
-//                 })
-//             }
-//             ActionKind::Email => {
-//                 // props: description (1), summary (1), attendees (1+)
-//
-//                 let _ = one!(
-//                     self.description(),
-//                     PropName::Rfc5545(Rfc5545PropName::Description)
-//                 )?;
-//                 let _ = one!(self.summary(), PropName::Rfc5545(Rfc5545PropName::Summary))?;
-//
-//                 // check for one or more attendees
-//                 let () = match self.attendee_mut() {
-//                     Some(Mult::Seq(xs)) if !xs.is_empty() => Ok(()),
-//                     Some(prop @ Mult::One(_)) => {
-//                         prop.seq_in_place();
-//                         Ok(())
-//                     }
-//                     _ => Err(CalendarParseError::MissingProp {
-//                         prop: PropName::Rfc5545(Rfc5545PropName::Attendee),
-//                         component: ComponentKind::EmailAlarm,
-//                     }),
-//                 }?;
-//
-//                 Alarm::Email(EmailAlarm {
-//                     props: self,
-//                     subcomponents,
-//                 })
-//             }
-//             ActionKind::Unknown => Alarm::Other(OtherAlarm {
-//                 props: self,
-//                 subcomponents,
-//             }),
-//         })
-//     }
-// }

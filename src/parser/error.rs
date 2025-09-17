@@ -76,6 +76,8 @@ pub enum CalendarParseError<S> {
     EventTerminationCollision,
     /// Both DTDUE and DURATION occurred in the same VTODO.
     TodoTerminationCollision,
+    /// The ORDER parameter occurred on a property that cannot occur more than once.
+    OrderOnNonRepeatableProp,
 }
 
 /// A component kind, including the static subcomponents.
