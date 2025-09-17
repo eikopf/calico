@@ -12,11 +12,6 @@ use super::{
     },
 };
 
-// NOTE: the ORDER and DERIVED parameters (RFC 9073 §5) can appear on a large number of properties,
-// and DERIVED in particular can appear on literally any property. how should this be handled
-// architecturally? should Prop get a field corresponding to DERIVED? what if additional "universal"
-// parameters of this kind are added?
-
 pub type MultiProp<S, V, P = ()> = Prop<S, V, MultiParams<P>>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]

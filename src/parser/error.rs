@@ -27,6 +27,7 @@ pub enum CalendarParseError<S> {
     AttachParam(AttachParamError<S>),
     DtParam(DtParamError<S>),
     RDateParam(RDateParamError<S>),
+    SDParam(SDParamError<S>),
     TriggerParam(TriggerParamError<S>),
     /// Received the interval 0 in a recurrence rule, which must be a
     /// positive integer.
@@ -210,4 +211,15 @@ pub enum TriggerParamError<S> {
     DuplicateParam(StaticParamName),
     /// Received an unexpected known parameter.
     Unexpected(UnexpectedKnownParamError<S>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SDParamError<S> {
+    InvalidValueType(ValueType<S>),
+    MissingFormatTypeOnNonUri,
+    MissingSchemaOnNonUri,
+    MissingEncodingOnBinary,
+    EncodingOnNonBinary,
+    MissingValueType,
+    Bit8Encoding,
 }

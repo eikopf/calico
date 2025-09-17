@@ -32,7 +32,7 @@ use crate::{
         rrule::RRule,
     },
     parser::{
-        error::{AttachParamError, TriggerParamError, UnexpectedKnownParamError},
+        error::{AttachParamError, SDParamError, TriggerParamError, UnexpectedKnownParamError},
         parameter::parameter,
         primitive::{
             alarm_action, ascii_lower, cal_address, class_value, color, completion_percentage,
@@ -1865,8 +1865,159 @@ where
 
             res.finish_value(KnownProp::CalendarAddress)
         }
-        PropName::Rfc9073(prop @ Rfc9073PropName::StyledDescription) => todo!(),
-        PropName::Rfc9073(prop @ Rfc9073PropName::StructuredData) => todo!(),
+        PropName::Rfc9073(Rfc9073PropName::StyledDescription) => {
+            enum UriOrText {
+                Uri,
+                Text,
+            }
+
+            type State<S> = StyledDescriptionParams<S>;
+
+            fn step<S>(
+                param: KnownParam<S>,
+                state: &mut State<S>,
+            ) -> Result<(), CalendarParseError<S>> {
+                let name = param.name();
+
+                match param {
+                    KnownParam::AltRep(alternate_representation) => {
+                        match state.alternate_representation {
+                            Some(_) => Err(CalendarParseError::DuplicateParam(name)),
+                            None => {
+                                state.alternate_representation = Some(alternate_representation);
+                                Ok(())
+                            }
+                        }
+                    }
+                    KnownParam::Language(language) => match state.language {
+                        Some(_) => Err(CalendarParseError::DuplicateParam(name)),
+                        None => {
+                            state.language = Some(language);
+                            Ok(())
+                        }
+                    },
+                    KnownParam::FormatType(format_type) => match state.format_type {
+                        Some(_) => Err(CalendarParseError::DuplicateParam(name)),
+                        None => {
+                            state.format_type = Some(format_type);
+                            Ok(())
+                        }
+                    },
+                    unexpected_param => {
+                        Err(CalendarParseError::Unexpected(UnexpectedKnownParamError {
+                            current_property: PropName::Rfc9073(Rfc9073PropName::StyledDescription),
+                            unexpected_param,
+                        }))
+                    }
+                }
+            }
+
+            let res = parse_property(
+                input,
+                step,
+                |v| match v {
+                    Some(ValueType::Uri) => Ok(UriOrText::Uri),
+                    Some(ValueType::Text) => Ok(UriOrText::Text),
+                    Some(_) | None => Err(CalendarParseError::UnexpectedValueType),
+                },
+                empty,
+            )?;
+
+            res.try_finish(|(), value_type, params| {
+                let value = match value_type {
+                    UriOrText::Uri => uri::<_, _, false>
+                        .map(StyledDescriptionValue::Uri)
+                        .parse_next(input)?,
+                    UriOrText::Text => text.map(StyledDescriptionValue::Text).parse_next(input)?,
+                };
+
+                Ok(KnownProp::StyledDescription(value, params))
+            })?
+        }
+        PropName::Rfc9073(Rfc9073PropName::StructuredData) => {
+            enum SDType {
+                Binary,
+                Text,
+                Uri,
+            }
+
+            struct State<S> {
+                encoding_seen: Option<()>,
+                format_type: Option<FormatType<S>>,
+                schema: Option<Uri<S>>,
+            }
+
+            impl<S> Default for State<S> {
+                fn default() -> Self {
+                    Self {
+                        encoding_seen: Default::default(),
+                        format_type: Default::default(),
+                        schema: Default::default(),
+                    }
+                }
+            }
+
+            fn step<S>(
+                param: KnownParam<S>,
+                state: &mut State<S>,
+            ) -> Result<(), CalendarParseError<S>> {
+                let name = param.name();
+
+                match param {
+                    KnownParam::Encoding(Encoding::Base64) => match state.encoding_seen {
+                        Some(_) => Err(CalendarParseError::DuplicateParam(name)),
+                        None => {
+                            state.encoding_seen = Some(());
+                            Ok(())
+                        }
+                    },
+                    KnownParam::Encoding(Encoding::Bit8) => {
+                        Err(CalendarParseError::SDParam(SDParamError::Bit8Encoding))
+                    }
+                    KnownParam::Schema(schema) => match state.schema {
+                        Some(_) => Err(CalendarParseError::DuplicateParam(name)),
+                        None => {
+                            state.schema = Some(schema);
+                            Ok(())
+                        }
+                    },
+                    KnownParam::FormatType(format_type) => match state.format_type {
+                        Some(_) => Err(CalendarParseError::DuplicateParam(name)),
+                        None => {
+                            state.format_type = Some(format_type);
+                            Ok(())
+                        }
+                    },
+                    unexpected_param => {
+                        Err(CalendarParseError::Unexpected(UnexpectedKnownParamError {
+                            current_property: PropName::Rfc9073(Rfc9073PropName::StyledDescription),
+                            unexpected_param,
+                        }))
+                    }
+                }
+            }
+
+            let res = parse_property(
+                input,
+                step,
+                |v| match v {
+                    Some(ValueType::Binary) => Ok(SDType::Binary),
+                    Some(ValueType::Text) => Ok(SDType::Text),
+                    Some(ValueType::Uri) => Ok(SDType::Uri),
+                    Some(other) => Err(CalendarParseError::SDParam(
+                        SDParamError::InvalidValueType(other),
+                    )),
+                    None => Err(CalendarParseError::SDParam(SDParamError::MissingValueType)),
+                },
+                empty,
+            )?;
+
+            res.try_finish(|(), value_type, state| match value_type {
+                SDType::Binary => todo!(),
+                SDType::Text => todo!(),
+                SDType::Uri => todo!(),
+            })?
+        }
         PropName::Rfc9074(prop @ Rfc9074PropName::Acknowledged) => {
             let res = parse_property(
                 input,
