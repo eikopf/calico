@@ -2,29 +2,28 @@
 
 use std::fmt::Debug;
 
-pub(crate) use internal::{HashCaseless, PropertyTable, RawValue, StaticProp};
+pub(crate) use internal::{PropertyTable, RawValue, StaticProp, UnknownPropSeq};
 
 use crate::{
     model::primitive::{ProximityValue, UnknownAction},
-    parser::escaped::{Equiv, LineFoldCaseless},
+    parser::escaped::Equiv,
 };
 
 use super::{
     css::Css3Color,
     primitive::{
-        AlarmAction, AttachValue, AudioAction, Binary, CalAddress, ClassValue,
-        CompletionPercentage, DateTime, DateTimeOrDate, DisplayAction, Duration, EmailAction,
-        EventStatus, ExDateSeq, Geo, ImageData, Integer, JournalStatus, Method, ParticipantType,
-        Period, Priority, RDateSeq, RequestStatus, ResourceType, Status, StyledDescriptionValue,
-        Text, TimeTransparency, TodoStatus, TzId, Uid, Uri, Utc, UtcOffset, Value,
+        AttachValue, AudioAction, CalAddress, ClassValue, CompletionPercentage, DateTime,
+        DateTimeOrDate, DisplayAction, Duration, EmailAction, EventStatus, ExDateSeq, Geo,
+        ImageData, Integer, JournalStatus, Method, Period, Priority, RDateSeq, RequestStatus, Text,
+        TimeTransparency, TodoStatus, TzId, Uid, Uri, Utc, UtcOffset,
     },
     property::{
         AttachParams, AttendeeParams, ConfParams, DtParams, FBTypeParams, ImageParams, LangParams,
-        MultiProp, OrganizerParams, Prop, RecurrenceIdParams, RelTypeParams, StructuredDataParams,
-        StyledDescriptionParams, TextParams, TriggerParams, TriggerPropMut, TriggerPropRef,
-        UriStructuredDataParams,
+        MultiProp, OrganizerParams, Prop, RecurrenceIdParams, RelTypeParams, TextParams,
+        TriggerPropMut, TriggerPropRef,
     },
     rrule::RRule,
+    table::HashCaseless,
 };
 
 mod internal;
@@ -112,7 +111,7 @@ impl<S> Calendar<S> {
 
 impl<S> Calendar<S>
 where
-    S: HashCaseless + Equiv<LineFoldCaseless> + AsRef<[u8]>,
+    S: HashCaseless + Equiv,
 {
     mandatory_accessors! {
         [ProdId, prod_id, prod_id_mut, Prop<S, Text<S>>],
@@ -184,7 +183,7 @@ impl<S> Event<S> {
 
 impl<S> Event<S>
 where
-    S: HashCaseless + Equiv<LineFoldCaseless> + AsRef<[u8]>,
+    S: HashCaseless + Equiv,
 {
     mandatory_accessors! {
         [DtStamp, timestamp, timestamp_mut, Prop<S, DateTime<Utc>>],
@@ -280,7 +279,7 @@ impl<S> Todo<S> {
 
 impl<S> Todo<S>
 where
-    S: HashCaseless + Equiv<LineFoldCaseless> + AsRef<[u8]>,
+    S: HashCaseless + Equiv,
 {
     mandatory_accessors! {
         [DtStamp, timestamp, timestamp_mut, Prop<S, DateTime<Utc>>],
@@ -435,7 +434,7 @@ impl<S> AudioAlarm<S> {
 
 impl<S> AudioAlarm<S>
 where
-    S: HashCaseless + Equiv<LineFoldCaseless> + AsRef<[u8]>,
+    S: HashCaseless + Equiv,
 {
     mandatory_accessors! {
         [Action, action, action_mut, Prop<S, AudioAction>],
@@ -482,7 +481,7 @@ impl<S> DisplayAlarm<S> {
 
 impl<S> DisplayAlarm<S>
 where
-    S: HashCaseless + Equiv<LineFoldCaseless> + AsRef<[u8]>,
+    S: HashCaseless + Equiv,
 {
     mandatory_accessors! {
         [Action, action, action_mut, Prop<S, DisplayAction>],
@@ -529,7 +528,7 @@ impl<S> EmailAlarm<S> {
 
 impl<S> EmailAlarm<S>
 where
-    S: HashCaseless + Equiv<LineFoldCaseless> + AsRef<[u8]>,
+    S: HashCaseless + Equiv,
 {
     mandatory_accessors! {
         [Action, action, action_mut, Prop<S, EmailAction>],
@@ -582,12 +581,11 @@ impl<S> OtherAlarm<S> {
 
 impl<S> OtherAlarm<S>
 where
-    S: HashCaseless + Equiv<LineFoldCaseless> + AsRef<[u8]>,
+    S: HashCaseless + Equiv,
 {
     mandatory_accessors! {
         [Action, action, action_mut, Prop<S, UnknownAction<S>>],
         [Description, description, description_mut, Prop<S, Text<S>, TextParams<S>>],
-        //[Trigger, trigger, trigger_mut, TriggerProp<S>],
         [Summary, summary, summary_mut, Prop<S, Text<S>, TextParams<S>>],
     }
 
@@ -621,7 +619,7 @@ impl<S> Journal<S> {
 
 impl<S> Journal<S>
 where
-    S: HashCaseless + Equiv<LineFoldCaseless> + AsRef<[u8]>,
+    S: HashCaseless + Equiv,
 {
     mandatory_accessors! {
         [DtStamp, timestamp, timestamp_mut, Prop<S, DateTime<Utc>>],
@@ -670,7 +668,7 @@ impl<S> FreeBusy<S> {
 
 impl<S> FreeBusy<S>
 where
-    S: HashCaseless + Equiv<LineFoldCaseless> + AsRef<[u8]>,
+    S: HashCaseless + Equiv,
 {
     mandatory_accessors! {
         [DtStamp, timestamp, timestamp_mut, Prop<S, DateTime<Utc>>],
@@ -719,7 +717,7 @@ impl<S> TimeZone<S> {
 
 impl<S> TimeZone<S>
 where
-    S: HashCaseless + Equiv<LineFoldCaseless> + AsRef<[u8]>,
+    S: HashCaseless + Equiv,
 {
     mandatory_accessors! {
         [TzId, id, id_mut, Prop<S, TzId<S>>],
@@ -750,7 +748,7 @@ impl<S> TzRule<S> {
 
 impl<S> TzRule<S>
 where
-    S: HashCaseless + Equiv<LineFoldCaseless> + AsRef<[u8]>,
+    S: HashCaseless + Equiv,
 {
     mandatory_accessors! {
         [DtStart, start, start_mut, Prop<S, DateTimeOrDate, DtParams<S>>],

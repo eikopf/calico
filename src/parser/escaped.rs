@@ -9,48 +9,106 @@ use winnow::{
     },
 };
 
-/// A notion of equivalence modulo an equivalence relation `R`. This pattern
-/// is borrowed from [`equivalence`](https://crates.io/crates/equivalence).
-pub trait Equiv<R, Rhs = Self> {
-    fn equiv(&self, other: Rhs, ctx: R) -> bool;
-}
-
-/// An equivalence relation that ignores line fold escape sequences.
-pub struct LineFold;
-/// The combination of [`LineFold`] with case insensitivity.
-pub struct LineFoldCaseless;
-
-impl<Lhs, Rhs> Equiv<LineFold, Rhs> for Lhs
-where
-    Lhs: AsRef<[u8]>,
-    Rhs: AsRef<[u8]>,
-{
-    fn equiv(&self, other: Rhs, _: LineFold) -> bool {
-        let mut lhs = self.as_ref().as_escaped().iter_offsets().map(|(_, x)| x);
-        let mut rhs = other.as_ref().as_escaped().iter_offsets().map(|(_, x)| x);
-
-        loop {
-            match (lhs.next(), rhs.next()) {
-                (Some(l), Some(r)) => {
-                    if l != r {
-                        return false;
-                    }
-                }
-                (None, None) => return true,
-                _ => return false,
+macro_rules! impl_equiv {
+    ($t:ty => $m:ident) => {
+        impl Equiv<$t> for $t {
+            fn equiv(&self, other: &$t) -> bool {
+                let lhs: &[u8] = self.$m();
+                let rhs: &[u8] = other.$m();
+                lhs.equiv(rhs)
             }
         }
+    };
+
+    ($t1:ty => $m1:ident, $t2:ty => $m2:ident) => {
+        impl Equiv<$t1> for $t2 {
+            fn equiv(&self, other: &$t1) -> bool {
+                let lhs: &[u8] = self.$m2();
+                let rhs: &[u8] = other.$m1();
+                lhs.equiv(rhs)
+            }
+        }
+
+        impl Equiv<$t2> for $t1 {
+            fn equiv(&self, other: &$t2) -> bool {
+                let lhs: &[u8] = self.$m1();
+                let rhs: &[u8] = other.$m2();
+                lhs.equiv(rhs)
+            }
+        }
+    };
+}
+
+macro_rules! impl_equiv_const_n {
+    ($t:ty => $m:ident) => {
+        impl<const N: usize> Equiv<$t> for $t {
+            fn equiv(&self, other: &$t) -> bool {
+                let lhs: &[u8] = self.$m();
+                let rhs: &[u8] = other.$m();
+                lhs.equiv(rhs)
+            }
+        }
+    };
+
+    ($t1:ty => $m1:ident, $t2:ty => $m2:ident) => {
+        impl<const N: usize> Equiv<$t1> for $t2 {
+            fn equiv(&self, other: &$t1) -> bool {
+                let lhs: &[u8] = self.$m2();
+                let rhs: &[u8] = other.$m1();
+                lhs.equiv(rhs)
+            }
+        }
+
+        impl<const N: usize> Equiv<$t2> for $t1 {
+            fn equiv(&self, other: &$t2) -> bool {
+                let lhs: &[u8] = self.$m1();
+                let rhs: &[u8] = other.$m2();
+                lhs.equiv(rhs)
+            }
+        }
+    };
+}
+
+pub trait Equiv<Rhs = Self>
+where
+    Rhs: ?Sized,
+{
+    fn equiv(&self, other: &Rhs) -> bool;
+}
+
+// reflexive impls
+impl_equiv!(str => as_ref);
+impl_equiv!(Escaped<'_> => as_ref);
+impl_equiv!(String => as_ref);
+impl_equiv_const_n!([u8; N] => as_slice);
+
+// heterogeneous impls
+impl_equiv!(str => as_ref, [u8] => into);
+impl_equiv!(str => as_ref, Escaped<'_> => as_ref);
+impl_equiv!(str => as_ref, String => as_ref);
+impl_equiv!(&str => as_ref, [u8] => into);
+impl_equiv!(&str => as_ref, Escaped<'_> => as_ref);
+impl_equiv!(&str => as_ref, String => as_ref);
+impl_equiv!([u8] => into, Escaped<'_> => as_ref);
+impl_equiv!([u8] => into, String => as_ref);
+impl_equiv!(Escaped<'_> => as_ref, String => as_ref);
+
+// heterogeneous array impls
+impl_equiv_const_n!([u8; N] => as_slice, str => as_ref);
+impl_equiv_const_n!([u8; N] => as_slice, [u8] => into);
+impl_equiv_const_n!([u8; N] => as_slice, Escaped<'_> => as_ref);
+impl_equiv_const_n!([u8; N] => as_slice, String => as_ref);
+
+impl<T> Equiv<T> for std::convert::Infallible {
+    fn equiv(&self, _other: &T) -> bool {
+        unreachable!()
     }
 }
 
-impl<Lhs, Rhs> Equiv<LineFoldCaseless, Rhs> for Lhs
-where
-    Lhs: AsRef<[u8]>,
-    Rhs: AsRef<[u8]>,
-{
-    fn equiv(&self, other: Rhs, _: LineFoldCaseless) -> bool {
-        let mut lhs = self.as_ref().as_escaped().iter_offsets().map(|(_, x)| x);
-        let mut rhs = other.as_ref().as_escaped().iter_offsets().map(|(_, x)| x);
+impl Equiv for [u8] {
+    fn equiv(&self, other: &Self) -> bool {
+        let mut lhs = Escaped(self).iter_offsets().map(|(_, x)| x);
+        let mut rhs = Escaped(other).iter_offsets().map(|(_, x)| x);
 
         loop {
             match (lhs.next(), rhs.next()) {
@@ -66,6 +124,16 @@ where
                 _ => return false,
             }
         }
+    }
+}
+
+impl<Lhs, Rhs> Equiv<&Rhs> for &Lhs
+where
+    Lhs: ?Sized + Equiv<Rhs>,
+    Rhs: ?Sized,
+{
+    fn equiv(&self, other: &&Rhs) -> bool {
+        (*self).equiv(other)
     }
 }
 
@@ -397,24 +465,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn line_fold_equivalence() {
-        assert!("".equiv("", LineFold));
-        assert!("abcde".equiv("abcde", LineFold));
-        assert!(!"abcde".equiv("ABcdE", LineFold));
-        assert!(!"abc".equiv("abcde", LineFold));
-        assert!(!"abcdef".equiv("abcde", LineFold));
-        assert!("abcde".equiv("ab\r\n c\r\n\tde", LineFold));
-        assert!("abcde".equiv("ab\r\n c\r\n\tde".as_escaped(), LineFold));
-    }
-
-    #[test]
     fn line_fold_caseless_equivalence() {
-        assert!("".equiv("", LineFoldCaseless));
-        assert!("abcde".equiv("ABcdE", LineFoldCaseless));
-        assert!(!"abc".equiv("abcde", LineFoldCaseless));
-        assert!(!"abcdef".equiv("abcde", LineFoldCaseless));
-        assert!("abcde".equiv("ab\r\n C\r\n\tde", LineFoldCaseless));
-        assert!("abcde".equiv("aB\r\n c\r\n\tde".as_escaped(), LineFoldCaseless));
+        assert!("".equiv(""));
+        assert!("abcde".equiv("ABcdE"));
+        assert!(!"abc".equiv("abcde"));
+        assert!(!"abcdef".equiv("abcde"));
+        assert!("abcde".equiv("ab\r\n C\r\n\tde"));
+        assert!("abcde".equiv(&"aB\r\n c\r\n\tde".as_escaped()));
     }
 
     #[test]

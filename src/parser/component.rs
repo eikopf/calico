@@ -15,8 +15,8 @@ use crate::{
     model::{
         component::{
             Alarm, AudioAlarm, Calendar, Component, DisplayAlarm, EmailAlarm, Event, FreeBusy,
-            HashCaseless, Journal, OtherAlarm, OtherComponent, PropertyTable, RawValue, StaticProp,
-            TimeZone, Todo, TzRule, TzRuleKind, UnknownName,
+            Journal, OtherAlarm, OtherComponent, PropertyTable, RawValue, StaticProp, TimeZone,
+            Todo, TzRule, TzRuleKind, UnknownName, UnknownPropSeq,
         },
         primitive::{
             AlarmAction, AttachValue, AudioAction, CalAddress, DisplayAction, EmailAction,
@@ -26,10 +26,11 @@ use crate::{
             AttachParams, AttendeeParams, MultiParams, MultiProp, Prop, TextParams, UnknownProp,
             UnknownPropKind,
         },
+        table::HashCaseless,
     },
     parser::{
         error::ComponentKind,
-        escaped::{Equiv, LineFoldCaseless},
+        escaped::Equiv,
         primitive::{ascii_lower, iana_token, x_name},
         property::{
             KnownProp, Prop as ParserProp, PropName, Rfc5545PropName, Rfc7986PropName,
@@ -65,14 +66,15 @@ macro_rules! step_inner {
                 value,
                 params,
             }) => {
-                $state.insert_unknown(
+                $state.append_unknown(
                     name,
-                    UnknownPropKind::Iana,
                     UnknownProp {
                         value: Box::new(value),
                         params,
                         unknown_params: $unknown_params,
                     },
+                    |props, prop| props.props.push(prop),
+                    || UnknownPropSeq { kind: UnknownPropKind::Iana, props: vec![] },
                 );
 
                 Ok(())
@@ -82,14 +84,15 @@ macro_rules! step_inner {
                 value,
                 params,
             }) => {
-                $state.insert_unknown(
+                $state.append_unknown(
                     name,
-                    UnknownPropKind::X,
                     UnknownProp {
                         value: Box::new(value),
                         params,
                         unknown_params: $unknown_params,
                     },
+                    |props, prop| props.props.push(prop),
+                    || UnknownPropSeq { kind: UnknownPropKind::X, props: vec![] },
                 );
 
                 Ok(())
@@ -102,7 +105,7 @@ macro_rules! step_inner {
 macro_rules! check_mandatory_fields {
     ($input:expr, $state:ident, $component:ident; $($key:ident => $prop:expr),* $(,)?) => {
         $(
-            if !$state.contains_known(StaticProp::$key) {
+            if !$state.contains_known_key(StaticProp::$key) {
                 return Err(E::from_external_error(
                     $input,
                     CalendarParseError::MissingProp {
@@ -117,7 +120,7 @@ macro_rules! check_mandatory_fields {
 
 macro_rules! try_insert_once {
     ($state:ident, $component:ident, $key:ident, $name:expr, $ret:expr $(,)?) => {
-        match $state.contains_known(StaticProp::$key) {
+        match $state.contains_known_key(StaticProp::$key) {
             true => Err(CalendarParseError::MoreThanOneProp {
                 prop: $name,
                 component: super::error::ComponentKind::$component,
@@ -222,7 +225,7 @@ where
         + Stream
         + Hash
         + HashCaseless
-        + Equiv<LineFoldCaseless>
+        + Equiv
         + AsRef<[u8]>,
     <<I as Stream>::Slice as Stream>::Token: AsChar,
     E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
@@ -232,7 +235,7 @@ where
         state: &mut PropertyTable<S>,
     ) -> Result<(), CalendarParseError<S>>
     where
-        S: HashCaseless + PartialEq + Debug + Equiv<LineFoldCaseless> + AsRef<[u8]>,
+        S: HashCaseless + PartialEq + Debug + Equiv + AsRef<[u8]>,
     {
         define_local_helpers!(Calendar, state, unknown_params, universals);
 
@@ -318,7 +321,7 @@ where
         + Stream
         + Hash
         + HashCaseless
-        + Equiv<LineFoldCaseless>
+        + Equiv
         + AsRef<[u8]>,
     <<I as Stream>::Slice as Stream>::Token: AsChar,
     E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
@@ -406,7 +409,7 @@ where
         + Eq
         + SliceLen
         + Stream
-        + Equiv<LineFoldCaseless>
+        + Equiv
         + AsRef<[u8]>
         + Hash
         + HashCaseless,
@@ -418,7 +421,7 @@ where
         state: &mut PropertyTable<S>,
     ) -> Result<(), CalendarParseError<S>>
     where
-        S: HashCaseless + PartialEq + Debug + Equiv<LineFoldCaseless> + AsRef<[u8]>,
+        S: HashCaseless + PartialEq + Debug + Equiv + AsRef<[u8]>,
     {
         define_local_helpers!(Event, state, unknown_params, universals);
 
@@ -460,7 +463,7 @@ where
                 once!(Sequence, PropName::Rfc5545(Rfc5545PropName::SequenceNumber), value, ())
             },
             ParserProp::Known(KnownProp::Status(value)) => {
-                if state.contains_known(StaticProp::Status) {
+                if state.contains_known_key(StaticProp::Status) {
                     return Err(CalendarParseError::MoreThanOneProp { prop: PropName::Rfc5545(Rfc5545PropName::Status), component: ComponentKind::Event });
                 }
 
@@ -492,13 +495,13 @@ where
                 once!(Color, PropName::Rfc7986(Rfc7986PropName::Color), value, ())
             },
             ParserProp::Known(KnownProp::DtEnd(value, params)) => {
-                match state.contains_known(StaticProp::Duration) {
+                match state.contains_known_key(StaticProp::Duration) {
                     true => Err(CalendarParseError::EventTerminationCollision),
                     false => once!(DtEnd, PropName::Rfc5545(Rfc5545PropName::DateTimeEnd), value, params),
                 }
             },
             ParserProp::Known(KnownProp::Duration(value)) => {
-                match state.contains_known(StaticProp::DtEnd) {
+                match state.contains_known_key(StaticProp::DtEnd) {
                     true => Err(CalendarParseError::EventTerminationCollision),
                     false => once!(Duration, PropName::Rfc5545(Rfc5545PropName::Duration), value, ()),
                 }
@@ -578,7 +581,7 @@ where
         + Eq
         + SliceLen
         + Stream
-        + Equiv<LineFoldCaseless>
+        + Equiv
         + AsRef<[u8]>
         + Hash
         + HashCaseless,
@@ -590,7 +593,7 @@ where
         state: &mut PropertyTable<S>,
     ) -> Result<(), CalendarParseError<S>>
     where
-        S: HashCaseless + PartialEq + Debug + Equiv<LineFoldCaseless> + AsRef<[u8]>,
+        S: HashCaseless + PartialEq + Debug + Equiv + AsRef<[u8]>,
     {
         define_local_helpers!(Todo, state, unknown_params, universals);
 
@@ -641,7 +644,7 @@ where
                 once!(Sequence, PropName::Rfc5545(Rfc5545PropName::SequenceNumber), value, ())
             },
             ParserProp::Known(KnownProp::Status(value)) => {
-                if state.contains_known(StaticProp::Status) {
+                if state.contains_known_key(StaticProp::Status) {
                     return Err(CalendarParseError::MoreThanOneProp { prop: PropName::Rfc5545(Rfc5545PropName::Status), component: ComponentKind::Todo });
                 }
 
@@ -668,13 +671,13 @@ where
                 once!(Color, PropName::Rfc7986(Rfc7986PropName::Color), value, ())
             },
             ParserProp::Known(KnownProp::DtDue(value, params)) => {
-                match state.contains_known(StaticProp::Duration) {
+                match state.contains_known_key(StaticProp::Duration) {
                     true => Err(CalendarParseError::TodoTerminationCollision),
                     false => once!(DtDue, PropName::Rfc5545(Rfc5545PropName::DateTimeDue), value, params),
                 }
             },
             ParserProp::Known(KnownProp::Duration(value)) => {
-                match state.contains_known(StaticProp::DtDue) {
+                match state.contains_known_key(StaticProp::DtDue) {
                     true => Err(CalendarParseError::TodoTerminationCollision),
                     false => once!(Duration, PropName::Rfc5545(Rfc5545PropName::Duration), value, ()),
                 }
@@ -750,7 +753,7 @@ where
         + Eq
         + SliceLen
         + Stream
-        + Equiv<LineFoldCaseless>
+        + Equiv
         + AsRef<[u8]>
         + Hash
         + HashCaseless,
@@ -762,7 +765,7 @@ where
         state: &mut PropertyTable<S>,
     ) -> Result<(), CalendarParseError<S>>
     where
-        S: HashCaseless + PartialEq + Debug + Equiv<LineFoldCaseless> + AsRef<[u8]>,
+        S: HashCaseless + PartialEq + Debug + Equiv + AsRef<[u8]>,
     {
         define_local_helpers!(Journal, state, unknown_params, universals);
 
@@ -795,7 +798,7 @@ where
                 once!(Sequence, PropName::Rfc5545(Rfc5545PropName::SequenceNumber), value, ())
             },
             ParserProp::Known(KnownProp::Status(value)) => {
-                if state.contains_known(StaticProp::Status) {
+                if state.contains_known_key(StaticProp::Status) {
                     return Err(CalendarParseError::MoreThanOneProp { prop: PropName::Rfc5545(Rfc5545PropName::Status), component: ComponentKind::Journal });
                 }
 
@@ -881,7 +884,7 @@ where
         + Eq
         + SliceLen
         + Stream
-        + Equiv<LineFoldCaseless>
+        + Equiv
         + AsRef<[u8]>
         + Hash
         + HashCaseless,
@@ -893,7 +896,7 @@ where
         state: &mut PropertyTable<S>,
     ) -> Result<(), CalendarParseError<S>>
     where
-        S: HashCaseless + PartialEq + Debug + Equiv<LineFoldCaseless> + AsRef<[u8]>,
+        S: HashCaseless + PartialEq + Debug + Equiv + AsRef<[u8]>,
     {
         define_local_helpers!(FreeBusy, state, unknown_params, universals);
 
@@ -965,7 +968,7 @@ where
         + Eq
         + SliceLen
         + Stream
-        + Equiv<LineFoldCaseless>
+        + Equiv
         + AsRef<[u8]>
         + Hash
         + HashCaseless,
@@ -977,7 +980,7 @@ where
         state: &mut PropertyTable<S>,
     ) -> Result<(), CalendarParseError<S>>
     where
-        S: HashCaseless + PartialEq + Debug + Equiv<LineFoldCaseless> + AsRef<[u8]>,
+        S: HashCaseless + PartialEq + Debug + Equiv + AsRef<[u8]>,
     {
         macro_rules! once {
             ($name:ident, $long_name:expr, $value:expr, $params:expr) => {
@@ -1014,7 +1017,7 @@ where
         state: &mut PropertyTable<S>,
     ) -> Result<(), CalendarParseError<S>>
     where
-        S: HashCaseless + PartialEq + Debug + Equiv<LineFoldCaseless> + AsRef<[u8]>,
+        S: HashCaseless + PartialEq + Debug + Equiv + AsRef<[u8]>,
     {
         define_local_helpers!(StandardOrDaylight, state, unknown_params, universals);
 
@@ -1068,7 +1071,7 @@ where
             + PartialEq
             + Eq
             + Debug
-            + Equiv<LineFoldCaseless>
+            + Equiv
             + AsRef<[u8]>,
         <<I as Stream>::Slice as Stream>::Token: AsChar,
         E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
@@ -1114,7 +1117,7 @@ where
         + Eq
         + SliceLen
         + Stream
-        + Equiv<LineFoldCaseless>
+        + Equiv
         + AsRef<[u8]>
         + Hash
         + HashCaseless,
@@ -1126,13 +1129,13 @@ where
         state: &mut PropertyTable<S>,
     ) -> Result<(), CalendarParseError<S>>
     where
-        S: HashCaseless + PartialEq + Debug + Equiv<LineFoldCaseless> + AsRef<[u8]>,
+        S: HashCaseless + PartialEq + Debug + Equiv + AsRef<[u8]>,
     {
         define_local_helpers!(Alarm, state, unknown_params, universals);
 
         step_inner! {state, Alarm, prop, unknown_params, universals;
             ParserProp::Known(KnownProp::Action(value)) => {
-                if state.contains_known(StaticProp::Action) {
+                if state.contains_known_key(StaticProp::Action) {
                     return Err(CalendarParseError::MoreThanOneProp {
                         prop: PropName::Rfc5545(Rfc5545PropName::Action),
                         component: ComponentKind::Alarm,
@@ -1340,15 +1343,7 @@ where
         + Compare<Caseless<I::Slice>>
         + Compare<char>,
     I::Token: AsChar + Clone,
-    I::Slice: AsBStr
-        + Clone
-        + PartialEq
-        + Eq
-        + SliceLen
-        + Stream
-        + Equiv<LineFoldCaseless>
-        + AsRef<[u8]>
-        + Hash,
+    I::Slice: AsBStr + Clone + PartialEq + Eq + SliceLen + Stream + Equiv + AsRef<[u8]> + Hash,
     <<I as Stream>::Slice as Stream>::Token: AsChar,
     E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
@@ -1370,15 +1365,7 @@ where
         + Compare<Caseless<I::Slice>>
         + Compare<char>,
     I::Token: AsChar + Clone,
-    I::Slice: AsBStr
-        + Clone
-        + PartialEq
-        + Eq
-        + SliceLen
-        + Stream
-        + Equiv<LineFoldCaseless>
-        + AsRef<[u8]>
-        + Hash,
+    I::Slice: AsBStr + Clone + PartialEq + Eq + SliceLen + Stream + Equiv + AsRef<[u8]> + Hash,
     <<I as Stream>::Slice as Stream>::Token: AsChar,
     E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
