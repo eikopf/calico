@@ -18,6 +18,12 @@ use std::num::NonZero;
 
 use super::rrule::RRule;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnknownKind {
+    Iana,
+    X,
+}
+
 /// The INTEGER type as defined in RFC 5545 §3.3.8.
 pub type Integer = i32;
 

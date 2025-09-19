@@ -2,7 +2,7 @@
 
 use crate::model::{
     component::TzRuleKind,
-    parameter::{KnownParam, StaticParamName},
+    parameter::{KnownParam, StaticParam},
     primitive::{GeoComponent, Integer, Sign, Status, ValueType},
     rrule,
 };
@@ -21,7 +21,7 @@ pub enum CalendarParseError<S> {
     InvalidPriority(InvalidPriorityError),
     InvalidDurationTime(InvalidDurationTimeError),
     /// A parameter with a multiplicity less than 2 occurred more than once.
-    DuplicateParam(StaticParamName),
+    DuplicateParam(StaticParam),
     Unexpected(UnexpectedKnownParamError<S>),
     UnexpectedValueType,
     AttachParam(AttachParamError<S>),
@@ -176,7 +176,7 @@ pub enum AttachParamError<S> {
     /// The VALUE parameter occurred and was not BINARY.
     NonBinaryValueType,
     /// A parameter with a multiplicity less than 2 occurred more than once.
-    DuplicateParam(StaticParamName),
+    DuplicateParam(StaticParam),
     /// Received an unexpected known parameter.
     Unexpected(UnexpectedKnownParamError<S>),
 }
@@ -186,7 +186,7 @@ pub enum DtParamError<S> {
     /// The VALUE parameter occurred and was not DATETIME or DATE.
     InvalidValueType(ValueType<S>),
     /// A parameter with a multiplicity less than 2 occurred more than once.
-    DuplicateParam(StaticParamName),
+    DuplicateParam(StaticParam),
     /// Received an unexpected known parameter.
     Unexpected(UnexpectedKnownParamError<S>),
 }
@@ -196,7 +196,7 @@ pub enum RDateParamError<S> {
     /// The VALUE parameter occurred and was not DATETIME, DATE, or PERIOD.
     InvalidValueType(ValueType<S>),
     /// A parameter with a multiplicity less than 2 occurred more than once.
-    DuplicateParam(StaticParamName),
+    DuplicateParam(StaticParam),
     /// Received an unexpected known parameter.
     Unexpected(UnexpectedKnownParamError<S>),
 }
@@ -208,7 +208,7 @@ pub enum TriggerParamError<S> {
     /// The VALUE was DATETIME and the relation parameter was present.
     DateTimeWithRelation,
     /// A parameter with a multiplicity less than 2 occurred more than once.
-    DuplicateParam(StaticParamName),
+    DuplicateParam(StaticParam),
     /// Received an unexpected known parameter.
     Unexpected(UnexpectedKnownParamError<S>),
 }

@@ -1,12 +1,44 @@
-//! Parameter types for the object model.
+//! Property parameter types for the object model.
+//!
+//! # Multiplicity
+//! Whereas some properties (e.g. CATEGORIES, RFC 5545 §3.8.1.2) may appear multiple times on the
+//! same component, no property parameters have ever been defined with the ability to appear more
+//! than once on the same property. This is perfectly fine for the statically-known parameters,
+//! but for unknown IANA-registered and extension parameters it poses a problem: how should we
+//! handle instances where the same parameter name appears twice on a given property?
+//!
+//! More concretely, consider an example like `DTSTART;X-FOO=foo;X-FOO=bar:20081006`. This is
+//! well-formed with respect to the grammar defined by RFC 5545,[^rfc-5545-intention] but it isn't
+//! clear what it *means* with respect to the iCalendar object model. Should it be equivalent to a
+//! comma-separated list (i.e. `X-FOO=foo,bar`), or should one of the values take precedence over
+//! the other? If so, which one?
+//!
+//! [`ical.js`](https://github.com/kewisch/ical.js) uses a precedence system, always taking the
+//! last occurrence as the actual value. It's a little harder to determine what
+//! [`libical`](https://github.com/libical/libical) does, but we can notice that the
+//! data in `design-data/ical-parameters.csv` marks "X" parameters as not being multivalued (in
+//! contrast to parameters like MEMBER, whch have the `is_multivalued` flag set); the same is also
+//! true for "IANA" parameters.
+//!
+//! TODO: explain what calico actually does here
+//!
+//! [^rfc-5545-intention]: The relevant grammar fragment from RFC 5545 is almost always rendered as
+//! `*(";" other-param)` where `other-param` encompasses the rules for IANA and extension
+//! parameters. I suspect that this was intended to neatly admit repetitions of parameters with
+//! *distinct* names, but it also obviously allows the same parameter to occur several times.
 
-use crate::parser::parameter::ParamValue;
+use crate::define_value_type;
 
-use super::primitive::{
-    CalAddress, CalendarUserType, DisplayType, Encoding, FeatureType, FormatType, FreeBusyType,
-    Language, ParticipationRole, ParticipationStatus, PositiveInteger, RelationshipType,
-    TriggerRelation, TzId, Uri, ValueType,
+use super::{
+    primitive::{
+        CalAddress, CalendarUserType, DisplayType, Encoding, FeatureType, FormatType, FreeBusyType,
+        Language, ParticipationRole, ParticipationStatus, PositiveInteger, RelationshipType,
+        TriggerRelation, TzId, UnknownKind, Uri, ValueType,
+    },
+    table::{Item, Table},
 };
+
+pub type ParameterTable<S> = Table<StaticParam, S, RawParamValue<S>, UnknownParamValue<S>>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Param<S> {
@@ -31,6 +63,31 @@ impl<S> Param<S> {
         }
     }
 }
+
+define_value_type! {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub RawParamValue(RawValueInner) {
+    Bool(bool),
+    CalAddress(CalAddress<S>),
+    CalAddressSeq(Vec<CalAddress<S>>),
+    CUType(CalendarUserType<S>),
+    DisplayType(DisplayType<S>),
+    Encoding(Encoding),
+    FBType(FreeBusyType<S>),
+    FeatureType(FeatureType<S>),
+    FormatType(FormatType<S>),
+    Language(Language<S>),
+    ParamValue(ParamValue<S>),
+    PartStatus(ParticipationStatus<S>),
+    PositiveInteger(PositiveInteger),
+    RelType(RelationshipType<S>),
+    Role(ParticipationRole<S>),
+    TrigRel(TriggerRelation),
+    TzId(TzId<S>),
+    Unit(()),
+    Uri(Uri<S>),
+    Value(ValueType<S>),
+}}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum KnownParam<S> {
@@ -67,49 +124,73 @@ pub enum KnownParam<S> {
 }
 
 impl<S> KnownParam<S> {
-    /// Returns the [`StaticParamName`] corresponding to `self`.
-    pub const fn name(&self) -> StaticParamName {
+    pub const fn name(&self) -> StaticParam {
         match self {
-            KnownParam::AltRep(_) => {
-                StaticParamName::Rfc5545(Rfc5545ParamName::AlternateTextRepresentation)
-            }
-            KnownParam::CommonName(_) => StaticParamName::Rfc5545(Rfc5545ParamName::CommonName),
-            KnownParam::CUType(_) => StaticParamName::Rfc5545(Rfc5545ParamName::CalendarUserType),
-            KnownParam::DelFrom(_) => StaticParamName::Rfc5545(Rfc5545ParamName::Delegators),
-            KnownParam::DelTo(_) => StaticParamName::Rfc5545(Rfc5545ParamName::Delegatees),
-            KnownParam::Dir(_) => {
-                StaticParamName::Rfc5545(Rfc5545ParamName::DirectoryEntryReference)
-            }
-            KnownParam::Encoding(_) => StaticParamName::Rfc5545(Rfc5545ParamName::InlineEncoding),
-            KnownParam::FormatType(_) => StaticParamName::Rfc5545(Rfc5545ParamName::FormatType),
-            KnownParam::FBType(_) => StaticParamName::Rfc5545(Rfc5545ParamName::FreeBusyTimeType),
-            KnownParam::Language(_) => StaticParamName::Rfc5545(Rfc5545ParamName::Language),
-            KnownParam::Member(_) => {
-                StaticParamName::Rfc5545(Rfc5545ParamName::GroupOrListMembership)
-            }
-            KnownParam::PartStatus(_) => {
-                StaticParamName::Rfc5545(Rfc5545ParamName::ParticipationStatus)
-            }
-            KnownParam::RecurrenceIdentifierRange => {
-                StaticParamName::Rfc5545(Rfc5545ParamName::RecurrenceIdentifierRange)
-            }
-            KnownParam::AlarmTrigger(_) => {
-                StaticParamName::Rfc5545(Rfc5545ParamName::AlarmTriggerRelationship)
-            }
-            KnownParam::RelType(_) => StaticParamName::Rfc5545(Rfc5545ParamName::RelationshipType),
-            KnownParam::Role(_) => StaticParamName::Rfc5545(Rfc5545ParamName::ParticipationRole),
-            KnownParam::Rsvp(_) => StaticParamName::Rfc5545(Rfc5545ParamName::RsvpExpectation),
-            KnownParam::SentBy(_) => StaticParamName::Rfc5545(Rfc5545ParamName::SentBy),
-            KnownParam::TzId(_) => StaticParamName::Rfc5545(Rfc5545ParamName::TimeZoneIdentifier),
-            KnownParam::Value(_) => StaticParamName::Rfc5545(Rfc5545ParamName::ValueDataType),
-            KnownParam::Display(_) => StaticParamName::Rfc7986(Rfc7986ParamName::Display),
-            KnownParam::Email(_) => StaticParamName::Rfc7986(Rfc7986ParamName::Email),
-            KnownParam::Feature(_) => StaticParamName::Rfc7986(Rfc7986ParamName::Feature),
-            KnownParam::Label(_) => StaticParamName::Rfc7986(Rfc7986ParamName::Label),
-            KnownParam::Order(_) => StaticParamName::Rfc9073(Rfc9073ParamName::Order),
-            KnownParam::Schema(_) => StaticParamName::Rfc9073(Rfc9073ParamName::Schema),
-            KnownParam::Derived(_) => StaticParamName::Rfc9073(Rfc9073ParamName::Derived),
+            KnownParam::AltRep(_) => StaticParam::AltRep,
+            KnownParam::CommonName(_) => StaticParam::CommonName,
+            KnownParam::CUType(_) => StaticParam::CalUserType,
+            KnownParam::DelFrom(_) => StaticParam::DelFrom,
+            KnownParam::DelTo(_) => StaticParam::DelTo,
+            KnownParam::Dir(_) => StaticParam::Dir,
+            KnownParam::Encoding(_) => StaticParam::Encoding,
+            KnownParam::FormatType(_) => StaticParam::FormatType,
+            KnownParam::FBType(_) => StaticParam::FreeBusyType,
+            KnownParam::Language(_) => StaticParam::Language,
+            KnownParam::Member(_) => StaticParam::Member,
+            KnownParam::PartStatus(_) => StaticParam::PartStat,
+            KnownParam::RecurrenceIdentifierRange => StaticParam::Range,
+            KnownParam::AlarmTrigger(_) => StaticParam::Related,
+            KnownParam::RelType(_) => StaticParam::RelType,
+            KnownParam::Role(_) => StaticParam::Role,
+            KnownParam::Rsvp(_) => StaticParam::Rsvp,
+            KnownParam::SentBy(_) => StaticParam::SentBy,
+            KnownParam::TzId(_) => StaticParam::TzId,
+            KnownParam::Value(_) => StaticParam::Value,
+            KnownParam::Display(_) => StaticParam::Display,
+            KnownParam::Email(_) => StaticParam::Email,
+            KnownParam::Feature(_) => StaticParam::Feature,
+            KnownParam::Label(_) => StaticParam::Label,
+            KnownParam::Order(_) => StaticParam::Order,
+            KnownParam::Schema(_) => StaticParam::Schema,
+            KnownParam::Derived(_) => StaticParam::Derived,
         }
+    }
+
+    pub fn upcast(self) -> RawParamValue<S> {
+        match self {
+            KnownParam::AltRep(uri)
+            | KnownParam::Dir(uri)
+            | KnownParam::SentBy(uri)
+            | KnownParam::Schema(uri) => uri.into(),
+            KnownParam::CommonName(param_value)
+            | KnownParam::Email(param_value)
+            | KnownParam::Label(param_value) => param_value.into(),
+            KnownParam::CUType(calendar_user_type) => calendar_user_type.into(),
+            KnownParam::DelFrom(cal_addresses)
+            | KnownParam::DelTo(cal_addresses)
+            | KnownParam::Member(cal_addresses) => cal_addresses.into_vec().into(),
+            KnownParam::Encoding(encoding) => encoding.into(),
+            KnownParam::FormatType(format_type) => format_type.into(),
+            KnownParam::FBType(free_busy_type) => free_busy_type.into(),
+            KnownParam::Language(language) => language.into(),
+            KnownParam::PartStatus(participation_status) => participation_status.into(),
+            KnownParam::RecurrenceIdentifierRange => ().into(),
+            KnownParam::AlarmTrigger(trigger_relation) => trigger_relation.into(),
+            KnownParam::RelType(relationship_type) => relationship_type.into(),
+            KnownParam::Role(participation_role) => participation_role.into(),
+            KnownParam::Rsvp(value) | KnownParam::Derived(value) => value.into(),
+            KnownParam::TzId(tz_id) => tz_id.into(),
+            KnownParam::Value(value_type) => value_type.into(),
+            KnownParam::Display(display_type) => display_type.into(),
+            KnownParam::Feature(feature_type) => feature_type.into(),
+            KnownParam::Order(non_zero) => non_zero.into(),
+        }
+    }
+
+    pub(crate) fn into_table_item<K2, V2>(self) -> Item<StaticParam, K2, RawParamValue<S>, V2> {
+        let key = self.name();
+        let value = self.upcast();
+        Item::Known { key, value }
     }
 }
 
@@ -125,61 +206,81 @@ pub enum UnknownParam<S> {
     },
 }
 
-/// An X-name parameter.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct XParam<S> {
-    pub name: S,
-    pub value: Box<[ParamValue<S>]>,
+pub struct UnknownParamValue<S> {
+    pub kind: UnknownKind,
+    pub values: Vec<ParamValue<S>>,
 }
 
-/// A statically known property parameter name from RFC 5545.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Rfc5545ParamName {
+impl<S> UnknownParam<S> {
+    pub(crate) fn into_table_item<K1, V1>(self) -> Item<K1, S, V1, UnknownParamValue<S>> {
+        let (key, value) = match self {
+            UnknownParam::Iana { name, value } => (
+                name,
+                UnknownParamValue {
+                    kind: UnknownKind::Iana,
+                    values: value.into_vec(),
+                },
+            ),
+            UnknownParam::X { name, value } => (
+                name,
+                UnknownParamValue {
+                    kind: UnknownKind::X,
+                    values: value.into_vec(),
+                },
+            ),
+        };
+
+        Item::Unknown { key, value }
+    }
+}
+
+/// A statically known parameter name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum StaticParam {
+    // RFC 5545
     /// RFC 5545 §3.2.1 (ALTREP)
-    AlternateTextRepresentation,
+    AltRep,
     /// RFC 5545 §3.2.2 (CN)
     CommonName,
     /// RFC 5545 §3.2.3 (CUTYPE)
-    CalendarUserType,
+    CalUserType,
     /// RFC 5545 §3.2.4 (DELEGATED-FROM)
-    Delegators,
+    DelFrom,
     /// RFC 5545 §3.2.5 (DELEGATED-TO)
-    Delegatees,
+    DelTo,
     /// RFC 5545 §3.2.6 (DIR)
-    DirectoryEntryReference,
+    Dir,
     /// RFC 5545 §3.2.7 (ENCODING)
-    InlineEncoding,
+    Encoding,
     /// RFC 5545 §3.2.8 (FMTTYPE)
     FormatType,
     /// RFC 5545 §3.2.9 (FBTYPE)
-    FreeBusyTimeType,
+    FreeBusyType,
     /// RFC 5545 §3.2.10 (LANGUAGE)
     Language,
     /// RFC 5545 §3.2.11 (MEMBER)
-    GroupOrListMembership,
+    Member,
     /// RFC 5545 §3.2.12 (PARTSTAT)
-    ParticipationStatus,
+    PartStat,
     /// RFC 5545 §3.2.13 (RANGE)
-    RecurrenceIdentifierRange,
+    Range,
     /// RFC 5545 §3.2.14 (RELATED)
-    AlarmTriggerRelationship,
+    Related,
     /// RFC 5545 §3.2.15 (RELTYPE)
-    RelationshipType,
+    RelType,
     /// RFC 5545 §3.2.16 (ROLE)
-    ParticipationRole,
+    Role,
     /// RFC 5545 §3.2.17 (RSVP)
-    RsvpExpectation,
+    Rsvp,
     /// RFC 5545 §3.2.18 (SENT-BY)
     SentBy,
     /// RFC 5545 §3.2.19 (TZID)
-    TimeZoneIdentifier,
+    TzId,
     /// RFC 5545 §3.2.20 (VALUE)
-    ValueDataType,
-}
+    Value,
 
-/// A statically known property parameter name from RFC 7986.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Rfc7986ParamName {
+    // RFC 7986
     /// RFC 7986 §6.1 (DISPLAY)
     Display,
     /// RFC 7986 §6.2 (EMAIL)
@@ -188,11 +289,8 @@ pub enum Rfc7986ParamName {
     Feature,
     /// RFC 7986 §6.4 (LABEL)
     Label,
-}
 
-/// A statically known property parameter name from RFC 9073.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Rfc9073ParamName {
+    // RFC 9073
     /// RFC 9073 §5.1 (ORDER)
     Order,
     /// RFC 9073 §5.2 (SCHEMA)
@@ -204,69 +302,61 @@ pub enum Rfc9073ParamName {
 /// A property parameter name.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ParamName<S> {
-    Rfc5545(Rfc5545ParamName),
-    Rfc7986(Rfc7986ParamName),
-    Rfc9073(Rfc9073ParamName),
+    Known(StaticParam),
     Iana(S),
     X(S),
 }
 
-impl<S> ParamName<S> {
-    /// Returns `true` if the param name is [`Rfc5545`].
-    ///
-    /// [`Rfc5545`]: ParamName::Rfc5545
-    #[must_use]
-    pub fn is_rfc5545(&self) -> bool {
-        matches!(self, Self::Rfc5545(..))
-    }
-
-    /// Returns `true` if the param name is [`Rfc7986`].
-    ///
-    /// [`Rfc7986`]: ParamName::Rfc7986
-    #[must_use]
-    pub fn is_rfc7986(&self) -> bool {
-        matches!(self, Self::Rfc7986(..))
-    }
-
-    /// Returns `true` if the param name is [`Iana`].
-    ///
-    /// [`Iana`]: ParamName::Iana
-    #[must_use]
-    pub fn is_iana(&self) -> bool {
-        matches!(self, Self::Iana(..))
-    }
-
-    /// Returns `true` if the param name is [`X`].
-    ///
-    /// [`X`]: ParamName::X
-    #[must_use]
-    pub fn is_x(&self) -> bool {
-        matches!(self, Self::X(..))
-    }
+/// A parameter value string, which may either be [`Safe`] or [`Quoted`].
+///
+/// [`Safe`]: ParamValue::Safe
+/// [`Quoted`]: ParamValue::Quoted
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParamValue<S> {
+    Safe(S),
+    Quoted(S),
 }
 
-/// A static property parameter name from RFC 5545 or RFC 7986.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum StaticParamName {
-    Rfc5545(Rfc5545ParamName),
-    Rfc7986(Rfc7986ParamName),
-    Rfc9073(Rfc9073ParamName),
-}
-
-impl StaticParamName {
-    /// Returns `true` if the static param name is [`Rfc5545`].
+impl<S> ParamValue<S> {
+    /// Returns `true` if the param value is [`Safe`].
     ///
-    /// [`Rfc5545`]: StaticParamName::Rfc5545
+    /// [`Safe`]: ParamValue::Safe
     #[must_use]
-    pub fn is_rfc5545(&self) -> bool {
-        matches!(self, Self::Rfc5545(..))
+    pub fn is_safe(&self) -> bool {
+        matches!(self, Self::Safe(..))
     }
 
-    /// Returns `true` if the static param name is [`Rfc7986`].
+    /// Returns `true` if the param value is [`Quoted`].
     ///
-    /// [`Rfc7986`]: StaticParamName::Rfc7986
+    /// [`Quoted`]: ParamValue::Quoted
     #[must_use]
-    pub fn is_rfc7986(&self) -> bool {
-        matches!(self, Self::Rfc7986(..))
+    pub fn is_quoted(&self) -> bool {
+        matches!(self, Self::Quoted(..))
+    }
+
+    pub fn as_str(&self) -> &str
+    where
+        S: AsRef<str>,
+    {
+        match self {
+            ParamValue::Safe(s) => s.as_ref(),
+            ParamValue::Quoted(s) => s.as_ref(),
+        }
+    }
+
+    pub fn as_safe(&self) -> Option<&S> {
+        if let Self::Safe(v) = self {
+            Some(v)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_quoted(&self) -> Option<&S> {
+        if let Self::Quoted(v) = self {
+            Some(v)
+        } else {
+            None
+        }
     }
 }

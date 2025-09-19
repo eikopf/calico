@@ -12,9 +12,7 @@ use winnow::{
 use crate::{
     model::{
         css::Css3Color,
-        parameter::{
-            KnownParam, Param, Rfc5545ParamName, Rfc9073ParamName, StaticParamName, UnknownParam,
-        },
+        parameter::{KnownParam, Param, StaticParam, UnknownParam},
         primitive::{
             AlarmAction, AttachValue, Binary, CalAddress, ClassValue, CompletionPercentage,
             DateTime, DateTimeOrDate, Duration, Encoding, ExDateSeq, FormatType, FreeBusyType, Geo,
@@ -48,12 +46,6 @@ use super::{
     error::CalendarParseError,
     primitive::{binary, bool_caseless, date, datetime, time, uri},
 };
-
-// NOTE: the IANA iCalendar property registry lists several registered properties
-// from RFC 6321 §4.2, RFC 7808 §7, RFC 7953 §3.2, RFC 9073 §6, and RFC 9253 §8
-// that have not been included here (they would fall under the Other catch-all).
-// perhaps they should be included as static variants at some later point?
-// registry: (https://www.iana.org/assignments/icalendar/icalendar.xhtml#properties)
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Prop<S> {
@@ -367,9 +359,7 @@ where
                     Some(_) => {
                         return Err(E::from_external_error(
                             input,
-                            CalendarParseError::DuplicateParam(StaticParamName::Rfc9073(
-                                Rfc9073ParamName::Order,
-                            )),
+                            CalendarParseError::DuplicateParam(StaticParam::Order),
                         ));
                     }
                     None => {
@@ -380,9 +370,7 @@ where
                     Some(_) => {
                         return Err(E::from_external_error(
                             input,
-                            CalendarParseError::DuplicateParam(StaticParamName::Rfc9073(
-                                Rfc9073ParamName::Derived,
-                            )),
+                            CalendarParseError::DuplicateParam(StaticParam::Derived),
                         ));
                     }
                     None => {
@@ -393,9 +381,7 @@ where
                     Some(_) => {
                         return Err(E::from_external_error(
                             input,
-                            CalendarParseError::DuplicateParam(StaticParamName::Rfc5545(
-                                Rfc5545ParamName::ValueDataType,
-                            )),
+                            CalendarParseError::DuplicateParam(StaticParam::Value),
                         ));
                     }
                     None => {
@@ -463,9 +449,7 @@ where
     {
         move |param, state| match param {
             KnownParam::Language(language) => match state.language {
-                Some(_) => Err(CalendarParseError::DuplicateParam(
-                    StaticParamName::Rfc5545(Rfc5545ParamName::Language),
-                )),
+                Some(_) => Err(CalendarParseError::DuplicateParam(StaticParam::Language)),
                 None => {
                     state.language = Some(language);
                     Ok(())
@@ -508,18 +492,14 @@ where
     {
         move |param, state| match param {
             KnownParam::AltRep(uri) => match state.alt_rep {
-                Some(_) => Err(CalendarParseError::DuplicateParam(
-                    StaticParamName::Rfc5545(Rfc5545ParamName::AlternateTextRepresentation),
-                )),
+                Some(_) => Err(CalendarParseError::DuplicateParam(StaticParam::AltRep)),
                 None => {
                     state.alt_rep = Some(uri);
                     Ok(())
                 }
             },
             KnownParam::Language(language) => match state.language {
-                Some(_) => Err(CalendarParseError::DuplicateParam(
-                    StaticParamName::Rfc5545(Rfc5545ParamName::Language),
-                )),
+                Some(_) => Err(CalendarParseError::DuplicateParam(StaticParam::Language)),
                 None => {
                     state.language = Some(language);
                     Ok(())
@@ -594,9 +574,7 @@ where
     ) -> impl FnMut(KnownParam<S>, &mut DtParamState<S>) -> Result<(), CalendarParseError<S>> {
         move |param, state| match param {
             KnownParam::TzId(tz_id) => match state.tz_id {
-                Some(_) => Err(CalendarParseError::DuplicateParam(
-                    StaticParamName::Rfc5545(Rfc5545ParamName::TimeZoneIdentifier),
-                )),
+                Some(_) => Err(CalendarParseError::DuplicateParam(StaticParam::TzId)),
                 None => {
                     state.tz_id = Some(tz_id);
                     Ok(())
@@ -806,9 +784,7 @@ where
             ) -> Result<(), CalendarParseError<S>> {
                 match param {
                     KnownParam::Encoding(Encoding::Base64) => match state.encoding {
-                        Some(_) => Err(CalendarParseError::DuplicateParam(
-                            StaticParamName::Rfc5545(Rfc5545ParamName::InlineEncoding),
-                        )),
+                        Some(_) => Err(CalendarParseError::DuplicateParam(StaticParam::Encoding)),
                         None => {
                             state.encoding = Some(Base64);
                             Ok(())
@@ -818,9 +794,7 @@ where
                         AttachParamError::Bit8Encoding,
                     )),
                     KnownParam::FormatType(format_type) => match state.format_type {
-                        Some(_) => Err(CalendarParseError::DuplicateParam(
-                            StaticParamName::Rfc5545(Rfc5545ParamName::FormatType),
-                        )),
+                        Some(_) => Err(CalendarParseError::DuplicateParam(StaticParam::FormatType)),
                         None => {
                             state.format_type = Some(format_type);
                             Ok(())
@@ -1055,7 +1029,7 @@ where
                 match param {
                     KnownParam::FBType(free_busy_type) => match state {
                         Some(_) => Err(CalendarParseError::DuplicateParam(
-                            StaticParamName::Rfc5545(Rfc5545ParamName::FreeBusyTimeType),
+                            StaticParam::FreeBusyType,
                         )),
                         None => {
                             *state = Some(free_busy_type);
@@ -2427,11 +2401,14 @@ pub enum Rfc9074PropName {
 mod tests {
     use crate::{
         date,
-        model::primitive::{
-            DurationKind, DurationTime, GeoComponent, ParticipationRole, ParticipationStatus,
-            RawTime, Sign, Time, TimeFormat,
+        model::{
+            parameter::ParamValue,
+            primitive::{
+                DurationKind, DurationTime, GeoComponent, ParticipationRole, ParticipationStatus,
+                RawTime, Sign, Time, TimeFormat,
+            },
         },
-        parser::{escaped::AsEscaped, parameter::ParamValue},
+        parser::escaped::AsEscaped,
     };
 
     use super::*;

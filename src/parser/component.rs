@@ -20,11 +20,10 @@ use crate::{
         },
         primitive::{
             AlarmAction, AttachValue, AudioAction, CalAddress, DisplayAction, EmailAction,
-            EventStatus, JournalStatus, Status, Text, TodoStatus, UnknownAction,
+            EventStatus, JournalStatus, Status, Text, TodoStatus, UnknownAction, UnknownKind,
         },
         property::{
             AttachParams, AttendeeParams, MultiParams, MultiProp, Prop, TextParams, UnknownProp,
-            UnknownPropKind,
         },
         table::HashCaseless,
     },
@@ -74,7 +73,7 @@ macro_rules! step_inner {
                         unknown_params: $unknown_params,
                     },
                     |props, prop| props.props.push(prop),
-                    || UnknownPropSeq { kind: UnknownPropKind::Iana, props: vec![] },
+                    || UnknownPropSeq { kind: UnknownKind::Iana, props: vec![] },
                 );
 
                 Ok(())
@@ -92,7 +91,7 @@ macro_rules! step_inner {
                         unknown_params: $unknown_params,
                     },
                     |props, prop| props.props.push(prop),
-                    || UnknownPropSeq { kind: UnknownPropKind::X, props: vec![] },
+                    || UnknownPropSeq { kind: UnknownKind::X, props: vec![] },
                 );
 
                 Ok(())

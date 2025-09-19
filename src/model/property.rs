@@ -1,9 +1,7 @@
 //! iCalendar properties.
 
-use crate::parser::parameter::ParamValue;
-
 use super::{
-    parameter::{KnownParam, UnknownParam},
+    parameter::{KnownParam, ParamValue, UnknownParam},
     primitive::{
         Binary, CalAddress, CalendarUserType, DateTime, DisplayType, Duration, FeatureType,
         FormatType, FreeBusyType, Language, ParticipationRole, ParticipationStatus,
@@ -19,12 +17,6 @@ pub struct UnknownProp<S> {
     pub value: Box<Value<S>>,
     pub params: Vec<KnownParam<S>>,
     pub unknown_params: Vec<UnknownParam<S>>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum UnknownPropKind {
-    Iana,
-    X,
 }
 
 /// A property generic over values and parameters.

@@ -9,6 +9,7 @@
 
 pub mod component;
 pub mod css;
+pub(crate) mod macros;
 pub mod parameter;
 pub mod primitive;
 pub mod property;

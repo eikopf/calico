@@ -3,6 +3,7 @@
 use std::{fmt::Debug, hash::Hash};
 
 use crate::{
+    define_value_type,
     model::{
         css::Css3Color,
         parameter::UnknownParam,
@@ -12,29 +13,26 @@ use crate::{
             EventStatus, ExDateSeq, Geo, ImageData, Integer, JournalStatus, Method,
             ParticipantType, Period, PositiveInteger, Priority, ProximityValue, RDateSeq,
             RequestStatus, ResourceType, Status, StyledDescriptionValue, Text, TimeTransparency,
-            TodoStatus, TzId, Uid, UnknownAction, Uri, Utc, UtcOffset,
+            TodoStatus, TzId, Uid, UnknownAction, UnknownKind, Uri, Utc, UtcOffset,
         },
         property::{
             AttachParams, AttendeeParams, ConfParams, DtParams, FBTypeParams, ImageParams,
             LangParams, MultiParams, MultiProp, OrganizerParams, Prop, RecurrenceIdParams,
             RelTypeParams, StructuredDataMultiProp, StructuredDataParams, StyledDescriptionParams,
             TextParams, TriggerMultiProp, TriggerParams, TriggerPropMut, TriggerPropRef,
-            UniversalParams, UnknownProp, UnknownPropKind, UriStructuredDataParams,
+            UniversalParams, UnknownProp, UriStructuredDataParams,
         },
         rrule::RRule,
-        table::{Item, Key, KeyRef, Table},
+        table::{Key, Table},
     },
     parser::property::KnownProp,
 };
 
 pub type PropertyTable<S> = Table<StaticProp, S, RawValue<S>, UnknownPropSeq<S>>;
-pub type PropKey<S> = Key<StaticProp, S>;
-pub type PropKeyRef<'a, S> = KeyRef<'a, StaticProp, S>;
-pub type PropEntry<S> = Item<StaticProp, S, RawValue<S>, UnknownPropSeq<S>>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnknownPropSeq<S> {
-    pub kind: UnknownPropKind,
+    pub kind: UnknownKind,
     pub props: Vec<UnknownProp<S>>,
 }
 
@@ -115,8 +113,8 @@ pub enum StaticProp {
 }
 
 impl StaticProp {
-    pub const fn as_key(self) -> PropKey<std::convert::Infallible> {
-        PropKey::Known(self)
+    pub const fn as_key(self) -> Key<Self, std::convert::Infallible> {
+        Key::Known(self)
     }
 }
 
@@ -187,72 +185,6 @@ impl<S> From<&KnownProp<S>> for StaticProp {
             KnownProp::Proximity(..) => Self::Proximity,
         }
     }
-}
-
-/// Defines an enum generic over the parameter `S` with [`From`] and [`TryFrom`] impls for each of
-/// the variants in the enum. This will cause a compiler error if the same type occurs in multiple
-/// variants.
-macro_rules! define_value_type {
-    (
-        $(#[$m:meta])*
-        $v:vis
-        $name:ident ($name_inner:ident)
-        { $($variant:ident ($field:ty)),* $(,)? }
-    ) => {
-        $(#[$m])*
-        $v struct $name<S>($name_inner<S>);
-
-        $(#[$m])*
-        enum $name_inner <S> {
-            $($variant ($field)),*
-        }
-
-        $(
-            impl<S> From<$field> for $name <S> {
-                fn from(value: $field) -> Self {
-                    Self($name_inner::$variant(value))
-                }
-            }
-        )*
-
-        $(
-            impl<S> TryFrom<$name<S>> for $field {
-                type Error = ();
-
-                fn try_from(value: $name<S>) -> Result<$field, Self::Error> {
-                    if let $name($name_inner::$variant(x)) = value {
-                        Ok(x)
-                    } else {
-                        Err(())
-                    }
-                }
-            }
-
-            impl<'a, S> TryFrom<&'a $name<S>> for &'a $field {
-                type Error = ();
-
-                fn try_from(value: &'a $name<S>) -> Result<&'a $field, Self::Error> {
-                    if let $name($name_inner::$variant(x)) = value {
-                        Ok(x)
-                    } else {
-                        Err(())
-                    }
-                }
-            }
-
-            impl<'a, S> TryFrom<&'a mut $name<S>> for &'a mut $field {
-                type Error = ();
-
-                fn try_from(value: &'a mut $name<S>) -> Result<&'a mut $field, Self::Error> {
-                    if let $name($name_inner::$variant(x)) = value {
-                        Ok(x)
-                    } else {
-                        Err(())
-                    }
-                }
-            }
-        )*
-    };
 }
 
 define_value_type! {
@@ -583,7 +515,12 @@ impl<'a, S> TryFrom<&'a mut RawValue<S>> for TriggerPropMut<'a, S> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{date, model::primitive::Value, parser::escaped::AsEscaped, time};
+    use crate::{
+        date,
+        model::{primitive::Value, table::Item},
+        parser::escaped::AsEscaped,
+        time,
+    };
 
     use super::*;
 
@@ -597,13 +534,13 @@ mod tests {
             time: time!(15;20;12, Utc),
         }));
 
-        let prev = props.insert(PropEntry::Known {
+        let prev = props.insert(Item::Known {
             key: StaticProp::Uid,
             value: uid.clone(),
         });
         assert!(prev.is_none());
 
-        let prev = props.insert(PropEntry::Known {
+        let prev = props.insert(Item::Known {
             key: StaticProp::DtStamp,
             value: dtstamp.clone(),
         });
@@ -613,12 +550,12 @@ mod tests {
 
         let uid_ref = props
             .get(&StaticProp::Uid.as_key())
-            .and_then(PropEntry::as_known)
+            .and_then(Item::as_known)
             .map(|(_key, value)| value);
 
         let dtstamp_ref = props
             .get(&StaticProp::DtStamp.as_key())
-            .and_then(PropEntry::as_known)
+            .and_then(Item::as_known)
             .map(|(_key, value)| value);
 
         assert_eq!(Some(&uid), uid_ref);
@@ -653,36 +590,34 @@ mod tests {
         props.insert_unknown(
             "X-A-RANDOM-BOOLEAN",
             UnknownPropSeq {
-                kind: UnknownPropKind::X,
+                kind: UnknownKind::X,
                 props: vec![unknown_prop],
             },
         );
 
         assert_eq!(
-            props.get(&PropKey::Unknown("X-A-RANDOM-BOOLEAN")),
-            props.get(&PropKey::Unknown("x-a-random-boolean")),
+            props.get(&Key::Unknown("X-A-RANDOM-BOOLEAN")),
+            props.get(&Key::Unknown("x-a-random-boolean")),
         );
 
         assert_eq!(
-            props.get(&PropKey::Unknown("X-A-RANDOM-BOOLEAN")),
-            props.get(&PropKey::Unknown(b"X-a-RaNdOm-BoOlEaN")),
+            props.get(&Key::Unknown("X-A-RANDOM-BOOLEAN")),
+            props.get(&Key::Unknown(b"X-a-RaNdOm-BoOlEaN")),
         );
 
         assert_eq!(
-            props.get(&PropKey::Unknown("X-A-RANDOM-BOOLEAN")),
-            props.get(&PropKey::Unknown("X-a-RaNdOm-BoOlEaN".as_bytes())),
+            props.get(&Key::Unknown("X-A-RANDOM-BOOLEAN")),
+            props.get(&Key::Unknown("X-a-RaNdOm-BoOlEaN".as_bytes())),
         );
 
         assert_eq!(
-            props.get(&PropKey::Unknown("X-A-RANDOM-BOOLEAN")),
-            props.get(&PropKey::Unknown("X-a-RANDOM-boolean".to_string())),
+            props.get(&Key::Unknown("X-A-RANDOM-BOOLEAN")),
+            props.get(&Key::Unknown("X-a-RANDOM-boolean".to_string())),
         );
 
         assert_eq!(
-            props.get(&PropKey::Unknown("X-A-RANDOM-BOOLEAN")),
-            props.get(&PropKey::Unknown(
-                "x-a-ra\r\n\tndo\r\n m-boolean".as_escaped()
-            )),
+            props.get(&Key::Unknown("X-A-RANDOM-BOOLEAN")),
+            props.get(&Key::Unknown("x-a-ra\r\n\tndo\r\n m-boolean".as_escaped())),
         );
     }
 }
