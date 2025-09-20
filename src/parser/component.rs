@@ -15,15 +15,15 @@ use crate::{
     model::{
         component::{
             Alarm, AudioAlarm, Calendar, Component, DisplayAlarm, EmailAlarm, Event, FreeBusy,
-            Journal, OtherAlarm, OtherComponent, PropertyTable, RawValue, StaticProp, TimeZone,
-            Todo, TzRule, TzRuleKind, UnknownName, UnknownPropSeq,
+            Journal, OtherAlarm, OtherComponent, TimeZone, Todo, TzRule, TzRuleKind, UnknownName,
         },
         primitive::{
             AlarmAction, AttachValue, AudioAction, CalAddress, DisplayAction, EmailAction,
             EventStatus, JournalStatus, Status, Text, TodoStatus, UnknownAction, UnknownKind,
         },
         property::{
-            AttachParams, AttendeeParams, MultiParams, MultiProp, Prop, TextParams, UnknownProp,
+            AttachParams, AttendeeParams, Prop, PropertyTable, RawPropValue, StaticProp,
+            TextParams, UnknownProp, UnknownPropSeq,
         },
         table::HashCaseless,
     },
@@ -32,7 +32,7 @@ use crate::{
         escaped::Equiv,
         primitive::{ascii_lower, iana_token, x_name},
         property::{
-            KnownProp, Prop as ParserProp, PropName, Rfc5545PropName, Rfc7986PropName,
+            KnownProp, ParsedProp as ParserProp, PropName, Rfc5545PropName, Rfc7986PropName,
             Rfc9074PropName, UnknownProp as UnknownParserProp,
         },
     },
@@ -53,48 +53,54 @@ macro_rules! step_inner {
                 $p => $body,
             )*
             ParserProp::Known(prop) => {
-                let key: StaticProp = (&prop).into();
-                let value = $state.remove_known(key);
-                let value = RawValue::append_known_prop(value, prop, $univ, $unknown_params);
-                let _prev = $state.insert_known(key, value.unwrap());
-                debug_assert!(_prev.is_none());
-                Ok(())
+                // let key: StaticProp = prop.name();
+                // let value = $state.remove_known(key);
+                // let value = RawPropValue::append_known_prop(value, prop, $univ, $unknown_params);
+                // let _prev = $state.insert_known(key, value.unwrap());
+                // debug_assert!(_prev.is_none());
+                // Ok(())
+
+                todo!()
             }
             ParserProp::Unknown(UnknownParserProp::Iana {
                 name,
                 value,
                 params,
             }) => {
-                $state.append_unknown(
-                    name,
-                    UnknownProp {
-                        value: Box::new(value),
-                        params,
-                        unknown_params: $unknown_params,
-                    },
-                    |props, prop| props.props.push(prop),
-                    || UnknownPropSeq { kind: UnknownKind::Iana, props: vec![] },
-                );
+                // $state.append_unknown(
+                //     name,
+                //     UnknownProp {
+                //         value: Box::new(value),
+                //         params,
+                //         unknown_params: $unknown_params,
+                //     },
+                //     |props, prop| props.props.push(prop),
+                //     || UnknownPropSeq { kind: UnknownKind::Iana, props: vec![] },
+                // );
+                //
+                // Ok(())
 
-                Ok(())
+                todo!()
             }
             ParserProp::Unknown(UnknownParserProp::X {
                 name,
                 value,
                 params,
             }) => {
-                $state.append_unknown(
-                    name,
-                    UnknownProp {
-                        value: Box::new(value),
-                        params,
-                        unknown_params: $unknown_params,
-                    },
-                    |props, prop| props.props.push(prop),
-                    || UnknownPropSeq { kind: UnknownKind::X, props: vec![] },
-                );
+                // $state.append_unknown(
+                //     name,
+                //     UnknownProp {
+                //         value: Box::new(value),
+                //         params,
+                //         unknown_params: $unknown_params,
+                //     },
+                //     |props, prop| props.props.push(prop),
+                //     || UnknownPropSeq { kind: UnknownKind::X, props: vec![] },
+                // );
+                //
+                // Ok(())
 
-                Ok(())
+                todo!()
             }
         }
     };
@@ -137,9 +143,9 @@ macro_rules! insert_seq {
     ($state:ident, $name:ident, $ret:expr $(,)?) => {{
         let ret = $ret;
 
-        let props: Option<&mut Vec<MultiProp<_, _, _>>> = $state
+        let props: Option<&mut Vec<Prop<_, _, _>>> = $state
             .get_known_mut(StaticProp::$name)
-            .and_then(|value: &mut RawValue<_>| coerce_raw_value_into_vec(value, &ret));
+            .and_then(|value: &mut RawPropValue<_>| coerce_raw_value_into_vec(value, &ret));
 
         match props {
             Some(props) => {
@@ -154,16 +160,12 @@ macro_rules! insert_seq {
     }};
 }
 
-// TODO: there should be a way to rewrite this so that the $t parameter in seq! can be entirely
-// inferred from the types of $value and $params (recall that all props using seq have the form
-// Vec<MultiProp<S, _, _>>).
-
 fn coerce_raw_value_into_vec<'a, 't, S, T>(
-    value: &'a mut RawValue<S>,
+    value: &'a mut RawPropValue<S>,
     _: &'t T,
 ) -> Option<&'a mut Vec<T>>
 where
-    for<'b> &'b mut RawValue<S>: TryInto<&'b mut Vec<T>>,
+    for<'b> &'b mut RawPropValue<S>: TryInto<&'b mut Vec<T>>,
 {
     value.try_into().ok()
 }
@@ -173,36 +175,37 @@ macro_rules! define_local_helpers {
     ($component:ident, $state:ident, $unknown_params:ident, $univ:ident) => {
         macro_rules! once {
             ($name:ident, $long_name:expr, $value:expr, $params:expr) => {
-                try_insert_once!(
-                    $state,
-                    $component,
-                    $name,
-                    $long_name,
-                    Prop {
-                        derived: $univ.derived.unwrap_or_default(),
-                        value: $value,
-                        params: $params,
-                        unknown_params: $unknown_params
-                    },
-                )
+                // try_insert_once!(
+                //     $state,
+                //     $component,
+                //     $name,
+                //     $long_name,
+                //     Prop {
+                //         derived: $univ.derived.unwrap_or_default(),
+                //         value: $value,
+                //         params: $params,
+                //         unknown_params: $unknown_params
+                //     },
+                // )
+
+                todo!()
             };
         }
 
         macro_rules! seq {
             ($name:ident, $value:expr, $params:expr) => {
-                insert_seq!(
-                    $state,
-                    $name,
-                    Prop {
-                        derived: $univ.derived.unwrap_or_default(),
-                        value: $value,
-                        params: MultiParams {
-                            order: $univ.order,
-                            known: $params
-                        },
-                        unknown_params: $unknown_params,
-                    }
-                )
+                // insert_seq!(
+                //     $state,
+                //     $name,
+                //     Prop {
+                //         derived: $univ.derived.unwrap_or_default(),
+                //         value: $value,
+                //         params: $params,
+                //         unknown_params: $unknown_params,
+                //     }
+                // )
+
+                todo!()
             };
         }
     };
@@ -229,78 +232,83 @@ where
     <<I as Stream>::Slice as Stream>::Token: AsChar,
     E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
-    fn step<S>(
-        (prop, universals, unknown_params): ParsedProp<S>,
-        state: &mut PropertyTable<S>,
-    ) -> Result<(), CalendarParseError<S>>
-    where
-        S: HashCaseless + PartialEq + Debug + Equiv + AsRef<[u8]>,
-    {
-        define_local_helpers!(Calendar, state, unknown_params, universals);
+    // fn step<S>(
+    //     prop: ParsedProp<S>,
+    //     state: &mut PropertyTable<S>,
+    // ) -> Result<(), CalendarParseError<S>>
+    // where
+    //     S: HashCaseless + PartialEq + Debug + Equiv + AsRef<[u8]>,
+    // {
+    //     //     define_local_helpers!(Calendar, state, unknown_params, universals);
+    //     //
+    //     //     step_inner! {state, Calendar, prop, unknown_params, universals;
+    //     //         ParserProp::Known(KnownProp::ProdId(value)) => {
+    //     //             once!(ProdId, PropName::Rfc5545(Rfc5545PropName::ProductIdentifier), value, ())
+    //     //         },
+    //     //         ParserProp::Known(KnownProp::Version) => {
+    //     //             once!(Version, PropName::Rfc5545(Rfc5545PropName::Version), (), ())
+    //     //         },
+    //     //         ParserProp::Known(KnownProp::CalScale) => {
+    //     //             once!(CalScale, PropName::Rfc5545(Rfc5545PropName::CalendarScale), (), ())
+    //     //         },
+    //     //         ParserProp::Known(KnownProp::Name(value, params)) => {
+    //     //             seq!(Name, value, params)
+    //     //         },
+    //     //         ParserProp::Known(KnownProp::Uid(value)) => {
+    //     //             once!(Uid, PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier), value, ())
+    //     //         },
+    //     //         ParserProp::Known(KnownProp::LastModified(value)) => {
+    //     //             once!(LastModified, PropName::Rfc5545(Rfc5545PropName::LastModified), value, ())
+    //     //         },
+    //     //         ParserProp::Known(KnownProp::Url(value)) => {
+    //     //             once!(Url, PropName::Rfc5545(Rfc5545PropName::UniformResourceLocator), value, ())
+    //     //         },
+    //     //         ParserProp::Known(KnownProp::RefreshInterval(value)) => {
+    //     //             once!(RefreshInterval, PropName::Rfc7986(Rfc7986PropName::RefreshInterval), value, ())
+    //     //         },
+    //     //         ParserProp::Known(KnownProp::Source(value)) => {
+    //     //             once!(Source, PropName::Rfc7986(Rfc7986PropName::Source), value, ())
+    //     //         },
+    //     //         ParserProp::Known(KnownProp::Color(value)) => {
+    //     //             once!(Color, PropName::Rfc7986(Rfc7986PropName::Color), value, ())
+    //     //         },
+    //     //         ParserProp::Known(KnownProp::Description(value, params)) => {
+    //     //             seq!(Description, value, params)
+    //     //         },
+    //     //         ParserProp::Known(KnownProp::Categories(value, params)) => {
+    //     //             seq!(Categories, value, params)
+    //     //         },
+    //     //         ParserProp::Known(KnownProp::Image(value, params)) => {
+    //     //             seq!(Image, value, params)
+    //     //         },
+    //     //     }
+    //     // }
+    //     //
+    //     // fn name<I, E>(input: &mut I) -> Result<(), E>
+    //     // where
+    //     //     I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
+    //     //     E: ParserError<I>,
+    //     // {
+    //     //     Caseless("VCALENDAR").void().parse_next(input)
+    //     // }
+    //     //
+    //     // terminated(begin(name), crlf).parse_next(input)?;
+    //     // let props = StateMachine::new(step).parse_next(input)?;
+    //     // let components: Vec<_> = repeat(0.., component).parse_next(input)?;
+    //     // dbg![components.len()];
+    //     // terminated(end(name), crlf).parse_next(input)?;
+    //     //
+    //     // check_mandatory_fields! {input, props, Calendar;
+    //     //     ProdId => PropName::Rfc5545(Rfc5545PropName::ProductIdentifier),
+    //     //     Version => PropName::Rfc5545(Rfc5545PropName::Version),
+    //     // }
+    //     //
+    //     // Ok(Calendar::new(props, components))
+    //
+    //     todo!()
+    // }
 
-        step_inner! {state, Calendar, prop, unknown_params, universals;
-            ParserProp::Known(KnownProp::ProdId(value)) => {
-                once!(ProdId, PropName::Rfc5545(Rfc5545PropName::ProductIdentifier), value, ())
-            },
-            ParserProp::Known(KnownProp::Version) => {
-                once!(Version, PropName::Rfc5545(Rfc5545PropName::Version), (), ())
-            },
-            ParserProp::Known(KnownProp::CalScale) => {
-                once!(CalScale, PropName::Rfc5545(Rfc5545PropName::CalendarScale), (), ())
-            },
-            ParserProp::Known(KnownProp::Name(value, params)) => {
-                seq!(Name, value, params)
-            },
-            ParserProp::Known(KnownProp::Uid(value)) => {
-                once!(Uid, PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier), value, ())
-            },
-            ParserProp::Known(KnownProp::LastModified(value)) => {
-                once!(LastModified, PropName::Rfc5545(Rfc5545PropName::LastModified), value, ())
-            },
-            ParserProp::Known(KnownProp::Url(value)) => {
-                once!(Url, PropName::Rfc5545(Rfc5545PropName::UniformResourceLocator), value, ())
-            },
-            ParserProp::Known(KnownProp::RefreshInterval(value)) => {
-                once!(RefreshInterval, PropName::Rfc7986(Rfc7986PropName::RefreshInterval), value, ())
-            },
-            ParserProp::Known(KnownProp::Source(value)) => {
-                once!(Source, PropName::Rfc7986(Rfc7986PropName::Source), value, ())
-            },
-            ParserProp::Known(KnownProp::Color(value)) => {
-                once!(Color, PropName::Rfc7986(Rfc7986PropName::Color), value, ())
-            },
-            ParserProp::Known(KnownProp::Description(value, params)) => {
-                seq!(Description, value, params)
-            },
-            ParserProp::Known(KnownProp::Categories(value, params)) => {
-                seq!(Categories, value, params)
-            },
-            ParserProp::Known(KnownProp::Image(value, params)) => {
-                seq!(Image, value, params)
-            },
-        }
-    }
-
-    fn name<I, E>(input: &mut I) -> Result<(), E>
-    where
-        I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
-        E: ParserError<I>,
-    {
-        Caseless("VCALENDAR").void().parse_next(input)
-    }
-
-    terminated(begin(name), crlf).parse_next(input)?;
-    let props = StateMachine::new(step).parse_next(input)?;
-    let components: Vec<_> = repeat(0.., component).parse_next(input)?;
-    dbg![components.len()];
-    terminated(end(name), crlf).parse_next(input)?;
-
-    check_mandatory_fields! {input, props, Calendar;
-        ProdId => PropName::Rfc5545(Rfc5545PropName::ProductIdentifier),
-        Version => PropName::Rfc5545(Rfc5545PropName::Version),
-    }
-
-    Ok(Calendar::new(props, components))
+    todo!()
 }
 
 /// Parses a [`Component`].
@@ -415,154 +423,156 @@ where
     <<I as Stream>::Slice as Stream>::Token: AsChar,
     E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
-    fn step<S>(
-        (prop, universals, unknown_params): ParsedProp<S>,
-        state: &mut PropertyTable<S>,
-    ) -> Result<(), CalendarParseError<S>>
-    where
-        S: HashCaseless + PartialEq + Debug + Equiv + AsRef<[u8]>,
-    {
-        define_local_helpers!(Event, state, unknown_params, universals);
+    // fn step<S>(
+    //     (prop, universals, unknown_params): ParsedProp<S>,
+    //     state: &mut PropertyTable<S>,
+    // ) -> Result<(), CalendarParseError<S>>
+    // where
+    //     S: HashCaseless + PartialEq + Debug + Equiv + AsRef<[u8]>,
+    // {
+    //     define_local_helpers!(Event, state, unknown_params, universals);
+    //
+    //     step_inner! {state, Event, prop, unknown_params, universals;
+    //         ParserProp::Known(KnownProp::DtStamp(value)) => {
+    //             once!(DtStamp, PropName::Rfc5545(Rfc5545PropName::DateTimeStamp), value, ())
+    //         },
+    //         ParserProp::Known(KnownProp::Uid(value)) => {
+    //             once!(Uid, PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier), value, ())
+    //         },
+    //         ParserProp::Known(KnownProp::DtStart(value, params)) => {
+    //             once!(DtStart, PropName::Rfc5545(Rfc5545PropName::DateTimeStart), value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::Class(value)) => {
+    //             once!(Class, PropName::Rfc5545(Rfc5545PropName::Classification), value, ())
+    //         },
+    //         ParserProp::Known(KnownProp::Created(value)) => {
+    //             once!(Created, PropName::Rfc5545(Rfc5545PropName::DateTimeCreated), value, ())
+    //         },
+    //         ParserProp::Known(KnownProp::Description(value, params)) => {
+    //             once!(Description, PropName::Rfc5545(Rfc5545PropName::Description), value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::Geo(value)) => {
+    //             once!(Geo, PropName::Rfc5545(Rfc5545PropName::GeographicPosition), value, ())
+    //         },
+    //         ParserProp::Known(KnownProp::LastModified(value)) => {
+    //             once!(LastModified, PropName::Rfc5545(Rfc5545PropName::LastModified), value, ())
+    //         },
+    //         ParserProp::Known(KnownProp::Location(value, params)) => {
+    //             once!(Location, PropName::Rfc5545(Rfc5545PropName::Location), value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::Organizer(value, params)) => {
+    //             once!(Organizer, PropName::Rfc5545(Rfc5545PropName::Organizer), value, Box::new(params))
+    //         },
+    //         ParserProp::Known(KnownProp::Priority(value)) => {
+    //             once!(Priority, PropName::Rfc5545(Rfc5545PropName::Priority), value, ())
+    //         },
+    //         ParserProp::Known(KnownProp::Sequence(value)) => {
+    //             once!(Sequence, PropName::Rfc5545(Rfc5545PropName::SequenceNumber), value, ())
+    //         },
+    //         ParserProp::Known(KnownProp::Status(value)) => {
+    //             if state.contains_known_key(StaticProp::Status) {
+    //                 return Err(CalendarParseError::MoreThanOneProp { prop: PropName::Rfc5545(Rfc5545PropName::Status), component: ComponentKind::Event });
+    //             }
+    //
+    //             let value = match value {
+    //                 Status::Tentative => EventStatus::Tentative,
+    //                 Status::Confirmed => EventStatus::Confirmed,
+    //                 Status::Cancelled => EventStatus::Cancelled,
+    //                 status => return Err(CalendarParseError::InvalidEventStatus(status)),
+    //             };
+    //
+    //             once!(Status, PropName::Rfc5545(Rfc5545PropName::Status), value, ())
+    //         },
+    //         ParserProp::Known(KnownProp::Summary(value, params)) => {
+    //             once!(Summary, PropName::Rfc5545(Rfc5545PropName::Summary), value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::Transparency(value)) => {
+    //             once!(Transp, PropName::Rfc5545(Rfc5545PropName::TimeTransparency), value, ())
+    //         },
+    //         ParserProp::Known(KnownProp::Url(value)) => {
+    //             once!(Url, PropName::Rfc5545(Rfc5545PropName::UniformResourceLocator), value, ())
+    //         },
+    //         ParserProp::Known(KnownProp::RecurrenceId(value, params)) => {
+    //             once!(RecurId, PropName::Rfc5545(Rfc5545PropName::RecurrenceId), value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::RRule(value)) => {
+    //             seq!(RRule, Box::new(value), ())
+    //         },
+    //         ParserProp::Known(KnownProp::Color(value)) => {
+    //             once!(Color, PropName::Rfc7986(Rfc7986PropName::Color), value, ())
+    //         },
+    //         ParserProp::Known(KnownProp::DtEnd(value, params)) => {
+    //             match state.contains_known_key(StaticProp::Duration) {
+    //                 true => Err(CalendarParseError::EventTerminationCollision),
+    //                 false => once!(DtEnd, PropName::Rfc5545(Rfc5545PropName::DateTimeEnd), value, params),
+    //             }
+    //         },
+    //         ParserProp::Known(KnownProp::Duration(value)) => {
+    //             match state.contains_known_key(StaticProp::DtEnd) {
+    //                 true => Err(CalendarParseError::EventTerminationCollision),
+    //                 false => once!(Duration, PropName::Rfc5545(Rfc5545PropName::Duration), value, ()),
+    //             }
+    //         },
+    //         ParserProp::Known(KnownProp::Attach(value, params)) => {
+    //             seq!(Attach, value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::Attendee(value, params)) => {
+    //             seq!(Attendee, value, Box::new(params))
+    //         },
+    //         ParserProp::Known(KnownProp::Categories(value, params)) => {
+    //             seq!(Categories, value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::Comment(value, params)) => {
+    //             seq!(Comment, value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::Contact(value, params)) => {
+    //             seq!(Contact, value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::ExDate(value, params)) => {
+    //             seq!(ExDate, value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::RequestStatus(value, params)) => {
+    //             seq!(RequestStatus, value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::RelatedTo(value, params)) => {
+    //             seq!(RelatedTo, value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::Resources(value, params)) => {
+    //             seq!(Resources, value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::RDate(value, params)) => {
+    //             seq!(RDate, value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::Conference(value, params)) => {
+    //             seq!(Conference, value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::Image(value, params)) => {
+    //             seq!(Image, value, params)
+    //         },
+    //     }
+    // }
+    //
+    // fn name<I, E>(input: &mut I) -> Result<(), E>
+    // where
+    //     I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
+    //     E: ParserError<I>,
+    // {
+    //     Caseless("VEVENT").void().parse_next(input)
+    // }
+    //
+    // terminated(begin(name), crlf).parse_next(input)?;
+    // let props = StateMachine::new(step).parse_next(input)?;
+    // let alarms = repeat(0.., alarm).parse_next(input)?;
+    // terminated(end(name), crlf).parse_next(input)?;
+    //
+    // check_mandatory_fields! {input, props, Event;
+    //     DtStamp => PropName::Rfc5545(Rfc5545PropName::DateTimeStamp),
+    //     Uid => PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier),
+    // }
+    //
+    // Ok(Event::new(props, alarms))
 
-        step_inner! {state, Event, prop, unknown_params, universals;
-            ParserProp::Known(KnownProp::DtStamp(value)) => {
-                once!(DtStamp, PropName::Rfc5545(Rfc5545PropName::DateTimeStamp), value, ())
-            },
-            ParserProp::Known(KnownProp::Uid(value)) => {
-                once!(Uid, PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier), value, ())
-            },
-            ParserProp::Known(KnownProp::DtStart(value, params)) => {
-                once!(DtStart, PropName::Rfc5545(Rfc5545PropName::DateTimeStart), value, params)
-            },
-            ParserProp::Known(KnownProp::Class(value)) => {
-                once!(Class, PropName::Rfc5545(Rfc5545PropName::Classification), value, ())
-            },
-            ParserProp::Known(KnownProp::Created(value)) => {
-                once!(Created, PropName::Rfc5545(Rfc5545PropName::DateTimeCreated), value, ())
-            },
-            ParserProp::Known(KnownProp::Description(value, params)) => {
-                once!(Description, PropName::Rfc5545(Rfc5545PropName::Description), value, params)
-            },
-            ParserProp::Known(KnownProp::Geo(value)) => {
-                once!(Geo, PropName::Rfc5545(Rfc5545PropName::GeographicPosition), value, ())
-            },
-            ParserProp::Known(KnownProp::LastModified(value)) => {
-                once!(LastModified, PropName::Rfc5545(Rfc5545PropName::LastModified), value, ())
-            },
-            ParserProp::Known(KnownProp::Location(value, params)) => {
-                once!(Location, PropName::Rfc5545(Rfc5545PropName::Location), value, params)
-            },
-            ParserProp::Known(KnownProp::Organizer(value, params)) => {
-                once!(Organizer, PropName::Rfc5545(Rfc5545PropName::Organizer), value, Box::new(params))
-            },
-            ParserProp::Known(KnownProp::Priority(value)) => {
-                once!(Priority, PropName::Rfc5545(Rfc5545PropName::Priority), value, ())
-            },
-            ParserProp::Known(KnownProp::Sequence(value)) => {
-                once!(Sequence, PropName::Rfc5545(Rfc5545PropName::SequenceNumber), value, ())
-            },
-            ParserProp::Known(KnownProp::Status(value)) => {
-                if state.contains_known_key(StaticProp::Status) {
-                    return Err(CalendarParseError::MoreThanOneProp { prop: PropName::Rfc5545(Rfc5545PropName::Status), component: ComponentKind::Event });
-                }
-
-                let value = match value {
-                    Status::Tentative => EventStatus::Tentative,
-                    Status::Confirmed => EventStatus::Confirmed,
-                    Status::Cancelled => EventStatus::Cancelled,
-                    status => return Err(CalendarParseError::InvalidEventStatus(status)),
-                };
-
-                once!(Status, PropName::Rfc5545(Rfc5545PropName::Status), value, ())
-            },
-            ParserProp::Known(KnownProp::Summary(value, params)) => {
-                once!(Summary, PropName::Rfc5545(Rfc5545PropName::Summary), value, params)
-            },
-            ParserProp::Known(KnownProp::Transparency(value)) => {
-                once!(Transp, PropName::Rfc5545(Rfc5545PropName::TimeTransparency), value, ())
-            },
-            ParserProp::Known(KnownProp::Url(value)) => {
-                once!(Url, PropName::Rfc5545(Rfc5545PropName::UniformResourceLocator), value, ())
-            },
-            ParserProp::Known(KnownProp::RecurrenceId(value, params)) => {
-                once!(RecurId, PropName::Rfc5545(Rfc5545PropName::RecurrenceId), value, params)
-            },
-            ParserProp::Known(KnownProp::RRule(value)) => {
-                seq!(RRule, Box::new(value), ())
-            },
-            ParserProp::Known(KnownProp::Color(value)) => {
-                once!(Color, PropName::Rfc7986(Rfc7986PropName::Color), value, ())
-            },
-            ParserProp::Known(KnownProp::DtEnd(value, params)) => {
-                match state.contains_known_key(StaticProp::Duration) {
-                    true => Err(CalendarParseError::EventTerminationCollision),
-                    false => once!(DtEnd, PropName::Rfc5545(Rfc5545PropName::DateTimeEnd), value, params),
-                }
-            },
-            ParserProp::Known(KnownProp::Duration(value)) => {
-                match state.contains_known_key(StaticProp::DtEnd) {
-                    true => Err(CalendarParseError::EventTerminationCollision),
-                    false => once!(Duration, PropName::Rfc5545(Rfc5545PropName::Duration), value, ()),
-                }
-            },
-            ParserProp::Known(KnownProp::Attach(value, params)) => {
-                seq!(Attach, value, params)
-            },
-            ParserProp::Known(KnownProp::Attendee(value, params)) => {
-                seq!(Attendee, value, Box::new(params))
-            },
-            ParserProp::Known(KnownProp::Categories(value, params)) => {
-                seq!(Categories, value, params)
-            },
-            ParserProp::Known(KnownProp::Comment(value, params)) => {
-                seq!(Comment, value, params)
-            },
-            ParserProp::Known(KnownProp::Contact(value, params)) => {
-                seq!(Contact, value, params)
-            },
-            ParserProp::Known(KnownProp::ExDate(value, params)) => {
-                seq!(ExDate, value, params)
-            },
-            ParserProp::Known(KnownProp::RequestStatus(value, params)) => {
-                seq!(RequestStatus, value, params)
-            },
-            ParserProp::Known(KnownProp::RelatedTo(value, params)) => {
-                seq!(RelatedTo, value, params)
-            },
-            ParserProp::Known(KnownProp::Resources(value, params)) => {
-                seq!(Resources, value, params)
-            },
-            ParserProp::Known(KnownProp::RDate(value, params)) => {
-                seq!(RDate, value, params)
-            },
-            ParserProp::Known(KnownProp::Conference(value, params)) => {
-                seq!(Conference, value, params)
-            },
-            ParserProp::Known(KnownProp::Image(value, params)) => {
-                seq!(Image, value, params)
-            },
-        }
-    }
-
-    fn name<I, E>(input: &mut I) -> Result<(), E>
-    where
-        I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
-        E: ParserError<I>,
-    {
-        Caseless("VEVENT").void().parse_next(input)
-    }
-
-    terminated(begin(name), crlf).parse_next(input)?;
-    let props = StateMachine::new(step).parse_next(input)?;
-    let alarms = repeat(0.., alarm).parse_next(input)?;
-    terminated(end(name), crlf).parse_next(input)?;
-
-    check_mandatory_fields! {input, props, Event;
-        DtStamp => PropName::Rfc5545(Rfc5545PropName::DateTimeStamp),
-        Uid => PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier),
-    }
-
-    Ok(Event::new(props, alarms))
+    todo!()
 }
 
 /// Parses a [`Todo`].
@@ -587,158 +597,160 @@ where
     <<I as Stream>::Slice as Stream>::Token: AsChar,
     E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
-    fn step<S>(
-        (prop, universals, unknown_params): ParsedProp<S>,
-        state: &mut PropertyTable<S>,
-    ) -> Result<(), CalendarParseError<S>>
-    where
-        S: HashCaseless + PartialEq + Debug + Equiv + AsRef<[u8]>,
-    {
-        define_local_helpers!(Todo, state, unknown_params, universals);
+    // fn step<S>(
+    //     (prop, universals, unknown_params): ParsedProp<S>,
+    //     state: &mut PropertyTable<S>,
+    // ) -> Result<(), CalendarParseError<S>>
+    // where
+    //     S: HashCaseless + PartialEq + Debug + Equiv + AsRef<[u8]>,
+    // {
+    //     define_local_helpers!(Todo, state, unknown_params, universals);
+    //
+    //     step_inner! {state, Todo, prop, unknown_params, universals;
+    //         ParserProp::Known(KnownProp::DtStamp(value)) => {
+    //             once!(DtStamp, PropName::Rfc5545(Rfc5545PropName::DateTimeStamp), value, ())
+    //         },
+    //         ParserProp::Known(KnownProp::Uid(value)) => {
+    //             once!(Uid, PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier), value, ())
+    //         },
+    //         ParserProp::Known(KnownProp::Class(value)) => {
+    //             once!(Class, PropName::Rfc5545(Rfc5545PropName::Classification), value, ())
+    //         },
+    //         ParserProp::Known(KnownProp::DtCompleted(value)) => {
+    //             once!(DtCompleted, PropName::Rfc5545(Rfc5545PropName::DateTimeCompleted), value, ())
+    //         },
+    //         ParserProp::Known(KnownProp::Created(value)) => {
+    //             once!(Created, PropName::Rfc5545(Rfc5545PropName::DateTimeCreated), value, ())
+    //         },
+    //         ParserProp::Known(KnownProp::Description(value, params)) => {
+    //             once!(Description, PropName::Rfc5545(Rfc5545PropName::Description), value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::DtStart(value, params)) => {
+    //             once!(DtStart, PropName::Rfc5545(Rfc5545PropName::DateTimeStart), value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::Geo(value)) => {
+    //             once!(Geo, PropName::Rfc5545(Rfc5545PropName::GeographicPosition), value, ())
+    //         },
+    //         ParserProp::Known(KnownProp::LastModified(value)) => {
+    //             once!(LastModified, PropName::Rfc5545(Rfc5545PropName::LastModified), value, ())
+    //         },
+    //         ParserProp::Known(KnownProp::Location(value, params)) => {
+    //             once!(Location, PropName::Rfc5545(Rfc5545PropName::Location), value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::Organizer(value, params)) => {
+    //             once!(Organizer, PropName::Rfc5545(Rfc5545PropName::Organizer), value, Box::new(params))
+    //         },
+    //         ParserProp::Known(KnownProp::PercentComplete(value)) => {
+    //             once!(PercentComplete, PropName::Rfc5545(Rfc5545PropName::PercentComplete), value, ())
+    //         },
+    //         ParserProp::Known(KnownProp::Priority(value)) => {
+    //             once!(Priority, PropName::Rfc5545(Rfc5545PropName::Priority), value, ())
+    //         },
+    //         ParserProp::Known(KnownProp::RecurrenceId(value, params)) => {
+    //             once!(RecurId, PropName::Rfc5545(Rfc5545PropName::RecurrenceId), value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::Sequence(value)) => {
+    //             once!(Sequence, PropName::Rfc5545(Rfc5545PropName::SequenceNumber), value, ())
+    //         },
+    //         ParserProp::Known(KnownProp::Status(value)) => {
+    //             if state.contains_known_key(StaticProp::Status) {
+    //                 return Err(CalendarParseError::MoreThanOneProp { prop: PropName::Rfc5545(Rfc5545PropName::Status), component: ComponentKind::Todo });
+    //             }
+    //
+    //             let value = match value {
+    //                 Status::NeedsAction => TodoStatus::NeedsAction,
+    //                 Status::Completed => TodoStatus::Completed,
+    //                 Status::InProcess => TodoStatus::InProcess,
+    //                 Status::Cancelled => TodoStatus::Cancelled,
+    //                 status => return Err(CalendarParseError::InvalidTodoStatus(status)),
+    //             };
+    //
+    //             once!(Status, PropName::Rfc5545(Rfc5545PropName::Status), value, ())
+    //         },
+    //         ParserProp::Known(KnownProp::Summary(value, params)) => {
+    //             once!(Summary, PropName::Rfc5545(Rfc5545PropName::Summary), value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::Url(value)) => {
+    //             once!(Url, PropName::Rfc5545(Rfc5545PropName::UniformResourceLocator), value, ())
+    //         },
+    //         ParserProp::Known(KnownProp::RRule(value)) => {
+    //             seq!(RRule, Box::new(value), ())
+    //         },
+    //         ParserProp::Known(KnownProp::Color(value)) => {
+    //             once!(Color, PropName::Rfc7986(Rfc7986PropName::Color), value, ())
+    //         },
+    //         ParserProp::Known(KnownProp::DtDue(value, params)) => {
+    //             match state.contains_known_key(StaticProp::Duration) {
+    //                 true => Err(CalendarParseError::TodoTerminationCollision),
+    //                 false => once!(DtDue, PropName::Rfc5545(Rfc5545PropName::DateTimeDue), value, params),
+    //             }
+    //         },
+    //         ParserProp::Known(KnownProp::Duration(value)) => {
+    //             match state.contains_known_key(StaticProp::DtDue) {
+    //                 true => Err(CalendarParseError::TodoTerminationCollision),
+    //                 false => once!(Duration, PropName::Rfc5545(Rfc5545PropName::Duration), value, ()),
+    //             }
+    //         },
+    //         ParserProp::Known(KnownProp::Attach(value, params)) => {
+    //             seq!(Attach, value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::Attendee(value, params)) => {
+    //             seq!(Attendee, value, Box::new(params))
+    //         },
+    //         ParserProp::Known(KnownProp::Categories(value, params)) => {
+    //             seq!(Categories, value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::Comment(value, params)) => {
+    //             seq!(Comment, value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::Contact(value, params)) => {
+    //             seq!(Contact, value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::ExDate(value, params)) => {
+    //             seq!(ExDate, value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::RequestStatus(value, params)) => {
+    //             seq!(RequestStatus, value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::RelatedTo(value, params)) => {
+    //             seq!(RelatedTo, value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::Resources(value, params)) => {
+    //             seq!(Resources, value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::RDate(value, params)) => {
+    //             seq!(RDate, value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::Conference(value, params)) => {
+    //             seq!(Conference, value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::Image(value, params)) => {
+    //             seq!(Image, value, params)
+    //         },
+    //     }
+    // }
+    //
+    // fn name<I, E>(input: &mut I) -> Result<(), E>
+    // where
+    //     I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
+    //     E: ParserError<I>,
+    // {
+    //     Caseless("VTODO").void().parse_next(input)
+    // }
+    //
+    // terminated(begin(name), crlf).parse_next(input)?;
+    // let props = StateMachine::new(step).parse_next(input)?;
+    // let alarms = repeat(0.., alarm).parse_next(input)?;
+    // terminated(end(name), crlf).parse_next(input)?;
+    //
+    // check_mandatory_fields! {input, props, Todo;
+    //     DtStamp => PropName::Rfc5545(Rfc5545PropName::DateTimeStamp),
+    //     Uid => PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier),
+    // }
+    //
+    // Ok(Todo::new(props, alarms))
 
-        step_inner! {state, Todo, prop, unknown_params, universals;
-            ParserProp::Known(KnownProp::DtStamp(value)) => {
-                once!(DtStamp, PropName::Rfc5545(Rfc5545PropName::DateTimeStamp), value, ())
-            },
-            ParserProp::Known(KnownProp::Uid(value)) => {
-                once!(Uid, PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier), value, ())
-            },
-            ParserProp::Known(KnownProp::Class(value)) => {
-                once!(Class, PropName::Rfc5545(Rfc5545PropName::Classification), value, ())
-            },
-            ParserProp::Known(KnownProp::DtCompleted(value)) => {
-                once!(DtCompleted, PropName::Rfc5545(Rfc5545PropName::DateTimeCompleted), value, ())
-            },
-            ParserProp::Known(KnownProp::Created(value)) => {
-                once!(Created, PropName::Rfc5545(Rfc5545PropName::DateTimeCreated), value, ())
-            },
-            ParserProp::Known(KnownProp::Description(value, params)) => {
-                once!(Description, PropName::Rfc5545(Rfc5545PropName::Description), value, params)
-            },
-            ParserProp::Known(KnownProp::DtStart(value, params)) => {
-                once!(DtStart, PropName::Rfc5545(Rfc5545PropName::DateTimeStart), value, params)
-            },
-            ParserProp::Known(KnownProp::Geo(value)) => {
-                once!(Geo, PropName::Rfc5545(Rfc5545PropName::GeographicPosition), value, ())
-            },
-            ParserProp::Known(KnownProp::LastModified(value)) => {
-                once!(LastModified, PropName::Rfc5545(Rfc5545PropName::LastModified), value, ())
-            },
-            ParserProp::Known(KnownProp::Location(value, params)) => {
-                once!(Location, PropName::Rfc5545(Rfc5545PropName::Location), value, params)
-            },
-            ParserProp::Known(KnownProp::Organizer(value, params)) => {
-                once!(Organizer, PropName::Rfc5545(Rfc5545PropName::Organizer), value, Box::new(params))
-            },
-            ParserProp::Known(KnownProp::PercentComplete(value)) => {
-                once!(PercentComplete, PropName::Rfc5545(Rfc5545PropName::PercentComplete), value, ())
-            },
-            ParserProp::Known(KnownProp::Priority(value)) => {
-                once!(Priority, PropName::Rfc5545(Rfc5545PropName::Priority), value, ())
-            },
-            ParserProp::Known(KnownProp::RecurrenceId(value, params)) => {
-                once!(RecurId, PropName::Rfc5545(Rfc5545PropName::RecurrenceId), value, params)
-            },
-            ParserProp::Known(KnownProp::Sequence(value)) => {
-                once!(Sequence, PropName::Rfc5545(Rfc5545PropName::SequenceNumber), value, ())
-            },
-            ParserProp::Known(KnownProp::Status(value)) => {
-                if state.contains_known_key(StaticProp::Status) {
-                    return Err(CalendarParseError::MoreThanOneProp { prop: PropName::Rfc5545(Rfc5545PropName::Status), component: ComponentKind::Todo });
-                }
-
-                let value = match value {
-                    Status::NeedsAction => TodoStatus::NeedsAction,
-                    Status::Completed => TodoStatus::Completed,
-                    Status::InProcess => TodoStatus::InProcess,
-                    Status::Cancelled => TodoStatus::Cancelled,
-                    status => return Err(CalendarParseError::InvalidTodoStatus(status)),
-                };
-
-                once!(Status, PropName::Rfc5545(Rfc5545PropName::Status), value, ())
-            },
-            ParserProp::Known(KnownProp::Summary(value, params)) => {
-                once!(Summary, PropName::Rfc5545(Rfc5545PropName::Summary), value, params)
-            },
-            ParserProp::Known(KnownProp::Url(value)) => {
-                once!(Url, PropName::Rfc5545(Rfc5545PropName::UniformResourceLocator), value, ())
-            },
-            ParserProp::Known(KnownProp::RRule(value)) => {
-                seq!(RRule, Box::new(value), ())
-            },
-            ParserProp::Known(KnownProp::Color(value)) => {
-                once!(Color, PropName::Rfc7986(Rfc7986PropName::Color), value, ())
-            },
-            ParserProp::Known(KnownProp::DtDue(value, params)) => {
-                match state.contains_known_key(StaticProp::Duration) {
-                    true => Err(CalendarParseError::TodoTerminationCollision),
-                    false => once!(DtDue, PropName::Rfc5545(Rfc5545PropName::DateTimeDue), value, params),
-                }
-            },
-            ParserProp::Known(KnownProp::Duration(value)) => {
-                match state.contains_known_key(StaticProp::DtDue) {
-                    true => Err(CalendarParseError::TodoTerminationCollision),
-                    false => once!(Duration, PropName::Rfc5545(Rfc5545PropName::Duration), value, ()),
-                }
-            },
-            ParserProp::Known(KnownProp::Attach(value, params)) => {
-                seq!(Attach, value, params)
-            },
-            ParserProp::Known(KnownProp::Attendee(value, params)) => {
-                seq!(Attendee, value, Box::new(params))
-            },
-            ParserProp::Known(KnownProp::Categories(value, params)) => {
-                seq!(Categories, value, params)
-            },
-            ParserProp::Known(KnownProp::Comment(value, params)) => {
-                seq!(Comment, value, params)
-            },
-            ParserProp::Known(KnownProp::Contact(value, params)) => {
-                seq!(Contact, value, params)
-            },
-            ParserProp::Known(KnownProp::ExDate(value, params)) => {
-                seq!(ExDate, value, params)
-            },
-            ParserProp::Known(KnownProp::RequestStatus(value, params)) => {
-                seq!(RequestStatus, value, params)
-            },
-            ParserProp::Known(KnownProp::RelatedTo(value, params)) => {
-                seq!(RelatedTo, value, params)
-            },
-            ParserProp::Known(KnownProp::Resources(value, params)) => {
-                seq!(Resources, value, params)
-            },
-            ParserProp::Known(KnownProp::RDate(value, params)) => {
-                seq!(RDate, value, params)
-            },
-            ParserProp::Known(KnownProp::Conference(value, params)) => {
-                seq!(Conference, value, params)
-            },
-            ParserProp::Known(KnownProp::Image(value, params)) => {
-                seq!(Image, value, params)
-            },
-        }
-    }
-
-    fn name<I, E>(input: &mut I) -> Result<(), E>
-    where
-        I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
-        E: ParserError<I>,
-    {
-        Caseless("VTODO").void().parse_next(input)
-    }
-
-    terminated(begin(name), crlf).parse_next(input)?;
-    let props = StateMachine::new(step).parse_next(input)?;
-    let alarms = repeat(0.., alarm).parse_next(input)?;
-    terminated(end(name), crlf).parse_next(input)?;
-
-    check_mandatory_fields! {input, props, Todo;
-        DtStamp => PropName::Rfc5545(Rfc5545PropName::DateTimeStamp),
-        Uid => PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier),
-    }
-
-    Ok(Todo::new(props, alarms))
+    todo!()
 }
 
 /// Parses a [`Journal`].
@@ -759,117 +771,119 @@ where
     <<I as Stream>::Slice as Stream>::Token: AsChar,
     E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
-    fn step<S>(
-        (prop, universals, unknown_params): ParsedProp<S>,
-        state: &mut PropertyTable<S>,
-    ) -> Result<(), CalendarParseError<S>>
-    where
-        S: HashCaseless + PartialEq + Debug + Equiv + AsRef<[u8]>,
-    {
-        define_local_helpers!(Journal, state, unknown_params, universals);
+    // fn step<S>(
+    //     (prop, universals, unknown_params): ParsedProp<S>,
+    //     state: &mut PropertyTable<S>,
+    // ) -> Result<(), CalendarParseError<S>>
+    // where
+    //     S: HashCaseless + PartialEq + Debug + Equiv + AsRef<[u8]>,
+    // {
+    //     define_local_helpers!(Journal, state, unknown_params, universals);
+    //
+    //     step_inner! {state, Journal, prop, unknown_params, universals;
+    //         ParserProp::Known(KnownProp::DtStamp(value)) => {
+    //             once!(DtStamp, PropName::Rfc5545(Rfc5545PropName::DateTimeStamp), value, ())
+    //         },
+    //         ParserProp::Known(KnownProp::Uid(value)) => {
+    //             once!(Uid, PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier), value, ())
+    //         },
+    //         ParserProp::Known(KnownProp::Class(value)) => {
+    //             once!(Class, PropName::Rfc5545(Rfc5545PropName::Classification), value, ())
+    //         },
+    //         ParserProp::Known(KnownProp::Created(value)) => {
+    //             once!(Created, PropName::Rfc5545(Rfc5545PropName::DateTimeCreated), value, ())
+    //         },
+    //         ParserProp::Known(KnownProp::DtStart(value, params)) => {
+    //             once!(DtStart, PropName::Rfc5545(Rfc5545PropName::DateTimeStart), value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::LastModified(value)) => {
+    //             once!(LastModified, PropName::Rfc5545(Rfc5545PropName::LastModified), value, ())
+    //         },
+    //         ParserProp::Known(KnownProp::Organizer(value, params)) => {
+    //             once!(Organizer, PropName::Rfc5545(Rfc5545PropName::Organizer), value, Box::new(params))
+    //         },
+    //         ParserProp::Known(KnownProp::RecurrenceId(value, params)) => {
+    //             once!(RecurId, PropName::Rfc5545(Rfc5545PropName::RecurrenceId), value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::Sequence(value)) => {
+    //             once!(Sequence, PropName::Rfc5545(Rfc5545PropName::SequenceNumber), value, ())
+    //         },
+    //         ParserProp::Known(KnownProp::Status(value)) => {
+    //             if state.contains_known_key(StaticProp::Status) {
+    //                 return Err(CalendarParseError::MoreThanOneProp { prop: PropName::Rfc5545(Rfc5545PropName::Status), component: ComponentKind::Journal });
+    //             }
+    //
+    //             let value = match value {
+    //                 Status::Cancelled => JournalStatus::Cancelled,
+    //                 Status::Draft => JournalStatus::Draft,
+    //                 Status::Final => JournalStatus::Final,
+    //                 status => return Err(CalendarParseError::InvalidJournalStatus(status)),
+    //             };
+    //
+    //             once!(Status, PropName::Rfc5545(Rfc5545PropName::Status), value, ())
+    //         },
+    //         ParserProp::Known(KnownProp::Summary(value, params)) => {
+    //             once!(Summary, PropName::Rfc5545(Rfc5545PropName::Summary), value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::Url(value)) => {
+    //             once!(Url, PropName::Rfc5545(Rfc5545PropName::UniformResourceLocator), value, ())
+    //         },
+    //         ParserProp::Known(KnownProp::RRule(value)) => {
+    //             seq!(RRule, Box::new(value), ())
+    //         },
+    //         ParserProp::Known(KnownProp::Attach(value, params)) => {
+    //             seq!(Attach, value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::Attendee(value, params)) => {
+    //             seq!(Attendee, value, Box::new(params))
+    //         },
+    //         ParserProp::Known(KnownProp::Categories(value, params)) => {
+    //             seq!(Categories, value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::Comment(value, params)) => {
+    //             seq!(Comment, value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::Contact(value, params)) => {
+    //             seq!(Contact, value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::Description(value, params)) => {
+    //             seq!(Description, value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::ExDate(value, params)) => {
+    //             seq!(ExDate, value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::RelatedTo(value, params)) => {
+    //             seq!(RelatedTo, value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::RDate(value, params)) => {
+    //             seq!(RDate, value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::RequestStatus(value, params)) => {
+    //             seq!(RequestStatus, value, params)
+    //         },
+    //     }
+    // }
+    //
+    // fn name<I, E>(input: &mut I) -> Result<(), E>
+    // where
+    //     I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
+    //     E: ParserError<I>,
+    // {
+    //     Caseless("VJOURNAL").void().parse_next(input)
+    // }
+    //
+    // terminated(begin(name), crlf).parse_next(input)?;
+    // let props = StateMachine::new(step).parse_next(input)?;
+    // terminated(end(name), crlf).parse_next(input)?;
+    //
+    // check_mandatory_fields! {input, props, Journal;
+    //     DtStamp => PropName::Rfc5545(Rfc5545PropName::DateTimeStamp),
+    //     Uid => PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier),
+    // }
+    //
+    // Ok(Journal::new(props))
 
-        step_inner! {state, Journal, prop, unknown_params, universals;
-            ParserProp::Known(KnownProp::DtStamp(value)) => {
-                once!(DtStamp, PropName::Rfc5545(Rfc5545PropName::DateTimeStamp), value, ())
-            },
-            ParserProp::Known(KnownProp::Uid(value)) => {
-                once!(Uid, PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier), value, ())
-            },
-            ParserProp::Known(KnownProp::Class(value)) => {
-                once!(Class, PropName::Rfc5545(Rfc5545PropName::Classification), value, ())
-            },
-            ParserProp::Known(KnownProp::Created(value)) => {
-                once!(Created, PropName::Rfc5545(Rfc5545PropName::DateTimeCreated), value, ())
-            },
-            ParserProp::Known(KnownProp::DtStart(value, params)) => {
-                once!(DtStart, PropName::Rfc5545(Rfc5545PropName::DateTimeStart), value, params)
-            },
-            ParserProp::Known(KnownProp::LastModified(value)) => {
-                once!(LastModified, PropName::Rfc5545(Rfc5545PropName::LastModified), value, ())
-            },
-            ParserProp::Known(KnownProp::Organizer(value, params)) => {
-                once!(Organizer, PropName::Rfc5545(Rfc5545PropName::Organizer), value, Box::new(params))
-            },
-            ParserProp::Known(KnownProp::RecurrenceId(value, params)) => {
-                once!(RecurId, PropName::Rfc5545(Rfc5545PropName::RecurrenceId), value, params)
-            },
-            ParserProp::Known(KnownProp::Sequence(value)) => {
-                once!(Sequence, PropName::Rfc5545(Rfc5545PropName::SequenceNumber), value, ())
-            },
-            ParserProp::Known(KnownProp::Status(value)) => {
-                if state.contains_known_key(StaticProp::Status) {
-                    return Err(CalendarParseError::MoreThanOneProp { prop: PropName::Rfc5545(Rfc5545PropName::Status), component: ComponentKind::Journal });
-                }
-
-                let value = match value {
-                    Status::Cancelled => JournalStatus::Cancelled,
-                    Status::Draft => JournalStatus::Draft,
-                    Status::Final => JournalStatus::Final,
-                    status => return Err(CalendarParseError::InvalidJournalStatus(status)),
-                };
-
-                once!(Status, PropName::Rfc5545(Rfc5545PropName::Status), value, ())
-            },
-            ParserProp::Known(KnownProp::Summary(value, params)) => {
-                once!(Summary, PropName::Rfc5545(Rfc5545PropName::Summary), value, params)
-            },
-            ParserProp::Known(KnownProp::Url(value)) => {
-                once!(Url, PropName::Rfc5545(Rfc5545PropName::UniformResourceLocator), value, ())
-            },
-            ParserProp::Known(KnownProp::RRule(value)) => {
-                seq!(RRule, Box::new(value), ())
-            },
-            ParserProp::Known(KnownProp::Attach(value, params)) => {
-                seq!(Attach, value, params)
-            },
-            ParserProp::Known(KnownProp::Attendee(value, params)) => {
-                seq!(Attendee, value, Box::new(params))
-            },
-            ParserProp::Known(KnownProp::Categories(value, params)) => {
-                seq!(Categories, value, params)
-            },
-            ParserProp::Known(KnownProp::Comment(value, params)) => {
-                seq!(Comment, value, params)
-            },
-            ParserProp::Known(KnownProp::Contact(value, params)) => {
-                seq!(Contact, value, params)
-            },
-            ParserProp::Known(KnownProp::Description(value, params)) => {
-                seq!(Description, value, params)
-            },
-            ParserProp::Known(KnownProp::ExDate(value, params)) => {
-                seq!(ExDate, value, params)
-            },
-            ParserProp::Known(KnownProp::RelatedTo(value, params)) => {
-                seq!(RelatedTo, value, params)
-            },
-            ParserProp::Known(KnownProp::RDate(value, params)) => {
-                seq!(RDate, value, params)
-            },
-            ParserProp::Known(KnownProp::RequestStatus(value, params)) => {
-                seq!(RequestStatus, value, params)
-            },
-        }
-    }
-
-    fn name<I, E>(input: &mut I) -> Result<(), E>
-    where
-        I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
-        E: ParserError<I>,
-    {
-        Caseless("VJOURNAL").void().parse_next(input)
-    }
-
-    terminated(begin(name), crlf).parse_next(input)?;
-    let props = StateMachine::new(step).parse_next(input)?;
-    terminated(end(name), crlf).parse_next(input)?;
-
-    check_mandatory_fields! {input, props, Journal;
-        DtStamp => PropName::Rfc5545(Rfc5545PropName::DateTimeStamp),
-        Uid => PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier),
-    }
-
-    Ok(Journal::new(props))
+    todo!()
 }
 
 /// Parses a [`FreeBusy`].
@@ -890,70 +904,72 @@ where
     <<I as Stream>::Slice as Stream>::Token: AsChar,
     E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
-    fn step<S>(
-        (prop, universals, unknown_params): ParsedProp<S>,
-        state: &mut PropertyTable<S>,
-    ) -> Result<(), CalendarParseError<S>>
-    where
-        S: HashCaseless + PartialEq + Debug + Equiv + AsRef<[u8]>,
-    {
-        define_local_helpers!(FreeBusy, state, unknown_params, universals);
+    // fn step<S>(
+    //     (prop, universals, unknown_params): ParsedProp<S>,
+    //     state: &mut PropertyTable<S>,
+    // ) -> Result<(), CalendarParseError<S>>
+    // where
+    //     S: HashCaseless + PartialEq + Debug + Equiv + AsRef<[u8]>,
+    // {
+    //     define_local_helpers!(FreeBusy, state, unknown_params, universals);
+    //
+    //     step_inner! {state, FreeBusy, prop, unknown_params, universals;
+    //         ParserProp::Known(KnownProp::DtStamp(value)) => {
+    //             once!(DtStamp, PropName::Rfc5545(Rfc5545PropName::DateTimeStamp), value, ())
+    //         },
+    //         ParserProp::Known(KnownProp::Uid(value)) => {
+    //             once!(Uid, PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier), value, ())
+    //         },
+    //         ParserProp::Known(KnownProp::Contact(value, params)) => {
+    //             once!(Contact, PropName::Rfc5545(Rfc5545PropName::Contact), value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::DtStart(value, params)) => {
+    //             once!(DtStart, PropName::Rfc5545(Rfc5545PropName::DateTimeStart), value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::DtEnd(value, params)) => {
+    //             once!(DtEnd, PropName::Rfc5545(Rfc5545PropName::DateTimeEnd), value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::Organizer(value, params)) => {
+    //             once!(Organizer, PropName::Rfc5545(Rfc5545PropName::Organizer), value, Box::new(params))
+    //         },
+    //         ParserProp::Known(KnownProp::Url(value)) => {
+    //             once!(Url, PropName::Rfc5545(Rfc5545PropName::UniformResourceLocator), value, ())
+    //         },
+    //         ParserProp::Known(KnownProp::Attendee(value, params)) => {
+    //             seq!(Attendee, value, Box::new(params))
+    //         },
+    //         ParserProp::Known(KnownProp::Comment(value, params)) => {
+    //             seq!(Comment, value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::FreeBusy(value, params)) => {
+    //             seq!(FreeBusy, value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::RequestStatus(value, params)) => {
+    //             seq!(RequestStatus, value, params)
+    //         },
+    //     }
+    // }
+    //
+    // fn name<I, E>(input: &mut I) -> Result<(), E>
+    // where
+    //     I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
+    //     E: ParserError<I>,
+    // {
+    //     Caseless("VFREEBUSY").void().parse_next(input)
+    // }
+    //
+    // terminated(begin(name), crlf).parse_next(input)?;
+    // let props = StateMachine::new(step).parse_next(input)?;
+    // terminated(end(name), crlf).parse_next(input)?;
+    //
+    // check_mandatory_fields! {input, props, FreeBusy;
+    //     DtStamp => PropName::Rfc5545(Rfc5545PropName::DateTimeStamp),
+    //     Uid => PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier),
+    // }
+    //
+    // Ok(FreeBusy::new(props))
 
-        step_inner! {state, FreeBusy, prop, unknown_params, universals;
-            ParserProp::Known(KnownProp::DtStamp(value)) => {
-                once!(DtStamp, PropName::Rfc5545(Rfc5545PropName::DateTimeStamp), value, ())
-            },
-            ParserProp::Known(KnownProp::Uid(value)) => {
-                once!(Uid, PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier), value, ())
-            },
-            ParserProp::Known(KnownProp::Contact(value, params)) => {
-                once!(Contact, PropName::Rfc5545(Rfc5545PropName::Contact), value, params)
-            },
-            ParserProp::Known(KnownProp::DtStart(value, params)) => {
-                once!(DtStart, PropName::Rfc5545(Rfc5545PropName::DateTimeStart), value, params)
-            },
-            ParserProp::Known(KnownProp::DtEnd(value, params)) => {
-                once!(DtEnd, PropName::Rfc5545(Rfc5545PropName::DateTimeEnd), value, params)
-            },
-            ParserProp::Known(KnownProp::Organizer(value, params)) => {
-                once!(Organizer, PropName::Rfc5545(Rfc5545PropName::Organizer), value, Box::new(params))
-            },
-            ParserProp::Known(KnownProp::Url(value)) => {
-                once!(Url, PropName::Rfc5545(Rfc5545PropName::UniformResourceLocator), value, ())
-            },
-            ParserProp::Known(KnownProp::Attendee(value, params)) => {
-                seq!(Attendee, value, Box::new(params))
-            },
-            ParserProp::Known(KnownProp::Comment(value, params)) => {
-                seq!(Comment, value, params)
-            },
-            ParserProp::Known(KnownProp::FreeBusy(value, params)) => {
-                seq!(FreeBusy, value, params)
-            },
-            ParserProp::Known(KnownProp::RequestStatus(value, params)) => {
-                seq!(RequestStatus, value, params)
-            },
-        }
-    }
-
-    fn name<I, E>(input: &mut I) -> Result<(), E>
-    where
-        I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
-        E: ParserError<I>,
-    {
-        Caseless("VFREEBUSY").void().parse_next(input)
-    }
-
-    terminated(begin(name), crlf).parse_next(input)?;
-    let props = StateMachine::new(step).parse_next(input)?;
-    terminated(end(name), crlf).parse_next(input)?;
-
-    check_mandatory_fields! {input, props, FreeBusy;
-        DtStamp => PropName::Rfc5545(Rfc5545PropName::DateTimeStamp),
-        Uid => PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier),
-    }
-
-    Ok(FreeBusy::new(props))
+    todo!()
 }
 
 /// Parses a [`TimeZone`].
@@ -975,74 +991,78 @@ where
     E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
     fn tz_step<S>(
-        (prop, universals, unknown_params): ParsedProp<S>,
+        prop: ParsedProp<S>,
         state: &mut PropertyTable<S>,
     ) -> Result<(), CalendarParseError<S>>
     where
         S: HashCaseless + PartialEq + Debug + Equiv + AsRef<[u8]>,
     {
-        macro_rules! once {
-            ($name:ident, $long_name:expr, $value:expr, $params:expr) => {
-                try_insert_once!(
-                    state,
-                    TimeZone,
-                    $name,
-                    $long_name,
-                    Prop {
-                        derived: universals.derived.unwrap_or_default(),
-                        value: $value,
-                        params: $params,
-                        unknown_params
-                    },
-                )
-            };
-        }
+        // macro_rules! once {
+        //     ($name:ident, $long_name:expr, $value:expr, $params:expr) => {
+        //         try_insert_once!(
+        //             state,
+        //             TimeZone,
+        //             $name,
+        //             $long_name,
+        //             Prop {
+        //                 derived: universals.derived.unwrap_or_default(),
+        //                 value: $value,
+        //                 params: $params,
+        //                 unknown_params
+        //             },
+        //         )
+        //     };
+        // }
+        //
+        // step_inner! {state, TimeZone, prop, unknown_params, universals;
+        //     ParserProp::Known(KnownProp::TzId(value)) => {
+        //         once!(TzId, PropName::Rfc5545(Rfc5545PropName::TimeZoneIdentifier), value, ())
+        //     },
+        //     ParserProp::Known(KnownProp::LastModified(value)) => {
+        //         once!(LastModified, PropName::Rfc5545(Rfc5545PropName::LastModified), value, ())
+        //     },
+        //     ParserProp::Known(KnownProp::TzUrl(value)) => {
+        //         once!(TzUrl, PropName::Rfc5545(Rfc5545PropName::TimeZoneUrl), value, ())
+        //     }
+        // }
 
-        step_inner! {state, TimeZone, prop, unknown_params, universals;
-            ParserProp::Known(KnownProp::TzId(value)) => {
-                once!(TzId, PropName::Rfc5545(Rfc5545PropName::TimeZoneIdentifier), value, ())
-            },
-            ParserProp::Known(KnownProp::LastModified(value)) => {
-                once!(LastModified, PropName::Rfc5545(Rfc5545PropName::LastModified), value, ())
-            },
-            ParserProp::Known(KnownProp::TzUrl(value)) => {
-                once!(TzUrl, PropName::Rfc5545(Rfc5545PropName::TimeZoneUrl), value, ())
-            }
-        }
+        todo!()
     }
 
     fn rule_step<S>(
-        (prop, universals, unknown_params): ParsedProp<S>,
+        prop: ParsedProp<S>,
         state: &mut PropertyTable<S>,
     ) -> Result<(), CalendarParseError<S>>
     where
         S: HashCaseless + PartialEq + Debug + Equiv + AsRef<[u8]>,
     {
-        define_local_helpers!(StandardOrDaylight, state, unknown_params, universals);
+        // define_local_helpers!(StandardOrDaylight, state, unknown_params, universals);
+        //
+        // step_inner! {state, StandardOrDaylight, prop, unknown_params, universals;
+        //     ParserProp::Known(KnownProp::DtStart(value, params)) => {
+        //         once!(DtStart, PropName::Rfc5545(Rfc5545PropName::DateTimeStart), value, params)
+        //     },
+        //     ParserProp::Known(KnownProp::TzOffsetTo(value)) => {
+        //         once!(TzOffsetTo, PropName::Rfc5545(Rfc5545PropName::TimeZoneOffsetTo), value, ())
+        //     },
+        //     ParserProp::Known(KnownProp::TzOffsetFrom(value)) => {
+        //         once!(TzOffsetFrom, PropName::Rfc5545(Rfc5545PropName::TimeZoneOffsetFrom), value, ())
+        //     },
+        //     ParserProp::Known(KnownProp::RRule(value)) => {
+        //         seq!(RRule, Box::new(value), ())
+        //     },
+        //     ParserProp::Known(KnownProp::Comment(value, params)) => {
+        //         seq!(Comment, value, params)
+        //     },
+        //     ParserProp::Known(KnownProp::RDate(value, params)) => {
+        //         seq!(RDate, value, params)
+        //     },
+        //     ParserProp::Known(KnownProp::TzName(value, params)) => {
+        //         seq!(TzName, value, params)
+        //     },
+        // }
 
-        step_inner! {state, StandardOrDaylight, prop, unknown_params, universals;
-            ParserProp::Known(KnownProp::DtStart(value, params)) => {
-                once!(DtStart, PropName::Rfc5545(Rfc5545PropName::DateTimeStart), value, params)
-            },
-            ParserProp::Known(KnownProp::TzOffsetTo(value)) => {
-                once!(TzOffsetTo, PropName::Rfc5545(Rfc5545PropName::TimeZoneOffsetTo), value, ())
-            },
-            ParserProp::Known(KnownProp::TzOffsetFrom(value)) => {
-                once!(TzOffsetFrom, PropName::Rfc5545(Rfc5545PropName::TimeZoneOffsetFrom), value, ())
-            },
-            ParserProp::Known(KnownProp::RRule(value)) => {
-                seq!(RRule, Box::new(value), ())
-            },
-            ParserProp::Known(KnownProp::Comment(value, params)) => {
-                seq!(Comment, value, params)
-            },
-            ParserProp::Known(KnownProp::RDate(value, params)) => {
-                seq!(RDate, value, params)
-            },
-            ParserProp::Known(KnownProp::TzName(value, params)) => {
-                seq!(TzName, value, params)
-            },
-        }
+        todo!()
     }
 
     fn rule_kind<I, E>(input: &mut I) -> Result<TzRuleKind, E>
@@ -1123,214 +1143,213 @@ where
     <<I as Stream>::Slice as Stream>::Token: AsChar,
     E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
-    fn step<S>(
-        (prop, universals, unknown_params): ParsedProp<S>,
-        state: &mut PropertyTable<S>,
-    ) -> Result<(), CalendarParseError<S>>
-    where
-        S: HashCaseless + PartialEq + Debug + Equiv + AsRef<[u8]>,
-    {
-        define_local_helpers!(Alarm, state, unknown_params, universals);
+    // fn step<S>(
+    //     (prop, universals, unknown_params): ParsedProp<S>,
+    //     state: &mut PropertyTable<S>,
+    // ) -> Result<(), CalendarParseError<S>>
+    // where
+    //     S: HashCaseless + PartialEq + Debug + Equiv + AsRef<[u8]>,
+    // {
+    //     define_local_helpers!(Alarm, state, unknown_params, universals);
+    //
+    //     step_inner! {state, Alarm, prop, unknown_params, universals;
+    //         ParserProp::Known(KnownProp::Action(value)) => {
+    //             if state.contains_known_key(StaticProp::Action) {
+    //                 return Err(CalendarParseError::MoreThanOneProp {
+    //                     prop: PropName::Rfc5545(Rfc5545PropName::Action),
+    //                     component: ComponentKind::Alarm,
+    //                 });
+    //             }
+    //
+    //             match value {
+    //                 AlarmAction::Audio => {
+    //                     once!(Action, PropName::Rfc5545(Rfc5545PropName::Action), AudioAction, ())
+    //                 },
+    //                 AlarmAction::Display => {
+    //                     once!(Action, PropName::Rfc5545(Rfc5545PropName::Action), DisplayAction, ())
+    //                 },
+    //                 AlarmAction::Email => {
+    //                     once!(Action, PropName::Rfc5545(Rfc5545PropName::Action), EmailAction, ())
+    //                 },
+    //                 AlarmAction::Iana(action) => {
+    //                     once!(Action, PropName::Rfc5545(Rfc5545PropName::Action), UnknownAction::Iana(action), ())
+    //                 },
+    //                 AlarmAction::X(action) => {
+    //                     once!(Action, PropName::Rfc5545(Rfc5545PropName::Action), UnknownAction::X(action), ())
+    //                 }
+    //             }
+    //         },
+    //         ParserProp::Known(KnownProp::Description(value, params)) => {
+    //             once!(Description, PropName::Rfc5545(Rfc5545PropName::Description), value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::TriggerRelative(value, params)) => {
+    //             once!(Trigger, PropName::Rfc5545(Rfc5545PropName::Trigger), value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::TriggerAbsolute(value)) => {
+    //             once!(Trigger, PropName::Rfc5545(Rfc5545PropName::Trigger), value, ())
+    //         },
+    //         ParserProp::Known(KnownProp::Summary(value, params)) => {
+    //             once!(Summary, PropName::Rfc5545(Rfc5545PropName::Summary), value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::Duration(value)) => {
+    //             once!(Duration, PropName::Rfc5545(Rfc5545PropName::Duration), value, ())
+    //         },
+    //         ParserProp::Known(KnownProp::Repeat(value)) => {
+    //             once!(Repeat, PropName::Rfc5545(Rfc5545PropName::RepeatCount), value, ())
+    //         },
+    //         ParserProp::Known(KnownProp::Uid(value)) => {
+    //             once!(Uid, PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier), value, ())
+    //         },
+    //         ParserProp::Known(KnownProp::Acknowledged(value)) => {
+    //             once!(Acknowledged, PropName::Rfc9074(Rfc9074PropName::Acknowledged), value, ())
+    //         },
+    //         ParserProp::Known(KnownProp::Proximity(value)) => {
+    //             once!(Proximity, PropName::Rfc9074(Rfc9074PropName::Proximity), value, ())
+    //         },
+    //         ParserProp::Known(KnownProp::Attendee(value, params)) => {
+    //             seq!(Attendee, value, Box::new(params))
+    //         },
+    //         ParserProp::Known(KnownProp::Attach(value, params)) => {
+    //             seq!(Attach, value, params)
+    //         },
+    //         ParserProp::Known(KnownProp::RelatedTo(value, params)) => {
+    //             seq!(RelatedTo, value, params)
+    //         },
+    //     }
+    // }
+    //
+    // fn name<I, E>(input: &mut I) -> Result<(), E>
+    // where
+    //     I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
+    //     E: ParserError<I>,
+    // {
+    //     Caseless("VALARM").void().parse_next(input)
+    // }
+    //
+    // terminated(begin(name), crlf).parse_next(input)?;
+    // let mut props = StateMachine::new(step).parse_next(input)?;
+    // let subcomponents = repeat(0.., other_with_name).parse_next(input)?;
+    // terminated(end(name), crlf).parse_next(input)?;
+    //
+    // check_mandatory_fields! {input, props, Alarm;
+    //     Action => PropName::Rfc5545(Rfc5545PropName::Action),
+    //     Trigger => PropName::Rfc5545(Rfc5545PropName::Trigger),
+    // }
+    //
+    // enum ActionKind {
+    //     Audio,
+    //     Display,
+    //     Email,
+    //     Unknown,
+    // }
+    //
+    // let action = match props
+    //     .get_known(StaticProp::Action)
+    //     .unwrap()
+    //     .try_into()
+    //     .unwrap()
+    // {
+    //     AlarmAction::Audio => ActionKind::Audio,
+    //     AlarmAction::Display => ActionKind::Display,
+    //     AlarmAction::Email => ActionKind::Email,
+    //     AlarmAction::Iana(_) | AlarmAction::X(_) => ActionKind::Unknown,
+    // };
+    //
+    // // we need to check certain multiplicities depending on the action:
+    // // 1. audio alarms require zero or one attachments
+    // // 2. display alarms require exactly one description
+    // // 3. email alarms require one description, one summary, and at least one attendee
+    // // 4. unknown action alarms have no multiplicity requirements
+    //
+    // macro_rules! one {
+    //     ($key:ident, $t:ty, $prop_name:expr, $component:ident) => {{
+    //         let item: Option<$t> = props
+    //             .remove_known(StaticProp::$key)
+    //             .and_then(|x| x.try_into().ok());
+    //
+    //         let () = match item {
+    //             None => Err(CalendarParseError::MissingProp {
+    //                 prop: $prop_name,
+    //                 component: ComponentKind::$component,
+    //             }),
+    //             Some(item) => {
+    //                 let _prev = props.insert_known(StaticProp::$key, RawPropValue::from(item));
+    //                 debug_assert!(_prev.is_none());
+    //                 Ok(())
+    //             }
+    //         }
+    //         .map_err(|err| E::from_external_error(input, err))?;
+    //     }};
+    // }
+    //
+    // dbg![&props];
+    //
+    // match action {
+    //     ActionKind::Audio => {
+    //         // get attachments if they are present
+    //         let attachments: Option<Vec<Prop<_, AttachValue<_>, AttachParams<_>>>> = props
+    //             .remove_known(StaticProp::Attach)
+    //             .and_then(|x| x.try_into().ok());
+    //
+    //         // handle multiplicities
+    //         let () = match attachments.as_ref().map(Vec::len) {
+    //             None | Some(0) => Ok(()),
+    //             Some(1) => {
+    //                 let prop = attachments.unwrap().pop().unwrap();
+    //                 let _prev = props.insert_known(StaticProp::Attach, RawPropValue::from(prop));
+    //                 debug_assert!(_prev.is_none());
+    //                 Ok(())
+    //             }
+    //             Some(_) => Err(CalendarParseError::TooManyAttachmentsOnAudioAlarm),
+    //         }
+    //         .map_err(|err| E::from_external_error(input, err))?;
+    //
+    //         Ok(Alarm::Audio(AudioAlarm::new(props, subcomponents)))
+    //     }
+    //     ActionKind::Display => {
+    //         one! {
+    //             Description,
+    //             Prop<_, Text<_>, TextParams<_>>,
+    //             PropName::Rfc5545(Rfc5545PropName::Description),
+    //             DisplayAlarm
+    //         };
+    //
+    //         Ok(Alarm::Display(DisplayAlarm::new(props, subcomponents)))
+    //     }
+    //     ActionKind::Email => {
+    //         one! {
+    //             Description,
+    //             Prop<_, Text<_>, TextParams<_>>,
+    //             PropName::Rfc5545(Rfc5545PropName::Description),
+    //             EmailAlarm
+    //         };
+    //
+    //         one! {
+    //             Summary,
+    //             Prop<_, Text<_>, TextParams<_>>,
+    //             PropName::Rfc5545(Rfc5545PropName::Summary),
+    //             EmailAlarm
+    //         };
+    //
+    //         let attendees: Option<&Vec<Prop<_, CalAddress<_>, Box<AttendeeParams<_>>>>> = props
+    //             .get_known(StaticProp::Attendee)
+    //             .and_then(|x| x.try_into().ok());
+    //
+    //         let () = match attendees.map(Vec::len) {
+    //             None | Some(0) => Err(CalendarParseError::MissingProp {
+    //                 prop: PropName::Rfc5545(Rfc5545PropName::Attendee),
+    //                 component: ComponentKind::EmailAlarm,
+    //             }),
+    //             Some(_) => Ok(()),
+    //         }
+    //         .map_err(|err| E::from_external_error(input, err))?;
+    //
+    //         Ok(Alarm::Email(EmailAlarm::new(props, subcomponents)))
+    //     }
+    //     ActionKind::Unknown => Ok(Alarm::Other(OtherAlarm::new(props, subcomponents))),
+    // }
 
-        step_inner! {state, Alarm, prop, unknown_params, universals;
-            ParserProp::Known(KnownProp::Action(value)) => {
-                if state.contains_known_key(StaticProp::Action) {
-                    return Err(CalendarParseError::MoreThanOneProp {
-                        prop: PropName::Rfc5545(Rfc5545PropName::Action),
-                        component: ComponentKind::Alarm,
-                    });
-                }
-
-                match value {
-                    AlarmAction::Audio => {
-                        once!(Action, PropName::Rfc5545(Rfc5545PropName::Action), AudioAction, ())
-                    },
-                    AlarmAction::Display => {
-                        once!(Action, PropName::Rfc5545(Rfc5545PropName::Action), DisplayAction, ())
-                    },
-                    AlarmAction::Email => {
-                        once!(Action, PropName::Rfc5545(Rfc5545PropName::Action), EmailAction, ())
-                    },
-                    AlarmAction::Iana(action) => {
-                        once!(Action, PropName::Rfc5545(Rfc5545PropName::Action), UnknownAction::Iana(action), ())
-                    },
-                    AlarmAction::X(action) => {
-                        once!(Action, PropName::Rfc5545(Rfc5545PropName::Action), UnknownAction::X(action), ())
-                    }
-                }
-            },
-            ParserProp::Known(KnownProp::Description(value, params)) => {
-                once!(Description, PropName::Rfc5545(Rfc5545PropName::Description), value, params)
-            },
-            ParserProp::Known(KnownProp::TriggerRelative(value, params)) => {
-                once!(Trigger, PropName::Rfc5545(Rfc5545PropName::Trigger), value, params)
-            },
-            ParserProp::Known(KnownProp::TriggerAbsolute(value)) => {
-                once!(Trigger, PropName::Rfc5545(Rfc5545PropName::Trigger), value, ())
-            },
-            ParserProp::Known(KnownProp::Summary(value, params)) => {
-                once!(Summary, PropName::Rfc5545(Rfc5545PropName::Summary), value, params)
-            },
-            ParserProp::Known(KnownProp::Duration(value)) => {
-                once!(Duration, PropName::Rfc5545(Rfc5545PropName::Duration), value, ())
-            },
-            ParserProp::Known(KnownProp::Repeat(value)) => {
-                once!(Repeat, PropName::Rfc5545(Rfc5545PropName::RepeatCount), value, ())
-            },
-            ParserProp::Known(KnownProp::Uid(value)) => {
-                once!(Uid, PropName::Rfc5545(Rfc5545PropName::UniqueIdentifier), value, ())
-            },
-            ParserProp::Known(KnownProp::Acknowledged(value)) => {
-                once!(Acknowledged, PropName::Rfc9074(Rfc9074PropName::Acknowledged), value, ())
-            },
-            ParserProp::Known(KnownProp::Proximity(value)) => {
-                once!(Proximity, PropName::Rfc9074(Rfc9074PropName::Proximity), value, ())
-            },
-            ParserProp::Known(KnownProp::Attendee(value, params)) => {
-                seq!(Attendee, value, Box::new(params))
-            },
-            ParserProp::Known(KnownProp::Attach(value, params)) => {
-                seq!(Attach, value, params)
-            },
-            ParserProp::Known(KnownProp::RelatedTo(value, params)) => {
-                seq!(RelatedTo, value, params)
-            },
-        }
-    }
-
-    fn name<I, E>(input: &mut I) -> Result<(), E>
-    where
-        I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
-        E: ParserError<I>,
-    {
-        Caseless("VALARM").void().parse_next(input)
-    }
-
-    terminated(begin(name), crlf).parse_next(input)?;
-    let mut props = StateMachine::new(step).parse_next(input)?;
-    let subcomponents = repeat(0.., other_with_name).parse_next(input)?;
-    terminated(end(name), crlf).parse_next(input)?;
-
-    check_mandatory_fields! {input, props, Alarm;
-        Action => PropName::Rfc5545(Rfc5545PropName::Action),
-        Trigger => PropName::Rfc5545(Rfc5545PropName::Trigger),
-    }
-
-    enum ActionKind {
-        Audio,
-        Display,
-        Email,
-        Unknown,
-    }
-
-    let action = match props
-        .get_known(StaticProp::Action)
-        .unwrap()
-        .try_into()
-        .unwrap()
-    {
-        AlarmAction::Audio => ActionKind::Audio,
-        AlarmAction::Display => ActionKind::Display,
-        AlarmAction::Email => ActionKind::Email,
-        AlarmAction::Iana(_) | AlarmAction::X(_) => ActionKind::Unknown,
-    };
-
-    // we need to check certain multiplicities depending on the action:
-    // 1. audio alarms require zero or one attachments
-    // 2. display alarms require exactly one description
-    // 3. email alarms require one description, one summary, and at least one attendee
-    // 4. unknown action alarms have no multiplicity requirements
-
-    macro_rules! one {
-        ($key:ident, $t:ty, $prop_name:expr, $component:ident) => {{
-            let item: Option<$t> = props
-                .remove_known(StaticProp::$key)
-                .and_then(|x| x.try_into().ok());
-
-            let () = match item {
-                None => Err(CalendarParseError::MissingProp {
-                    prop: $prop_name,
-                    component: ComponentKind::$component,
-                }),
-                Some(item) => {
-                    let _prev = props.insert_known(StaticProp::$key, RawValue::from(item));
-                    debug_assert!(_prev.is_none());
-                    Ok(())
-                }
-            }
-            .map_err(|err| E::from_external_error(input, err))?;
-        }};
-    }
-
-    dbg![&props];
-
-    match action {
-        ActionKind::Audio => {
-            // get attachments if they are present
-            let attachments: Option<Vec<MultiProp<_, AttachValue<_>, AttachParams<_>>>> = props
-                .remove_known(StaticProp::Attach)
-                .and_then(|x| x.try_into().ok());
-
-            // handle multiplicities
-            let () = match attachments.as_ref().map(Vec::len) {
-                None | Some(0) => Ok(()),
-                Some(1) => match attachments.unwrap().pop().unwrap().try_into_single_prop() {
-                    Some(prop) => {
-                        let _prev = props.insert_known(StaticProp::Attach, RawValue::from(prop));
-                        debug_assert!(_prev.is_none());
-                        Ok(())
-                    }
-                    None => Err(CalendarParseError::OrderOnNonRepeatableProp),
-                },
-                Some(_) => Err(CalendarParseError::TooManyAttachmentsOnAudioAlarm),
-            }
-            .map_err(|err| E::from_external_error(input, err))?;
-
-            Ok(Alarm::Audio(AudioAlarm::new(props, subcomponents)))
-        }
-        ActionKind::Display => {
-            one! {
-                Description,
-                Prop<_, Text<_>, TextParams<_>>,
-                PropName::Rfc5545(Rfc5545PropName::Description),
-                DisplayAlarm
-            };
-
-            Ok(Alarm::Display(DisplayAlarm::new(props, subcomponents)))
-        }
-        ActionKind::Email => {
-            one! {
-                Description,
-                Prop<_, Text<_>, TextParams<_>>,
-                PropName::Rfc5545(Rfc5545PropName::Description),
-                EmailAlarm
-            };
-
-            one! {
-                Summary,
-                Prop<_, Text<_>, TextParams<_>>,
-                PropName::Rfc5545(Rfc5545PropName::Summary),
-                EmailAlarm
-            };
-
-            let attendees: Option<&Vec<MultiProp<_, CalAddress<_>, Box<AttendeeParams<_>>>>> =
-                props
-                    .get_known(StaticProp::Attendee)
-                    .and_then(|x| x.try_into().ok());
-
-            let () = match attendees.map(Vec::len) {
-                None | Some(0) => Err(CalendarParseError::MissingProp {
-                    prop: PropName::Rfc5545(Rfc5545PropName::Attendee),
-                    component: ComponentKind::EmailAlarm,
-                }),
-                Some(_) => Ok(()),
-            }
-            .map_err(|err| E::from_external_error(input, err))?;
-
-            Ok(Alarm::Email(EmailAlarm::new(props, subcomponents)))
-        }
-        ActionKind::Unknown => Ok(Alarm::Other(OtherAlarm::new(props, subcomponents))),
-    }
+    todo!()
 }
 
 /// A version of [`other`] that handles the BEGIN and END lines.
@@ -1933,7 +1952,6 @@ mod tests {
         assert!(tz_url.is_none());
 
         assert_eq!(tz_id.value, TzId("America/New_York"));
-        assert!(tz_id.unknown_params.is_empty());
 
         assert_eq!(
             last_modified.value,
@@ -1942,7 +1960,6 @@ mod tests {
                 time: time!(2;00;00, Utc)
             }
         );
-        assert!(last_modified.unknown_params.is_empty());
 
         // subcomponents
         let rules = tz.rules();
@@ -2030,22 +2047,22 @@ mod tests {
             }))
         );
 
-        assert_eq!(
-            alarm.attachment(),
-            Some(&Prop {
-                derived: false,
-                value: AttachValue::Uri(Uri(
-                    "ftp://example.com/pub/\r\n sounds/bell-01.aud".as_escaped()
-                )),
-                params: AttachParams {
-                    format_type: Some(FormatType {
-                        source: "audio/basic".as_escaped(),
-                        separator_index: 5
-                    }),
-                },
-                unknown_params: Default::default(),
-            })
-        );
+        // assert_eq!(
+        //     alarm.attachment(),
+        //     Some(&Prop {
+        //         derived: false,
+        //         value: AttachValue::Uri(Uri(
+        //             "ftp://example.com/pub/\r\n sounds/bell-01.aud".as_escaped()
+        //         )),
+        //         params: AttachParams {
+        //             format_type: Some(FormatType {
+        //                 source: "audio/basic".as_escaped(),
+        //                 separator_index: 5
+        //             }),
+        //         },
+        //         unknown_params: Default::default(),
+        //     })
+        // );
 
         let (duration, repeat) = alarm.duration_and_repeat().unwrap();
         assert_eq!(repeat, &Prop::from_value(4));
@@ -2136,23 +2153,23 @@ mod tests {
 
         assert_eq!(alarm.action(), &Prop::from_value(EmailAction));
 
-        assert_eq!(
-            alarm.trigger(),
-            TriggerPropRef::Relative(&Prop {
-                derived: false,
-                value: Duration {
-                    sign: Some(Sign::Negative),
-                    kind: DurationKind::Date {
-                        days: 2,
-                        time: None,
-                    },
-                },
-                params: TriggerParams {
-                    trigger_relation: Some(TriggerRelation::End)
-                },
-                unknown_params: Default::default(),
-            })
-        );
+        // assert_eq!(
+        //     alarm.trigger(),
+        //     TriggerPropRef::Relative(&Prop {
+        //         derived: false,
+        //         value: Duration {
+        //             sign: Some(Sign::Negative),
+        //             kind: DurationKind::Date {
+        //                 days: 2,
+        //                 time: None,
+        //             },
+        //         },
+        //         params: TriggerParams {
+        //             trigger_relation: Some(TriggerRelation::End)
+        //         },
+        //         unknown_params: Default::default(),
+        //     })
+        // );
 
         assert_eq!(
             alarm.attendees(),
@@ -2176,26 +2193,25 @@ mod tests {
             &Prop::from_value(Text("A draft agenda needs to be sent out to the attendees\r\n to the weekly managers meeting (MGR-LIST). Attached is a\r\n pointer the document template for the agenda file.".as_escaped())),
         );
 
-        assert_eq!(
-            alarm.attachments(),
-            Some(
-                [Prop {
-                    derived: false,
-                    value: AttachValue::Uri(Uri(
-                        "http://example.com/\r\n templates/agenda.doc".as_escaped()
-                    )),
-                    params: AttachParams {
-                        format_type: Some(FormatType {
-                            source: "application/msword".as_escaped(),
-                            separator_index: 11
-                        })
-                    },
-                    unknown_params: Default::default(),
-                }
-                .into_multi_prop()]
-                .as_slice()
-            ),
-        );
+        // assert_eq!(
+        //     alarm.attachments(),
+        //     Some(
+        //         [Prop {
+        //             derived: false,
+        //             value: AttachValue::Uri(Uri(
+        //                 "http://example.com/\r\n templates/agenda.doc".as_escaped()
+        //             )),
+        //             params: AttachParams {
+        //                 format_type: Some(FormatType {
+        //                     source: "application/msword".as_escaped(),
+        //                     separator_index: 11
+        //                 })
+        //             },
+        //             unknown_params: Default::default(),
+        //         }]
+        //         .as_slice()
+        //     ),
+        // );
 
         assert!(alarm.duration_and_repeat().is_none());
     }

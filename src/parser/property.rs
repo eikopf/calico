@@ -3,7 +3,7 @@
 use winnow::{
     Parser,
     ascii::Caseless,
-    combinator::{alt, empty, opt, preceded, repeat, separated},
+    combinator::{alt, preceded, repeat},
     error::{FromExternalError, ParserError},
     stream::{AsBStr, AsChar, Compare, SliceLen, Stream, StreamIsPartial},
     token::none_of,
@@ -12,31 +12,26 @@ use winnow::{
 use crate::{
     model::{
         css::Css3Color,
-        parameter::{KnownParam, Param, StaticParam, UnknownParam},
+        parameter::KnownParam,
         primitive::{
             AlarmAction, AttachValue, Binary, CalAddress, ClassValue, CompletionPercentage,
-            DateTime, DateTimeOrDate, Duration, Encoding, ExDateSeq, FormatType, FreeBusyType, Geo,
-            ImageData, Integer, Language, Method, ParticipantType, Period, Priority,
-            ProximityValue, RDateSeq, RelationshipType, RequestStatus, ResourceType, Status,
-            StyledDescriptionValue, Text, ThisAndFuture, TimeTransparency, TriggerRelation, TzId,
-            Uid, Uri, Utc, UtcOffset, Value, ValueType,
+            DateTime, DateTimeOrDate, Duration, ExDateSeq, Geo, ImageData, Integer, Method,
+            ParticipantType, Period, Priority, ProximityValue, RDateSeq, RequestStatus,
+            ResourceType, Status, StyledDescriptionValue, Text, TimeTransparency, TzId, Uid, Uri,
+            Utc, UtcOffset, Value, ValueType,
         },
         property::{
             AttachParams, AttendeeParams, ConfParams, DtParams, FBTypeParams, ImageParams,
-            LangParams, OrganizerParams, RecurrenceIdParams, RelTypeParams, StructuredDataParams,
-            StyledDescriptionParams, TextParams, TriggerParams, UniversalParams,
+            LangParams, OrganizerParams, RecurrenceIdParams, RelTypeParams, StaticProp,
+            StructuredDataParams, StyledDescriptionParams, TextParams, TriggerParams,
             UriStructuredDataParams,
         },
         rrule::RRule,
     },
     parser::{
-        error::{AttachParamError, SDParamError, TriggerParamError, UnexpectedKnownParamError},
-        parameter::parameter,
         primitive::{
-            alarm_action, ascii_lower, cal_address, class_value, color, completion_percentage,
-            datetime_utc, duration, float, geo, gregorian, iana_token, integer, method,
-            participant_type, period, priority, proximity_value, resource_type, status,
-            status_code, text, text_seq, time_transparency, tz_id, uid, utc_offset, v2_0, x_name,
+            ascii_lower, cal_address, duration, float, iana_token, integer, period, utc_offset,
+            x_name,
         },
         rrule::rrule,
     },
@@ -48,12 +43,12 @@ use super::{
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Prop<S> {
+pub enum ParsedProp<S> {
     Known(KnownProp<S>),
     Unknown(UnknownProp<S>),
 }
 
-impl<S> Prop<S> {
+impl<S> ParsedProp<S> {
     #[allow(clippy::result_large_err)]
     pub fn try_into_known(self) -> Result<KnownProp<S>, Self> {
         if let Self::Known(v) = self {
@@ -72,6 +67,11 @@ impl<S> Prop<S> {
         }
     }
 }
+
+// TODO: make every variant of KnownProp hold a (value, params) pair and make the params types use
+// a ParameterTable under the hood. then we can implement .upcast for KnownProp into RawPropValue
+// and use it to reimplement the property parser. however, question 0 should be what happens to the
+// model::property::Prop type now
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum KnownProp<S> {
@@ -153,77 +153,70 @@ pub enum KnownProp<S> {
 }
 
 impl<S> KnownProp<S> {
-    pub const fn name(&self) -> PropName<S> {
-        use PropName::*;
-        use Rfc5545PropName as PN5545;
-        use Rfc7986PropName as PN7986;
-        use Rfc9073PropName as PN9073;
-        use Rfc9074PropName as PN9074;
-
+    pub const fn name(&self) -> StaticProp {
         match self {
-            KnownProp::CalScale => Rfc5545(PN5545::CalendarScale),
-            KnownProp::Method(..) => Rfc5545(PN5545::Method),
-            KnownProp::ProdId(..) => Rfc5545(PN5545::ProductIdentifier),
-            KnownProp::Version => Rfc5545(PN5545::Version),
-            KnownProp::Attach(..) => Rfc5545(PN5545::Attachment),
-            KnownProp::Categories(..) => Rfc5545(PN5545::Categories),
-            KnownProp::Class(..) => Rfc5545(PN5545::Classification),
-            KnownProp::Comment(..) => Rfc5545(PN5545::Comment),
-            KnownProp::Description(..) => Rfc5545(PN5545::Description),
-            KnownProp::Geo(..) => Rfc5545(PN5545::GeographicPosition),
-            KnownProp::Location(..) => Rfc5545(PN5545::Location),
-            KnownProp::PercentComplete(..) => Rfc5545(PN5545::PercentComplete),
-            KnownProp::Priority(..) => Rfc5545(PN5545::Priority),
-            KnownProp::Resources(..) => Rfc5545(PN5545::Resources),
-            KnownProp::Status(..) => Rfc5545(PN5545::Status),
-            KnownProp::Summary(..) => Rfc5545(PN5545::Summary),
-            KnownProp::DtCompleted(..) => Rfc5545(PN5545::DateTimeCompleted),
-            KnownProp::DtEnd(..) => Rfc5545(PN5545::DateTimeEnd),
-            KnownProp::DtDue(..) => Rfc5545(PN5545::DateTimeDue),
-            KnownProp::DtStart(..) => Rfc5545(PN5545::DateTimeStart),
-            KnownProp::Duration(..) => Rfc5545(PN5545::Duration),
-            KnownProp::FreeBusy(..) => Rfc5545(PN5545::FreeBusyTime),
-            KnownProp::Transparency(..) => Rfc5545(PN5545::TimeTransparency),
-            KnownProp::TzId(..) => Rfc5545(PN5545::TimeZoneIdentifier),
-            KnownProp::TzName(..) => Rfc5545(PN5545::TimeZoneName),
-            KnownProp::TzOffsetFrom(..) => Rfc5545(PN5545::TimeZoneOffsetFrom),
-            KnownProp::TzOffsetTo(..) => Rfc5545(PN5545::TimeZoneOffsetTo),
-            KnownProp::TzUrl(..) => Rfc5545(PN5545::TimeZoneUrl),
-            KnownProp::Attendee(..) => Rfc5545(PN5545::Attendee),
-            KnownProp::Contact(..) => Rfc5545(PN5545::Contact),
-            KnownProp::Organizer(..) => Rfc5545(PN5545::Organizer),
-            KnownProp::RecurrenceId(..) => Rfc5545(PN5545::RecurrenceId),
-            KnownProp::RelatedTo(..) => Rfc5545(PN5545::RelatedTo),
-            KnownProp::Url(..) => Rfc5545(PN5545::UniformResourceLocator),
-            KnownProp::Uid(..) => Rfc5545(PN5545::UniqueIdentifier),
-            KnownProp::ExDate(..) => Rfc5545(PN5545::ExceptionDateTimes),
-            KnownProp::RDate(..) => Rfc5545(PN5545::RecurrenceDateTimes),
-            KnownProp::RRule(..) => Rfc5545(PN5545::RecurrenceRule),
-            KnownProp::Action(..) => Rfc5545(PN5545::Action),
-            KnownProp::Repeat(..) => Rfc5545(PN5545::RepeatCount),
-            KnownProp::TriggerRelative(..) => Rfc5545(PN5545::Trigger),
-            KnownProp::TriggerAbsolute(..) => Rfc5545(PN5545::Trigger),
-            KnownProp::Created(..) => Rfc5545(PN5545::DateTimeCreated),
-            KnownProp::DtStamp(..) => Rfc5545(PN5545::DateTimeStamp),
-            KnownProp::LastModified(..) => Rfc5545(PN5545::LastModified),
-            KnownProp::Sequence(..) => Rfc5545(PN5545::SequenceNumber),
-            KnownProp::RequestStatus(..) => Rfc5545(PN5545::RequestStatus),
-            KnownProp::Name(..) => Rfc7986(PN7986::Name),
-            KnownProp::RefreshInterval(..) => Rfc7986(PN7986::RefreshInterval),
-            KnownProp::Source(..) => Rfc7986(PN7986::Source),
-            KnownProp::Color(..) => Rfc7986(PN7986::Color),
-            KnownProp::Image(..) => Rfc7986(PN7986::Image),
-            KnownProp::Conference(..) => Rfc7986(PN7986::Conference),
-            KnownProp::LocationType(..) => Rfc9073(PN9073::LocationType),
-            KnownProp::ParticipantType(..) => Rfc9073(PN9073::ParticipantType),
-            KnownProp::ResourceType(..) => Rfc9073(PN9073::ResourceType),
-            KnownProp::CalendarAddress(..) => Rfc9073(PN9073::CalendarAddress),
-            KnownProp::StyledDescription(..) => Rfc9073(PN9073::StyledDescription),
-            KnownProp::StructuredDataBinary(..) => Rfc9073(PN9073::StructuredData),
-            KnownProp::StructuredDataText(..) => Rfc9073(PN9073::StructuredData),
-            KnownProp::StructuredDataUri(..) => Rfc9073(PN9073::StructuredData),
-            KnownProp::Acknowledged(..) => Rfc9074(PN9074::Acknowledged),
-            KnownProp::Proximity(..) => Rfc9074(PN9074::Proximity),
+            KnownProp::CalScale => StaticProp::CalScale,
+            KnownProp::Method(..) => StaticProp::Method,
+            KnownProp::ProdId(..) => StaticProp::ProdId,
+            KnownProp::Version => StaticProp::Version,
+            KnownProp::Attach(..) => StaticProp::Attach,
+            KnownProp::Categories(..) => StaticProp::Categories,
+            KnownProp::Class(..) => StaticProp::Class,
+            KnownProp::Comment(..) => StaticProp::Comment,
+            KnownProp::Description(..) => StaticProp::Description,
+            KnownProp::Geo(..) => StaticProp::Geo,
+            KnownProp::Location(..) => StaticProp::Location,
+            KnownProp::PercentComplete(..) => StaticProp::PercentComplete,
+            KnownProp::Priority(..) => StaticProp::Priority,
+            KnownProp::Resources(..) => StaticProp::Resources,
+            KnownProp::Status(..) => StaticProp::Status,
+            KnownProp::Summary(..) => StaticProp::Summary,
+            KnownProp::DtCompleted(..) => StaticProp::DtCompleted,
+            KnownProp::DtEnd(..) => StaticProp::DtEnd,
+            KnownProp::DtDue(..) => StaticProp::DtDue,
+            KnownProp::DtStart(..) => StaticProp::DtStart,
+            KnownProp::Duration(..) => StaticProp::Duration,
+            KnownProp::FreeBusy(..) => StaticProp::FreeBusy,
+            KnownProp::Transparency(..) => StaticProp::Transp,
+            KnownProp::TzId(..) => StaticProp::TzId,
+            KnownProp::TzName(..) => StaticProp::TzName,
+            KnownProp::TzOffsetFrom(..) => StaticProp::TzOffsetFrom,
+            KnownProp::TzOffsetTo(..) => StaticProp::TzOffsetTo,
+            KnownProp::TzUrl(..) => StaticProp::TzUrl,
+            KnownProp::Attendee(..) => StaticProp::Attendee,
+            KnownProp::Contact(..) => StaticProp::Contact,
+            KnownProp::Organizer(..) => StaticProp::Organizer,
+            KnownProp::RecurrenceId(..) => StaticProp::RecurId,
+            KnownProp::RelatedTo(..) => StaticProp::RelatedTo,
+            KnownProp::Url(..) => StaticProp::Url,
+            KnownProp::Uid(..) => StaticProp::Uid,
+            KnownProp::ExDate(..) => StaticProp::ExDate,
+            KnownProp::RDate(..) => StaticProp::RDate,
+            KnownProp::RRule(..) => StaticProp::RRule,
+            KnownProp::Action(..) => StaticProp::Action,
+            KnownProp::Repeat(..) => StaticProp::Repeat,
+            KnownProp::TriggerRelative(..) | KnownProp::TriggerAbsolute(..) => StaticProp::Trigger,
+            KnownProp::Created(..) => StaticProp::Created,
+            KnownProp::DtStamp(..) => StaticProp::DtStamp,
+            KnownProp::LastModified(..) => StaticProp::LastModified,
+            KnownProp::Sequence(..) => StaticProp::Sequence,
+            KnownProp::RequestStatus(..) => StaticProp::RequestStatus,
+            KnownProp::Name(..) => StaticProp::Name,
+            KnownProp::RefreshInterval(..) => StaticProp::RefreshInterval,
+            KnownProp::Source(..) => StaticProp::Source,
+            KnownProp::Color(..) => StaticProp::Color,
+            KnownProp::Image(..) => StaticProp::Image,
+            KnownProp::Conference(..) => StaticProp::Conference,
+            KnownProp::LocationType(..) => StaticProp::LocationType,
+            KnownProp::ParticipantType(..) => StaticProp::ParticipantType,
+            KnownProp::ResourceType(..) => StaticProp::ResourceType,
+            KnownProp::CalendarAddress(..) => StaticProp::CalendarAddress,
+            KnownProp::StyledDescription(..) => StaticProp::StyledDescription,
+            KnownProp::StructuredDataBinary(..)
+            | KnownProp::StructuredDataText(..)
+            | KnownProp::StructuredDataUri(..) => StaticProp::StructuredData,
+            KnownProp::Acknowledged(..) => StaticProp::Acknowledged,
+            KnownProp::Proximity(..) => StaticProp::Proximity,
         }
     }
 }
@@ -293,9 +286,11 @@ where
     }
 }
 
-pub type ParsedProp<S> = (Prop<S>, UniversalParams, Vec<UnknownParam<S>>);
+// TODO: how should we accumulate parameters here? if we pass a function in, what type should it
+// have? at the top-level i want to let the user pass a &mut T where T implements a ParserConfig
+// trait, so can we thread through a function that way?
 
-/// Parses a [`Prop`].
+/// Parses a property.
 pub fn property<I, E>(input: &mut I) -> Result<ParsedProp<I::Slice>, E>
 where
     I: StreamIsPartial + Stream + Compare<Caseless<&'static str>> + Compare<char>,
@@ -304,1752 +299,1421 @@ where
     <<I as Stream>::Slice as Stream>::Token: AsChar,
     E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
 {
-    struct StateMachine<Src, S, F> {
-        state: S,
-        step: F,
-        unknown_params: Vec<UnknownParam<Src>>,
-        value_type: Option<ValueType<Src>>,
-        universals: UniversalParams,
-    }
-
-    impl<Src, S, F> StateMachine<Src, S, F> {
-        pub fn new(state: S, step: F) -> Self {
-            StateMachine {
-                state,
-                step,
-                unknown_params: Vec::new(),
-                value_type: None,
-                universals: Default::default(),
-            }
-        }
-
-        pub fn advance<E>(&mut self, param: KnownParam<Src>) -> Result<(), E>
-        where
-            F: FnMut(KnownParam<Src>, &mut S) -> Result<(), E>,
-        {
-            (self.step)(param, &mut self.state)
-        }
-    }
-
-    #[allow(clippy::type_complexity)]
-    fn sm_parse_next<I, S, F, E>(
-        mut sm: StateMachine<I::Slice, S, F>,
-        input: &mut I,
-    ) -> Result<
-        (
-            S,
-            Option<ValueType<I::Slice>>,
-            UniversalParams,
-            Vec<UnknownParam<I::Slice>>,
-        ),
-        E,
-    >
-    where
-        I: StreamIsPartial + Stream + Compare<Caseless<&'static str>> + Compare<char>,
-        I::Token: AsChar + Clone,
-        I::Slice: AsBStr + Clone + SliceLen,
-        E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
-        F: FnMut(KnownParam<I::Slice>, &mut S) -> Result<(), CalendarParseError<I::Slice>>,
-    {
-        while input.peek_token().is_some_and(|t| t.as_char() != ':') {
-            let param = preceded(';', parameter).parse_next(input)?;
-
-            match param {
-                Param::Known(KnownParam::Order(order)) => match sm.universals.order {
-                    Some(_) => {
-                        return Err(E::from_external_error(
-                            input,
-                            CalendarParseError::DuplicateParam(StaticParam::Order),
-                        ));
-                    }
-                    None => {
-                        sm.universals.order = Some(order);
-                    }
-                },
-                Param::Known(KnownParam::Derived(derived)) => match sm.universals.derived {
-                    Some(_) => {
-                        return Err(E::from_external_error(
-                            input,
-                            CalendarParseError::DuplicateParam(StaticParam::Derived),
-                        ));
-                    }
-                    None => {
-                        sm.universals.derived = Some(derived);
-                    }
-                },
-                Param::Known(KnownParam::Value(value_type)) => match sm.value_type {
-                    Some(_) => {
-                        return Err(E::from_external_error(
-                            input,
-                            CalendarParseError::DuplicateParam(StaticParam::Value),
-                        ));
-                    }
-                    None => {
-                        sm.value_type = Some(value_type);
-                    }
-                },
-                Param::Known(known_param) => {
-                    let () = sm
-                        .advance(known_param)
-                        .map_err(|err| E::from_external_error(input, err))?;
-                }
-                Param::Unknown(unknown_param) => {
-                    sm.unknown_params.push(unknown_param);
-                }
-            }
-        }
-
-        Ok((sm.state, sm.value_type, sm.universals, sm.unknown_params))
-    }
-
-    /// The step function for unknown (IANA and X) properties.
-    fn unknown_step<S>(
-        param: KnownParam<S>,
-        state: &mut Vec<KnownParam<S>>,
-    ) -> Result<(), CalendarParseError<S>> {
-        state.push(param);
-        Ok(())
-    }
-
-    /// Returns the step function for properties with no known parameters.
-    fn trivial_step<S: Clone>(
-        current_property: PropName<S>,
-    ) -> impl FnMut(KnownParam<S>, &mut ()) -> Result<(), CalendarParseError<S>> {
-        move |param, &mut ()| {
-            Err(CalendarParseError::Unexpected(UnexpectedKnownParamError {
-                current_property: current_property.clone(),
-                unexpected_param: param,
-            }))
-        }
-    }
-
-    struct LangParamState<S> {
-        language: Option<Language<S>>,
-    }
-
-    impl<S> LangParamState<S> {
-        fn into_params(self) -> LangParams<S> {
-            LangParams {
-                language: self.language,
-            }
-        }
-    }
-
-    impl<S> Default for LangParamState<S> {
-        fn default() -> Self {
-            Self {
-                language: Default::default(),
-            }
-        }
-    }
-
-    fn lang_param_step<S: Clone>(
-        current_property: PropName<S>,
-    ) -> impl FnMut(KnownParam<S>, &mut LangParamState<S>) -> Result<(), CalendarParseError<S>>
-    {
-        move |param, state| match param {
-            KnownParam::Language(language) => match state.language {
-                Some(_) => Err(CalendarParseError::DuplicateParam(StaticParam::Language)),
-                None => {
-                    state.language = Some(language);
-                    Ok(())
-                }
-            },
-            unexpected_param => Err(CalendarParseError::Unexpected(UnexpectedKnownParamError {
-                current_property: current_property.clone(),
-                unexpected_param,
-            })),
-        }
-    }
-
-    struct TextParamState<S> {
-        alt_rep: Option<Uri<S>>,
-        language: Option<Language<S>>,
-    }
-
-    impl<S> Default for TextParamState<S> {
-        fn default() -> Self {
-            Self {
-                alt_rep: Default::default(),
-                language: Default::default(),
-            }
-        }
-    }
-
-    impl<S> TextParamState<S> {
-        fn into_params(self) -> TextParams<S> {
-            TextParams {
-                alternate_representation: self.alt_rep,
-                language: self.language,
-            }
-        }
-    }
-
-    /// Returns the step function for properties with [`TextParams`].
-    fn text_param_step<S: Clone>(
-        current_property: PropName<S>,
-    ) -> impl FnMut(KnownParam<S>, &mut TextParamState<S>) -> Result<(), CalendarParseError<S>>
-    {
-        move |param, state| match param {
-            KnownParam::AltRep(uri) => match state.alt_rep {
-                Some(_) => Err(CalendarParseError::DuplicateParam(StaticParam::AltRep)),
-                None => {
-                    state.alt_rep = Some(uri);
-                    Ok(())
-                }
-            },
-            KnownParam::Language(language) => match state.language {
-                Some(_) => Err(CalendarParseError::DuplicateParam(StaticParam::Language)),
-                None => {
-                    state.language = Some(language);
-                    Ok(())
-                }
-            },
-            unexpected_param => Err(CalendarParseError::Unexpected(UnexpectedKnownParamError {
-                current_property: current_property.clone(),
-                unexpected_param,
-            })),
-        }
-    }
-
-    #[derive(Clone, Copy, Default)]
-    enum DateTimeOrDateType {
-        #[default]
-        DateTime,
-        Date,
-    }
-
-    impl DateTimeOrDateType {
-        fn into_parser<I, E>(self) -> impl Parser<I, DateTimeOrDate, E> + Copy
-        where
-            I: StreamIsPartial + Stream + Compare<char>,
-            I::Token: AsChar + Clone,
-            E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
-        {
-            move |input: &mut I| match self {
-                DateTimeOrDateType::DateTime => {
-                    datetime.map(DateTimeOrDate::DateTime).parse_next(input)
-                }
-                DateTimeOrDateType::Date => date.map(DateTimeOrDate::Date).parse_next(input),
-            }
-        }
-
-        fn into_seq_parser<I, E>(self) -> impl Parser<I, ExDateSeq, E> + Copy
-        where
-            I: StreamIsPartial + Stream + Compare<char>,
-            I::Token: AsChar + Clone,
-            E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
-        {
-            move |input: &mut I| match self {
-                DateTimeOrDateType::DateTime => separated(1.., datetime, ',')
-                    .map(ExDateSeq::DateTime)
-                    .parse_next(input),
-                DateTimeOrDateType::Date => separated(1.., date, ',')
-                    .map(ExDateSeq::Date)
-                    .parse_next(input),
-            }
-        }
-    }
-
-    struct DtParamState<S> {
-        tz_id: Option<TzId<S>>,
-    }
-
-    impl<S> Default for DtParamState<S> {
-        fn default() -> Self {
-            Self {
-                tz_id: Default::default(),
-            }
-        }
-    }
-
-    impl<S> DtParamState<S> {
-        fn into_params(self) -> DtParams<S> {
-            DtParams { tz_id: self.tz_id }
-        }
-    }
-
-    fn dt_param_step<S: Clone>(
-        current_property: PropName<S>,
-    ) -> impl FnMut(KnownParam<S>, &mut DtParamState<S>) -> Result<(), CalendarParseError<S>> {
-        move |param, state| match param {
-            KnownParam::TzId(tz_id) => match state.tz_id {
-                Some(_) => Err(CalendarParseError::DuplicateParam(StaticParam::TzId)),
-                None => {
-                    state.tz_id = Some(tz_id);
-                    Ok(())
-                }
-            },
-            unexpected_param => Err(CalendarParseError::Unexpected(UnexpectedKnownParamError {
-                current_property: current_property.clone(),
-                unexpected_param,
-            })),
-        }
-    }
-
-    #[derive(Default, PartialEq, Eq)]
-    enum UriOrBinary {
-        #[default]
-        Uri,
-        Binary,
-    }
-
-    struct StateMachineResult<T, V, P, S> {
-        value: T,
-        value_type: V,
-        state: P,
-        universals: UniversalParams,
-        unknown_params: Vec<UnknownParam<S>>,
-    }
-
-    impl<T, V, P, S> StateMachineResult<T, V, P, S> {
-        fn try_finish<E>(
-            self,
-            f: impl FnOnce(T, V, P) -> Result<KnownProp<S>, E>,
-        ) -> Result<ParsedProp<S>, E> {
-            f(self.value, self.value_type, self.state).map(|known_prop| {
-                (
-                    Prop::Known(known_prop),
-                    self.universals,
-                    self.unknown_params,
-                )
-            })
-        }
-
-        fn finish_value(self, f: impl FnOnce(T) -> KnownProp<S>) -> ParsedProp<S> {
-            (
-                Prop::Known(f(self.value)),
-                self.universals,
-                self.unknown_params,
-            )
-        }
-
-        fn finish_both<U>(
-            self,
-            p: impl FnOnce(P) -> U,
-            f: impl FnOnce(T, U) -> KnownProp<S>,
-        ) -> ParsedProp<S> {
-            (
-                Prop::Known(f(self.value, p(self.state))),
-                self.universals,
-                self.unknown_params,
-            )
-        }
-    }
-
-    #[allow(clippy::type_complexity)]
-    fn parse_property<I, E, T, S, V>(
-        input: &mut I,
-        step_fn: impl FnMut(KnownParam<I::Slice>, &mut S) -> Result<(), CalendarParseError<I::Slice>>,
-        value_type_check: impl FnOnce(
-            Option<ValueType<I::Slice>>,
-        ) -> Result<V, CalendarParseError<I::Slice>>,
-        value_parser: impl FnOnce(&mut I) -> Result<T, E>,
-    ) -> Result<StateMachineResult<T, V, S, I::Slice>, E>
-    where
-        I: StreamIsPartial + Stream + Compare<Caseless<&'static str>> + Compare<char>,
-        I::Token: AsChar + Clone,
-        I::Slice: AsBStr + Clone + SliceLen,
-        E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
-        S: Default,
-    {
-        let (state, value_type, universals, unknown_params) =
-            sm_parse_next(StateMachine::new(S::default(), step_fn), input)?;
-        let _ = ':'.parse_next(input)?;
-
-        let value_type =
-            value_type_check(value_type).map_err(|err| E::from_external_error(input, err))?;
-        let value = value_parser(input)?;
-        Ok(StateMachineResult {
-            value,
-            value_type,
-            state,
-            universals,
-            unknown_params,
-        })
-    }
-
-    #[allow(clippy::type_complexity)]
-    fn only<I>(
-        value_type: ValueType<I::Slice>,
-    ) -> impl FnOnce(Option<ValueType<I::Slice>>) -> Result<(), CalendarParseError<I::Slice>>
-    where
-        I: Stream,
-        I::Slice: Eq,
-    {
-        move |v| {
-            if v.is_none_or(|v| v == value_type) {
-                Ok(())
-            } else {
-                Err(CalendarParseError::UnexpectedValueType)
-            }
-        }
-    }
-
-    #[allow(clippy::type_complexity)]
-    fn once<I>(
-        value_type: ValueType<I::Slice>,
-    ) -> impl FnOnce(Option<ValueType<I::Slice>>) -> Result<(), CalendarParseError<I::Slice>>
-    where
-        I: Stream,
-        I::Slice: Eq,
-    {
-        move |v| {
-            if v.is_some_and(|v| v == value_type) {
-                Ok(())
-            } else {
-                Err(CalendarParseError::UnexpectedValueType)
-            }
-        }
-    }
-
-    fn datetime_or_date_type<I>(
-        value_type: Option<ValueType<I::Slice>>,
-    ) -> Result<DateTimeOrDateType, CalendarParseError<I::Slice>>
-    where
-        I: Stream,
-    {
-        match value_type {
-            None | Some(ValueType::DateTime) => Ok(DateTimeOrDateType::DateTime),
-            Some(ValueType::Date) => Ok(DateTimeOrDateType::Date),
-            _ => Err(CalendarParseError::UnexpectedValueType),
-        }
-    }
-
     let name = property_name.parse_next(input)?;
-
-    Ok(match name {
-        PropName::Rfc5545(prop @ Rfc5545PropName::CalendarScale) => {
-            let res = parse_property(
-                input,
-                trivial_step(PropName::Rfc5545(prop)),
-                only::<I>(ValueType::Text),
-                gregorian,
-            )?;
-
-            res.finish_value(|()| KnownProp::CalScale)
-        }
-        PropName::Rfc5545(prop @ Rfc5545PropName::Method) => {
-            let res = parse_property(
-                input,
-                trivial_step(PropName::Rfc5545(prop)),
-                only::<I>(ValueType::Text),
-                method,
-            )?;
-
-            res.finish_value(KnownProp::Method)
-        }
-        PropName::Rfc5545(prop @ Rfc5545PropName::ProductIdentifier) => {
-            let res = parse_property(
-                input,
-                trivial_step(PropName::Rfc5545(prop)),
-                only::<I>(ValueType::Text),
-                text,
-            )?;
-
-            res.finish_value(KnownProp::ProdId)
-        }
-        PropName::Rfc5545(prop @ Rfc5545PropName::Version) => {
-            let res = parse_property(
-                input,
-                trivial_step(PropName::Rfc5545(prop)),
-                only::<I>(ValueType::Text),
-                v2_0,
-            )?;
-
-            res.finish_value(|()| KnownProp::Version)
-        }
-        PropName::Rfc5545(Rfc5545PropName::Attachment) => {
-            struct Base64;
-
-            struct State<S> {
-                /// Permitted iff value_type is BINARY
-                encoding: Option<Base64>,
-                /// OPTIONAL for URI and RECOMMENDED for BINARY
-                format_type: Option<FormatType<S>>,
-            }
-
-            impl<S> Default for State<S> {
-                fn default() -> Self {
-                    Self {
-                        encoding: Default::default(),
-                        format_type: Default::default(),
-                    }
-                }
-            }
-
-            fn step<S>(
-                param: KnownParam<S>,
-                state: &mut State<S>,
-            ) -> Result<(), CalendarParseError<S>> {
-                match param {
-                    KnownParam::Encoding(Encoding::Base64) => match state.encoding {
-                        Some(_) => Err(CalendarParseError::DuplicateParam(StaticParam::Encoding)),
-                        None => {
-                            state.encoding = Some(Base64);
-                            Ok(())
-                        }
-                    },
-                    KnownParam::Encoding(Encoding::Bit8) => Err(CalendarParseError::AttachParam(
-                        AttachParamError::Bit8Encoding,
-                    )),
-                    KnownParam::FormatType(format_type) => match state.format_type {
-                        Some(_) => Err(CalendarParseError::DuplicateParam(StaticParam::FormatType)),
-                        None => {
-                            state.format_type = Some(format_type);
-                            Ok(())
-                        }
-                    },
-                    known_param => Err(CalendarParseError::Unexpected(UnexpectedKnownParamError {
-                        current_property: PropName::Rfc5545(Rfc5545PropName::Attachment),
-                        unexpected_param: known_param,
-                    })),
-                }
-            }
-
-            let res = parse_property(
-                input,
-                step,
-                |v| match v {
-                    None | Some(ValueType::Uri) => Ok(UriOrBinary::Uri),
-                    Some(ValueType::Binary) => Ok(UriOrBinary::Binary),
-                    _ => Err(CalendarParseError::UnexpectedValueType),
-                },
-                empty,
-            )?;
-
-            if res.value_type == UriOrBinary::Binary {
-                match res.state.encoding {
-                    Some(Base64) => (),
-                    None => {
-                        return Err(E::from_external_error(
-                            input,
-                            CalendarParseError::AttachParam(
-                                AttachParamError::BinaryWithoutEncoding,
-                            ),
-                        ));
-                    }
-                }
-            }
-
-            let params = AttachParams {
-                format_type: res.state.format_type,
-            };
-
-            let value = match res.value_type {
-                UriOrBinary::Uri => uri::<_, _, false>.map(AttachValue::Uri).parse_next(input)?,
-                UriOrBinary::Binary => binary.map(AttachValue::Binary).parse_next(input)?,
-            };
-
-            (
-                Prop::Known(KnownProp::Attach(value, params)),
-                res.universals,
-                res.unknown_params,
-            )
-        }
-        PropName::Rfc5545(prop @ Rfc5545PropName::Categories) => {
-            let res = parse_property(
-                input,
-                lang_param_step(PropName::Rfc5545(prop)),
-                only::<I>(ValueType::Text),
-                text_seq,
-            )?;
-
-            res.finish_both(LangParamState::into_params, KnownProp::Categories)
-        }
-        PropName::Rfc5545(prop @ Rfc5545PropName::Classification) => {
-            let res = parse_property(
-                input,
-                trivial_step(PropName::Rfc5545(prop)),
-                only::<I>(ValueType::Text),
-                class_value,
-            )?;
-
-            res.finish_value(KnownProp::Class)
-        }
-        PropName::Rfc5545(prop @ Rfc5545PropName::Comment) => {
-            let res = parse_property(
-                input,
-                text_param_step(PropName::Rfc5545(prop)),
-                only::<I>(ValueType::Text),
-                text,
-            )?;
-
-            res.finish_both(TextParamState::into_params, KnownProp::Comment)
-        }
-        PropName::Rfc5545(prop @ Rfc5545PropName::Description) => {
-            let res = parse_property(
-                input,
-                text_param_step(PropName::Rfc5545(prop)),
-                only::<I>(ValueType::Text),
-                text,
-            )?;
-
-            res.finish_both(TextParamState::into_params, KnownProp::Description)
-        }
-        PropName::Rfc5545(prop @ Rfc5545PropName::GeographicPosition) => {
-            let res = parse_property(
-                input,
-                trivial_step(PropName::Rfc5545(prop)),
-                only::<I>(ValueType::Float),
-                geo,
-            )?;
-
-            res.finish_value(KnownProp::Geo)
-        }
-        PropName::Rfc5545(prop @ Rfc5545PropName::Location) => {
-            let res = parse_property(
-                input,
-                text_param_step(PropName::Rfc5545(prop)),
-                only::<I>(ValueType::Text),
-                text,
-            )?;
-
-            res.finish_both(TextParamState::into_params, KnownProp::Location)
-        }
-        PropName::Rfc5545(prop @ Rfc5545PropName::PercentComplete) => {
-            let res = parse_property(
-                input,
-                trivial_step(PropName::Rfc5545(prop)),
-                only::<I>(ValueType::Integer),
-                completion_percentage,
-            )?;
-
-            res.finish_value(KnownProp::PercentComplete)
-        }
-        PropName::Rfc5545(prop @ Rfc5545PropName::Priority) => {
-            let res = parse_property(
-                input,
-                trivial_step(PropName::Rfc5545(prop)),
-                only::<I>(ValueType::Integer),
-                priority,
-            )?;
-
-            res.finish_value(KnownProp::Priority)
-        }
-        PropName::Rfc5545(prop @ Rfc5545PropName::Resources) => {
-            let res = parse_property(
-                input,
-                text_param_step(PropName::Rfc5545(prop)),
-                only::<I>(ValueType::Text),
-                text_seq,
-            )?;
-
-            res.finish_both(TextParamState::into_params, KnownProp::Resources)
-        }
-        PropName::Rfc5545(prop @ Rfc5545PropName::Status) => {
-            let res = parse_property(
-                input,
-                trivial_step(PropName::Rfc5545(prop)),
-                only::<I>(ValueType::Text),
-                status,
-            )?;
-
-            res.finish_value(KnownProp::Status)
-        }
-        PropName::Rfc5545(prop @ Rfc5545PropName::Summary) => {
-            let res = parse_property(
-                input,
-                text_param_step(PropName::Rfc5545(prop)),
-                only::<I>(ValueType::Text),
-                text,
-            )?;
-
-            res.finish_both(TextParamState::into_params, KnownProp::Summary)
-        }
-        PropName::Rfc5545(prop @ Rfc5545PropName::DateTimeCompleted) => {
-            let res = parse_property(
-                input,
-                trivial_step(PropName::Rfc5545(prop)),
-                only::<I>(ValueType::DateTime),
-                datetime_utc,
-            )?;
-
-            res.finish_value(KnownProp::DtCompleted)
-        }
-        PropName::Rfc5545(prop @ Rfc5545PropName::DateTimeEnd) => {
-            let res = parse_property(
-                input,
-                dt_param_step(PropName::Rfc5545(prop)),
-                datetime_or_date_type::<I>,
-                empty,
-            )?;
-
-            res.try_finish(|(), value_type, state| {
-                let value = value_type.into_parser().parse_next(input)?;
-                let params = state.into_params();
-                Ok(KnownProp::DtEnd(value, params))
-            })?
-        }
-        PropName::Rfc5545(prop @ Rfc5545PropName::DateTimeDue) => {
-            let res = parse_property(
-                input,
-                dt_param_step(PropName::Rfc5545(prop)),
-                datetime_or_date_type::<I>,
-                empty,
-            )?;
-
-            res.try_finish(|(), value_type, state| {
-                let value = value_type.into_parser().parse_next(input)?;
-                let params = state.into_params();
-                Ok(KnownProp::DtDue(value, params))
-            })?
-        }
-        PropName::Rfc5545(prop @ Rfc5545PropName::DateTimeStart) => {
-            let res = parse_property(
-                input,
-                dt_param_step(PropName::Rfc5545(prop)),
-                datetime_or_date_type::<I>,
-                empty,
-            )?;
-
-            res.try_finish(|(), value_type, state| {
-                let value = value_type.into_parser().parse_next(input)?;
-                let params = state.into_params();
-                Ok(KnownProp::DtStart(value, params))
-            })?
-        }
-        PropName::Rfc5545(prop @ Rfc5545PropName::Duration) => {
-            let res = parse_property(
-                input,
-                trivial_step(PropName::Rfc5545(prop)),
-                only::<I>(ValueType::Duration),
-                duration,
-            )?;
-
-            res.finish_value(KnownProp::Duration)
-        }
-        PropName::Rfc5545(Rfc5545PropName::FreeBusyTime) => {
-            type State<S> = Option<FreeBusyType<S>>;
-
-            fn step<S>(
-                param: KnownParam<S>,
-                state: &mut State<S>,
-            ) -> Result<(), CalendarParseError<S>> {
-                match param {
-                    KnownParam::FBType(free_busy_type) => match state {
-                        Some(_) => Err(CalendarParseError::DuplicateParam(
-                            StaticParam::FreeBusyType,
-                        )),
-                        None => {
-                            *state = Some(free_busy_type);
-                            Ok(())
-                        }
-                    },
-                    unexpected_param => {
-                        Err(CalendarParseError::Unexpected(UnexpectedKnownParamError {
-                            current_property: PropName::Rfc5545(Rfc5545PropName::FreeBusyTime),
-                            unexpected_param,
-                        }))
-                    }
-                }
-            }
-
-            parse_property(input, step, only::<I>(ValueType::Period), |i| {
-                separated(1.., period, ',').parse_next(i)
-            })?
-            .finish_both(
-                |free_busy_type| FBTypeParams { free_busy_type },
-                KnownProp::FreeBusy,
-            )
-        }
-        PropName::Rfc5545(prop @ Rfc5545PropName::TimeTransparency) => {
-            let res = parse_property(
-                input,
-                trivial_step(PropName::Rfc5545(prop)),
-                only::<I>(ValueType::Text),
-                time_transparency,
-            )?;
-
-            res.finish_value(KnownProp::Transparency)
-        }
-        PropName::Rfc5545(prop @ Rfc5545PropName::TimeZoneIdentifier) => {
-            let res = parse_property(
-                input,
-                trivial_step(PropName::Rfc5545(prop)),
-                only::<I>(ValueType::Text),
-                tz_id,
-            )?;
-
-            res.finish_value(KnownProp::TzId)
-        }
-        PropName::Rfc5545(prop @ Rfc5545PropName::TimeZoneName) => {
-            let res = parse_property(
-                input,
-                lang_param_step(PropName::Rfc5545(prop)),
-                only::<I>(ValueType::Text),
-                text,
-            )?;
-
-            res.finish_both(LangParamState::into_params, KnownProp::TzName)
-        }
-        PropName::Rfc5545(prop @ Rfc5545PropName::TimeZoneOffsetFrom) => {
-            let res = parse_property(
-                input,
-                trivial_step(PropName::Rfc5545(prop)),
-                only::<I>(ValueType::UtcOffset),
-                utc_offset,
-            )?;
-
-            res.finish_value(KnownProp::TzOffsetFrom)
-        }
-        PropName::Rfc5545(prop @ Rfc5545PropName::TimeZoneOffsetTo) => {
-            let res = parse_property(
-                input,
-                trivial_step(PropName::Rfc5545(prop)),
-                only::<I>(ValueType::UtcOffset),
-                utc_offset,
-            )?;
-
-            res.finish_value(KnownProp::TzOffsetTo)
-        }
-        PropName::Rfc5545(prop @ Rfc5545PropName::TimeZoneUrl) => {
-            let res = parse_property(
-                input,
-                trivial_step(PropName::Rfc5545(prop)),
-                only::<I>(ValueType::Uri),
-                uri::<_, _, false>,
-            )?;
-
-            res.finish_value(KnownProp::TzUrl)
-        }
-        PropName::Rfc5545(Rfc5545PropName::Attendee) => {
-            type State<S> = AttendeeParams<S>;
-
-            fn step<S>(
-                param: KnownParam<S>,
-                state: &mut State<S>,
-            ) -> Result<(), CalendarParseError<S>> {
-                let name = param.name();
-                match param {
-                    KnownParam::CommonName(common_name) => match state.common_name {
-                        Some(_) => Err(CalendarParseError::DuplicateParam(name)),
-                        None => {
-                            state.common_name = Some(common_name);
-                            Ok(())
-                        }
-                    },
-                    KnownParam::CUType(calendar_user_type) => match state.calendar_user_type {
-                        Some(_) => Err(CalendarParseError::DuplicateParam(name)),
-                        None => {
-                            state.calendar_user_type = Some(calendar_user_type);
-                            Ok(())
-                        }
-                    },
-                    KnownParam::DelFrom(delegators) => match state.delegators {
-                        Some(_) => Err(CalendarParseError::DuplicateParam(name)),
-                        None => {
-                            state.delegators = Some(delegators);
-                            Ok(())
-                        }
-                    },
-                    KnownParam::DelTo(delegatees) => match state.delegatees {
-                        Some(_) => Err(CalendarParseError::DuplicateParam(name)),
-                        None => {
-                            state.delegatees = Some(delegatees);
-                            Ok(())
-                        }
-                    },
-                    KnownParam::Dir(dir) => match state.directory_entry_reference {
-                        Some(_) => Err(CalendarParseError::DuplicateParam(name)),
-                        None => {
-                            state.directory_entry_reference = Some(dir);
-                            Ok(())
-                        }
-                    },
-                    KnownParam::Language(language) => match state.language {
-                        Some(_) => Err(CalendarParseError::DuplicateParam(name)),
-                        None => {
-                            state.language = Some(language);
-                            Ok(())
-                        }
-                    },
-                    KnownParam::Member(uris) => match state.group_or_list_membership {
-                        Some(_) => Err(CalendarParseError::DuplicateParam(name)),
-                        None => {
-                            state.group_or_list_membership = Some(uris);
-                            Ok(())
-                        }
-                    },
-                    KnownParam::PartStatus(participation_status) => {
-                        match state.participation_status {
-                            Some(_) => Err(CalendarParseError::DuplicateParam(name)),
-                            None => {
-                                state.participation_status = Some(participation_status);
-                                Ok(())
-                            }
-                        }
-                    }
-                    KnownParam::Role(participation_role) => match state.participation_role {
-                        Some(_) => Err(CalendarParseError::DuplicateParam(name)),
-                        None => {
-                            state.participation_role = Some(participation_role);
-                            Ok(())
-                        }
-                    },
-                    KnownParam::Rsvp(rsvp_expectation) => match state.rsvp_expectation {
-                        Some(_) => Err(CalendarParseError::DuplicateParam(name)),
-                        None => {
-                            state.rsvp_expectation = Some(rsvp_expectation);
-                            Ok(())
-                        }
-                    },
-                    KnownParam::SentBy(sent_by) => match state.sent_by {
-                        Some(_) => Err(CalendarParseError::DuplicateParam(name)),
-                        None => {
-                            state.sent_by = Some(sent_by);
-                            Ok(())
-                        }
-                    },
-                    KnownParam::Email(email) => match state.email {
-                        Some(_) => Err(CalendarParseError::DuplicateParam(name)),
-                        None => {
-                            state.email = Some(email);
-                            Ok(())
-                        }
-                    },
-                    unexpected_param => {
-                        Err(CalendarParseError::Unexpected(UnexpectedKnownParamError {
-                            current_property: PropName::Rfc5545(Rfc5545PropName::Attendee),
-                            unexpected_param,
-                        }))
-                    }
-                }
-            }
-
-            let res = parse_property(
-                input,
-                step,
-                only::<I>(ValueType::CalAddress),
-                cal_address::<_, _, false>,
-            )?;
-
-            res.finish_both(std::convert::identity, KnownProp::Attendee)
-        }
-        PropName::Rfc5545(prop @ Rfc5545PropName::Contact) => {
-            let res = parse_property(
-                input,
-                text_param_step(PropName::Rfc5545(prop)),
-                only::<I>(ValueType::Text),
-                text,
-            )?;
-
-            res.finish_both(TextParamState::into_params, KnownProp::Contact)
-        }
-        PropName::Rfc5545(Rfc5545PropName::Organizer) => {
-            type State<S> = OrganizerParams<S>;
-
-            fn step<S>(
-                param: KnownParam<S>,
-                state: &mut State<S>,
-            ) -> Result<(), CalendarParseError<S>> {
-                let name = param.name();
-                match param {
-                    KnownParam::CommonName(common_name) => match state.common_name {
-                        Some(_) => Err(CalendarParseError::DuplicateParam(name)),
-                        None => {
-                            state.common_name = Some(common_name);
-                            Ok(())
-                        }
-                    },
-                    KnownParam::Dir(dir) => match state.directory_entry_reference {
-                        Some(_) => Err(CalendarParseError::DuplicateParam(name)),
-                        None => {
-                            state.directory_entry_reference = Some(dir);
-                            Ok(())
-                        }
-                    },
-                    KnownParam::Language(language) => match state.language {
-                        Some(_) => Err(CalendarParseError::DuplicateParam(name)),
-                        None => {
-                            state.language = Some(language);
-                            Ok(())
-                        }
-                    },
-                    KnownParam::SentBy(sent_by) => match state.sent_by {
-                        Some(_) => Err(CalendarParseError::DuplicateParam(name)),
-                        None => {
-                            state.sent_by = Some(sent_by);
-                            Ok(())
-                        }
-                    },
-                    KnownParam::Email(email) => match state.email {
-                        Some(_) => Err(CalendarParseError::DuplicateParam(name)),
-                        None => {
-                            state.email = Some(email);
-                            Ok(())
-                        }
-                    },
-                    unexpected_param => {
-                        Err(CalendarParseError::Unexpected(UnexpectedKnownParamError {
-                            current_property: PropName::Rfc5545(Rfc5545PropName::Organizer),
-                            unexpected_param,
-                        }))
-                    }
-                }
-            }
-
-            let res = parse_property(
-                input,
-                step,
-                only::<I>(ValueType::CalAddress),
-                cal_address::<_, _, false>,
-            )?;
-
-            res.finish_both(std::convert::identity, KnownProp::Organizer)
-        }
-        PropName::Rfc5545(Rfc5545PropName::RecurrenceId) => {
-            struct State<S> {
-                tz_id: Option<TzId<S>>,
-                recurrence_identifier_range: Option<ThisAndFuture>,
-            }
-
-            impl<S> State<S> {
-                fn into_params(self) -> RecurrenceIdParams<S> {
-                    RecurrenceIdParams {
-                        tz_id: self.tz_id,
-                        recurrence_identifier_range: self.recurrence_identifier_range,
-                    }
-                }
-            }
-
-            impl<S> Default for State<S> {
-                fn default() -> Self {
-                    Self {
-                        tz_id: Default::default(),
-                        recurrence_identifier_range: Default::default(),
-                    }
-                }
-            }
-
-            fn step<S>(
-                param: KnownParam<S>,
-                state: &mut State<S>,
-            ) -> Result<(), CalendarParseError<S>> {
-                let name = param.name();
-                match param {
-                    KnownParam::RecurrenceIdentifierRange => {
-                        match state.recurrence_identifier_range {
-                            Some(ThisAndFuture) => Err(CalendarParseError::DuplicateParam(name)),
-                            None => {
-                                state.recurrence_identifier_range = Some(ThisAndFuture);
-                                Ok(())
-                            }
-                        }
-                    }
-                    KnownParam::TzId(tz_id) => match state.tz_id {
-                        Some(_) => Err(CalendarParseError::DuplicateParam(name)),
-                        None => {
-                            state.tz_id = Some(tz_id);
-                            Ok(())
-                        }
-                    },
-                    unexpected_param => {
-                        Err(CalendarParseError::Unexpected(UnexpectedKnownParamError {
-                            current_property: PropName::Rfc5545(Rfc5545PropName::RecurrenceId),
-                            unexpected_param,
-                        }))
-                    }
-                }
-            }
-
-            parse_property(input, step, datetime_or_date_type::<I>, empty)?.try_finish(
-                |(), value_type, state| {
-                    let value = value_type.into_parser().parse_next(input)?;
-                    let params = state.into_params();
-                    Ok(KnownProp::RecurrenceId(value, params))
-                },
-            )?
-        }
-        PropName::Rfc5545(Rfc5545PropName::RelatedTo) => {
-            type State<S> = Option<RelationshipType<S>>;
-
-            fn step<S>(
-                param: KnownParam<S>,
-                state: &mut State<S>,
-            ) -> Result<(), CalendarParseError<S>> {
-                let name = param.name();
-
-                match param {
-                    KnownParam::RelType(relationship_type) => match state {
-                        Some(_) => Err(CalendarParseError::DuplicateParam(name)),
-                        None => {
-                            *state = Some(relationship_type);
-                            Ok(())
-                        }
-                    },
-                    unexpected_param => {
-                        Err(CalendarParseError::Unexpected(UnexpectedKnownParamError {
-                            current_property: PropName::Rfc5545(Rfc5545PropName::RelatedTo),
-                            unexpected_param,
-                        }))
-                    }
-                }
-            }
-
-            parse_property(input, step, only::<I>(ValueType::Text), text)?.finish_both(
-                |relationship_type| RelTypeParams { relationship_type },
-                KnownProp::RelatedTo,
-            )
-        }
-        PropName::Rfc5545(prop @ Rfc5545PropName::UniformResourceLocator) => {
-            let res = parse_property(
-                input,
-                trivial_step(PropName::Rfc5545(prop)),
-                only::<I>(ValueType::Uri),
-                uri::<_, _, false>,
-            )?;
-
-            res.finish_value(KnownProp::Url)
-        }
-        PropName::Rfc5545(prop @ Rfc5545PropName::UniqueIdentifier) => {
-            let res = parse_property(
-                input,
-                trivial_step(PropName::Rfc5545(prop)),
-                only::<I>(ValueType::Text),
-                uid,
-            )?;
-
-            res.finish_value(KnownProp::Uid)
-        }
-        PropName::Rfc5545(prop @ Rfc5545PropName::ExceptionDateTimes) => {
-            let res = parse_property(
-                input,
-                dt_param_step(PropName::Rfc5545(prop)),
-                datetime_or_date_type::<I>,
-                empty,
-            )?;
-
-            res.try_finish(|(), value_type, state| {
-                let value = value_type.into_seq_parser().parse_next(input)?;
-                let params = state.into_params();
-                Ok(KnownProp::ExDate(value, params))
-            })?
-        }
-        PropName::Rfc5545(prop @ Rfc5545PropName::RecurrenceDateTimes) => {
-            enum RDateType {
-                DateTime,
-                Date,
-                Period,
-            }
-
-            let res = parse_property(
-                input,
-                dt_param_step(PropName::Rfc5545(prop)),
-                |v| match v {
-                    None | Some(ValueType::DateTime) => Ok(RDateType::DateTime),
-                    Some(ValueType::Date) => Ok(RDateType::Date),
-                    Some(ValueType::Period) => Ok(RDateType::Period),
-                    _ => Err(CalendarParseError::UnexpectedValueType),
-                },
-                empty,
-            )?;
-
-            res.try_finish(|(), value_type, state| {
-                let value = match value_type {
-                    RDateType::DateTime => separated(1.., datetime, ',')
-                        .map(RDateSeq::DateTime)
-                        .parse_next(input),
-                    RDateType::Date => separated(1.., date, ',')
-                        .map(RDateSeq::Date)
-                        .parse_next(input),
-                    RDateType::Period => separated(1.., period, ',')
-                        .map(RDateSeq::Period)
-                        .parse_next(input),
-                }?;
-                let params = state.into_params();
-                Ok(KnownProp::RDate(value, params))
-            })?
-        }
-        PropName::Rfc5545(prop @ Rfc5545PropName::RecurrenceRule) => {
-            let res = parse_property(
-                input,
-                trivial_step(PropName::Rfc5545(prop)),
-                only::<I>(ValueType::Recur),
-                rrule,
-            )?;
-
-            res.finish_value(KnownProp::RRule)
-        }
-        PropName::Rfc5545(prop @ Rfc5545PropName::Action) => {
-            let res = parse_property(
-                input,
-                trivial_step(PropName::Rfc5545(prop)),
-                only::<I>(ValueType::Text),
-                alarm_action,
-            )?;
-
-            res.finish_value(KnownProp::Action)
-        }
-        PropName::Rfc5545(prop @ Rfc5545PropName::RepeatCount) => {
-            // NOTE: should we restrict this to being positive? the standard
-            // (RFC 5545 §3.8.6.2) doesn't explicitly provide for this, but it
-            // seems semantically incoherent to have a negative number of
-            // repetitions.
-
-            let res = parse_property(
-                input,
-                trivial_step(PropName::Rfc5545(prop)),
-                only::<I>(ValueType::Integer),
-                integer,
-            )?;
-
-            res.finish_value(KnownProp::Repeat)
-        }
-        PropName::Rfc5545(Rfc5545PropName::Trigger) => {
-            enum TriggerType {
-                Duration,
-                DateTime,
-            }
-
-            #[derive(Default)]
-            struct State {
-                trigger_relation: Option<TriggerRelation>,
-            }
-
-            fn step<S>(
-                param: KnownParam<S>,
-                state: &mut State,
-            ) -> Result<(), CalendarParseError<S>> {
-                let name = param.name();
-
-                match param {
-                    KnownParam::AlarmTrigger(trigger_relation) => match state.trigger_relation {
-                        Some(_) => Err(CalendarParseError::DuplicateParam(name)),
-                        None => {
-                            state.trigger_relation = Some(trigger_relation);
-                            Ok(())
-                        }
-                    },
-                    unexpected_param => {
-                        Err(CalendarParseError::Unexpected(UnexpectedKnownParamError {
-                            current_property: PropName::Rfc5545(Rfc5545PropName::Trigger),
-                            unexpected_param,
-                        }))
-                    }
-                }
-            }
-
-            let res = parse_property(
-                input,
-                step,
-                |v| match v {
-                    None | Some(ValueType::Duration) => Ok(TriggerType::Duration),
-                    Some(ValueType::DateTime) => Ok(TriggerType::DateTime),
-                    _ => Err(CalendarParseError::UnexpectedValueType),
-                },
-                empty,
-            )?;
-
-            let prop = match res.value_type {
-                TriggerType::DateTime if res.state.trigger_relation.is_some() => {
-                    Err(E::from_external_error(
-                        input,
-                        CalendarParseError::TriggerParam(TriggerParamError::DateTimeWithRelation),
-                    ))
-                }
-                TriggerType::DateTime => {
-                    let value = datetime_utc.parse_next(input)?;
-                    Ok(Prop::Known(KnownProp::TriggerAbsolute(value)))
-                }
-                TriggerType::Duration => {
-                    let value = duration.parse_next(input)?;
-                    let params = TriggerParams {
-                        trigger_relation: res.state.trigger_relation,
-                    };
-                    Ok(Prop::Known(KnownProp::TriggerRelative(value, params)))
-                }
-            }?;
-
-            (prop, res.universals, res.unknown_params)
-        }
-        PropName::Rfc5545(prop @ Rfc5545PropName::DateTimeCreated) => {
-            let res = parse_property(
-                input,
-                trivial_step(PropName::Rfc5545(prop)),
-                only::<I>(ValueType::DateTime),
-                datetime_utc,
-            )?;
-
-            res.finish_value(KnownProp::Created)
-        }
-        PropName::Rfc5545(prop @ Rfc5545PropName::DateTimeStamp) => {
-            let res = parse_property(
-                input,
-                trivial_step(PropName::Rfc5545(prop)),
-                only::<I>(ValueType::DateTime),
-                datetime_utc,
-            )?;
-
-            res.finish_value(KnownProp::DtStamp)
-        }
-        PropName::Rfc5545(prop @ Rfc5545PropName::LastModified) => {
-            let res = parse_property(
-                input,
-                trivial_step(PropName::Rfc5545(prop)),
-                only::<I>(ValueType::DateTime),
-                datetime_utc,
-            )?;
-
-            res.finish_value(KnownProp::LastModified)
-        }
-        PropName::Rfc5545(prop @ Rfc5545PropName::SequenceNumber) => {
-            let res = parse_property(
-                input,
-                trivial_step(PropName::Rfc5545(prop)),
-                only::<I>(ValueType::Integer),
-                integer,
-            )?;
-
-            res.finish_value(KnownProp::Sequence)
-        }
-        PropName::Rfc5545(prop @ Rfc5545PropName::RequestStatus) => {
-            let res = parse_property(
-                input,
-                lang_param_step(PropName::Rfc5545(prop)),
-                only::<I>(ValueType::Text),
-                empty,
-            )?;
-
-            res.try_finish(|(), (), state| {
-                let value = RequestStatus {
-                    code: status_code.parse_next(input)?,
-                    description: preceded(';', text).parse_next(input)?,
-                    exception_data: opt(preceded(';', text)).parse_next(input)?,
-                };
-                let params = state.into_params();
-                Ok(KnownProp::RequestStatus(value, params))
-            })?
-        }
-        PropName::Rfc7986(prop @ Rfc7986PropName::Name) => {
-            let res = parse_property(
-                input,
-                text_param_step(PropName::Rfc7986(prop)),
-                only::<I>(ValueType::Text),
-                text,
-            )?;
-
-            res.finish_both(TextParamState::into_params, KnownProp::Name)
-        }
-        PropName::Rfc7986(prop @ Rfc7986PropName::RefreshInterval) => {
-            let res = parse_property(
-                input,
-                trivial_step(PropName::Rfc7986(prop)),
-                once::<I>(ValueType::Duration),
-                duration,
-            )?;
-
-            res.finish_value(KnownProp::RefreshInterval)
-        }
-        PropName::Rfc7986(prop @ Rfc7986PropName::Source) => {
-            let res = parse_property(
-                input,
-                trivial_step(PropName::Rfc7986(prop)),
-                once::<I>(ValueType::Uri),
-                uri::<_, _, false>,
-            )?;
-
-            res.finish_value(KnownProp::Source)
-        }
-        PropName::Rfc7986(prop @ Rfc7986PropName::Color) => {
-            let res = parse_property(
-                input,
-                trivial_step(PropName::Rfc7986(prop)),
-                only::<I>(ValueType::Text),
-                color,
-            )?;
-
-            res.finish_value(KnownProp::Color)
-        }
-        PropName::Rfc7986(Rfc7986PropName::Image) => {
-            struct State<S> {
-                params: ImageParams<S>,
-                encoding_found: bool,
-            }
-
-            impl<S> Default for State<S> {
-                fn default() -> Self {
-                    Self {
-                        params: Default::default(),
-                        encoding_found: Default::default(),
-                    }
-                }
-            }
-
-            fn step<S>(
-                param: KnownParam<S>,
-                state: &mut State<S>,
-            ) -> Result<(), CalendarParseError<S>> {
-                let name = param.name();
-
-                match param {
-                    KnownParam::FormatType(format_type) => match state.params.format_type {
-                        Some(_) => Err(CalendarParseError::DuplicateParam(name)),
-                        None => {
-                            state.params.format_type = Some(format_type);
-                            Ok(())
-                        }
-                    },
-                    KnownParam::AltRep(alternate_representation) => {
-                        match state.params.alternate_representation {
-                            Some(_) => Err(CalendarParseError::DuplicateParam(name)),
-                            None => {
-                                state.params.alternate_representation =
-                                    Some(alternate_representation);
-                                Ok(())
-                            }
-                        }
-                    }
-                    KnownParam::Display(display) => match state.params.display {
-                        Some(_) => Err(CalendarParseError::DuplicateParam(name)),
-                        None => {
-                            state.params.display = Some(display);
-                            Ok(())
-                        }
-                    },
-                    KnownParam::Encoding(Encoding::Base64) => match state.encoding_found {
-                        true => Err(CalendarParseError::DuplicateParam(name)),
-                        false => {
-                            state.encoding_found = true;
-                            Ok(())
-                        }
-                    },
-                    KnownParam::Encoding(Encoding::Bit8) => Err(CalendarParseError::AttachParam(
-                        AttachParamError::Bit8Encoding,
-                    )),
-                    unexpected_param => {
-                        Err(CalendarParseError::Unexpected(UnexpectedKnownParamError {
-                            current_property: PropName::Rfc7986(Rfc7986PropName::Image),
-                            unexpected_param,
-                        }))
-                    }
-                }
-            }
-
-            let res = parse_property(
-                input,
-                step,
-                |v| match v {
-                    Some(ValueType::Uri) => Ok(UriOrBinary::Uri),
-                    Some(ValueType::Binary) => Ok(UriOrBinary::Binary),
-                    Some(_) | None => Err(CalendarParseError::UnexpectedValueType),
-                },
-                empty,
-            )?;
-
-            res.try_finish(|(), value_type, state| {
-                let value = match (state.encoding_found, value_type) {
-                    (false, UriOrBinary::Uri) => {
-                        uri::<_, _, false>.map(ImageData::Uri).parse_next(input)
-                    }
-                    (true, UriOrBinary::Binary) => binary.map(ImageData::Binary).parse_next(input),
-                    (true, UriOrBinary::Uri) => Err(E::from_external_error(
-                        input,
-                        CalendarParseError::AttachParam(AttachParamError::EncodingOnUri),
-                    )),
-                    (false, UriOrBinary::Binary) => Err(E::from_external_error(
-                        input,
-                        CalendarParseError::AttachParam(AttachParamError::BinaryWithoutEncoding),
-                    )),
-                }?;
-                let params = state.params;
-                Ok(KnownProp::Image(value, params))
-            })?
-        }
-        PropName::Rfc7986(Rfc7986PropName::Conference) => {
-            type State<S> = ConfParams<S>;
-
-            fn step<S>(
-                param: KnownParam<S>,
-                state: &mut State<S>,
-            ) -> Result<(), CalendarParseError<S>> {
-                let name = param.name();
-
-                match param {
-                    KnownParam::Feature(feature_type) => match state.feature_type {
-                        Some(_) => Err(CalendarParseError::DuplicateParam(name)),
-                        None => {
-                            state.feature_type = Some(feature_type);
-                            Ok(())
-                        }
-                    },
-                    KnownParam::Language(language) => match state.language {
-                        Some(_) => Err(CalendarParseError::DuplicateParam(name)),
-                        None => {
-                            state.language = Some(language);
-                            Ok(())
-                        }
-                    },
-                    KnownParam::Label(label) => match state.label {
-                        Some(_) => Err(CalendarParseError::DuplicateParam(name)),
-                        None => {
-                            state.label = Some(label);
-                            Ok(())
-                        }
-                    },
-                    unexpected_param => {
-                        Err(CalendarParseError::Unexpected(UnexpectedKnownParamError {
-                            current_property: PropName::Rfc7986(Rfc7986PropName::Conference),
-                            unexpected_param,
-                        }))
-                    }
-                }
-            }
-
-            let res = parse_property(input, step, once::<I>(ValueType::Uri), uri::<_, _, false>)?;
-            res.finish_both(std::convert::identity, KnownProp::Conference)
-        }
-        PropName::Rfc9073(prop @ Rfc9073PropName::LocationType) => {
-            let res = parse_property(
-                input,
-                trivial_step(PropName::Rfc9073(prop)),
-                only::<I>(ValueType::Text),
-                text_seq,
-            )?;
-
-            res.finish_value(KnownProp::LocationType)
-        }
-        PropName::Rfc9073(prop @ Rfc9073PropName::ParticipantType) => {
-            let res = parse_property(
-                input,
-                trivial_step(PropName::Rfc9073(prop)),
-                only::<I>(ValueType::Text),
-                participant_type,
-            )?;
-
-            res.finish_value(KnownProp::ParticipantType)
-        }
-        PropName::Rfc9073(prop @ Rfc9073PropName::ResourceType) => {
-            let res = parse_property(
-                input,
-                trivial_step(PropName::Rfc9073(prop)),
-                only::<I>(ValueType::Text),
-                resource_type,
-            )?;
-
-            res.finish_value(KnownProp::ResourceType)
-        }
-        PropName::Rfc9073(prop @ Rfc9073PropName::CalendarAddress) => {
-            let res = parse_property(
-                input,
-                trivial_step(PropName::Rfc9073(prop)),
-                only::<I>(ValueType::CalAddress),
-                cal_address::<_, _, false>,
-            )?;
-
-            res.finish_value(KnownProp::CalendarAddress)
-        }
-        PropName::Rfc9073(Rfc9073PropName::StyledDescription) => {
-            enum UriOrText {
-                Uri,
-                Text,
-            }
-
-            type State<S> = StyledDescriptionParams<S>;
-
-            fn step<S>(
-                param: KnownParam<S>,
-                state: &mut State<S>,
-            ) -> Result<(), CalendarParseError<S>> {
-                let name = param.name();
-
-                match param {
-                    KnownParam::AltRep(alternate_representation) => {
-                        match state.alternate_representation {
-                            Some(_) => Err(CalendarParseError::DuplicateParam(name)),
-                            None => {
-                                state.alternate_representation = Some(alternate_representation);
-                                Ok(())
-                            }
-                        }
-                    }
-                    KnownParam::Language(language) => match state.language {
-                        Some(_) => Err(CalendarParseError::DuplicateParam(name)),
-                        None => {
-                            state.language = Some(language);
-                            Ok(())
-                        }
-                    },
-                    KnownParam::FormatType(format_type) => match state.format_type {
-                        Some(_) => Err(CalendarParseError::DuplicateParam(name)),
-                        None => {
-                            state.format_type = Some(format_type);
-                            Ok(())
-                        }
-                    },
-                    unexpected_param => {
-                        Err(CalendarParseError::Unexpected(UnexpectedKnownParamError {
-                            current_property: PropName::Rfc9073(Rfc9073PropName::StyledDescription),
-                            unexpected_param,
-                        }))
-                    }
-                }
-            }
-
-            let res = parse_property(
-                input,
-                step,
-                |v| match v {
-                    Some(ValueType::Uri) => Ok(UriOrText::Uri),
-                    Some(ValueType::Text) => Ok(UriOrText::Text),
-                    Some(_) | None => Err(CalendarParseError::UnexpectedValueType),
-                },
-                empty,
-            )?;
-
-            res.try_finish(|(), value_type, params| {
-                let value = match value_type {
-                    UriOrText::Uri => uri::<_, _, false>
-                        .map(StyledDescriptionValue::Uri)
-                        .parse_next(input)?,
-                    UriOrText::Text => text.map(StyledDescriptionValue::Text).parse_next(input)?,
-                };
-
-                Ok(KnownProp::StyledDescription(value, params))
-            })?
-        }
-        PropName::Rfc9073(Rfc9073PropName::StructuredData) => {
-            enum SDType {
-                Binary,
-                Text,
-                Uri,
-            }
-
-            struct State<S> {
-                encoding_seen: Option<()>,
-                format_type: Option<FormatType<S>>,
-                schema: Option<Uri<S>>,
-            }
-
-            impl<S> Default for State<S> {
-                fn default() -> Self {
-                    Self {
-                        encoding_seen: Default::default(),
-                        format_type: Default::default(),
-                        schema: Default::default(),
-                    }
-                }
-            }
-
-            fn step<S>(
-                param: KnownParam<S>,
-                state: &mut State<S>,
-            ) -> Result<(), CalendarParseError<S>> {
-                let name = param.name();
-
-                match param {
-                    KnownParam::Encoding(Encoding::Base64) => match state.encoding_seen {
-                        Some(_) => Err(CalendarParseError::DuplicateParam(name)),
-                        None => {
-                            state.encoding_seen = Some(());
-                            Ok(())
-                        }
-                    },
-                    KnownParam::Encoding(Encoding::Bit8) => {
-                        Err(CalendarParseError::SDParam(SDParamError::Bit8Encoding))
-                    }
-                    KnownParam::Schema(schema) => match state.schema {
-                        Some(_) => Err(CalendarParseError::DuplicateParam(name)),
-                        None => {
-                            state.schema = Some(schema);
-                            Ok(())
-                        }
-                    },
-                    KnownParam::FormatType(format_type) => match state.format_type {
-                        Some(_) => Err(CalendarParseError::DuplicateParam(name)),
-                        None => {
-                            state.format_type = Some(format_type);
-                            Ok(())
-                        }
-                    },
-                    unexpected_param => {
-                        Err(CalendarParseError::Unexpected(UnexpectedKnownParamError {
-                            current_property: PropName::Rfc9073(Rfc9073PropName::StyledDescription),
-                            unexpected_param,
-                        }))
-                    }
-                }
-            }
-
-            let res = parse_property(
-                input,
-                step,
-                |v| match v {
-                    Some(ValueType::Binary) => Ok(SDType::Binary),
-                    Some(ValueType::Text) => Ok(SDType::Text),
-                    Some(ValueType::Uri) => Ok(SDType::Uri),
-                    Some(other) => Err(CalendarParseError::SDParam(
-                        SDParamError::InvalidValueType(other),
-                    )),
-                    None => Err(CalendarParseError::SDParam(SDParamError::MissingValueType)),
-                },
-                empty,
-            )?;
-
-            res.try_finish(|(), value_type, state| match value_type {
-                SDType::Binary => todo!(),
-                SDType::Text => todo!(),
-                SDType::Uri => todo!(),
-            })?
-        }
-        PropName::Rfc9074(prop @ Rfc9074PropName::Acknowledged) => {
-            let res = parse_property(
-                input,
-                trivial_step(PropName::Rfc9074(prop)),
-                only::<I>(ValueType::DateTime),
-                datetime_utc,
-            )?;
-
-            res.finish_value(KnownProp::Acknowledged)
-        }
-        PropName::Rfc9074(prop @ Rfc9074PropName::Proximity) => {
-            let res = parse_property(
-                input,
-                trivial_step(PropName::Rfc9074(prop)),
-                only::<I>(ValueType::Text),
-                proximity_value,
-            )?;
-
-            res.finish_value(KnownProp::Proximity)
-        }
-        PropName::Iana(name) => {
-            let res = parse_property(
-                input,
-                unknown_step,
-                |v| Ok(v.unwrap_or(ValueType::Text)),
-                empty,
-            )?;
-
-            (
-                Prop::Unknown(UnknownProp::Iana {
-                    value: parse_value(res.value_type, input)?,
-                    name: name.clone(),
-                    params: res.state,
-                }),
-                res.universals,
-                res.unknown_params,
-            )
-        }
-        PropName::X(name) => {
-            let res = parse_property(
-                input,
-                unknown_step,
-                |v| Ok(v.unwrap_or(ValueType::Text)),
-                empty,
-            )?;
-
-            (
-                Prop::Unknown(UnknownProp::X {
-                    value: parse_value(res.value_type, input)?,
-                    name: name.clone(),
-                    params: res.state,
-                }),
-                res.universals,
-                res.unknown_params,
-            )
-        }
-    })
+    todo!()
 }
+
+//     struct StateMachineResult<T, V, P, S> {
+//         value: T,
+//         value_type: V,
+//         state: P,
+//         universals: UniversalParams,
+//         unknown_params: Vec<UnknownParam<S>>,
+//     }
+//
+//     impl<T, V, P, S> StateMachineResult<T, V, P, S> {
+//         fn try_finish<E>(
+//             self,
+//             f: impl FnOnce(T, V, P) -> Result<KnownProp<S>, E>,
+//         ) -> Result<ParsedProp<S>, E> {
+//             f(self.value, self.value_type, self.state).map(|known_prop| {
+//                 (
+//                     Prop::Known(known_prop),
+//                     self.universals,
+//                     self.unknown_params,
+//                 )
+//             })
+//         }
+//
+//         fn finish_value(self, f: impl FnOnce(T) -> KnownProp<S>) -> ParsedProp<S> {
+//             (
+//                 Prop::Known(f(self.value)),
+//                 self.universals,
+//                 self.unknown_params,
+//             )
+//         }
+//
+//         fn finish_both<U>(
+//             self,
+//             p: impl FnOnce(P) -> U,
+//             f: impl FnOnce(T, U) -> KnownProp<S>,
+//         ) -> ParsedProp<S> {
+//             (
+//                 Prop::Known(f(self.value, p(self.state))),
+//                 self.universals,
+//                 self.unknown_params,
+//             )
+//         }
+//     }
+//
+//     #[allow(clippy::type_complexity)]
+//     fn parse_property<I, E, T, S, V>(
+//         input: &mut I,
+//         step_fn: impl FnMut(KnownParam<I::Slice>, &mut S) -> Result<(), CalendarParseError<I::Slice>>,
+//         value_type_check: impl FnOnce(
+//             Option<ValueType<I::Slice>>,
+//         ) -> Result<V, CalendarParseError<I::Slice>>,
+//         value_parser: impl FnOnce(&mut I) -> Result<T, E>,
+//     ) -> Result<StateMachineResult<T, V, S, I::Slice>, E>
+//     where
+//         I: StreamIsPartial + Stream + Compare<Caseless<&'static str>> + Compare<char>,
+//         I::Token: AsChar + Clone,
+//         I::Slice: AsBStr + Clone + SliceLen,
+//         E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
+//         S: Default,
+//     {
+//         let (state, value_type, universals, unknown_params) =
+//             sm_parse_next(StateMachine::new(S::default(), step_fn), input)?;
+//         let _ = ':'.parse_next(input)?;
+//
+//         let value_type =
+//             value_type_check(value_type).map_err(|err| E::from_external_error(input, err))?;
+//         let value = value_parser(input)?;
+//         Ok(StateMachineResult {
+//             value,
+//             value_type,
+//             state,
+//             universals,
+//             unknown_params,
+//         })
+//     }
+//
+//      / ... some code deleted here ... /
+//
+//     let name = property_name.parse_next(input)?;
+//
+//     Ok(match name {
+//         PropName::Rfc5545(prop @ Rfc5545PropName::CalendarScale) => {
+//             let res = parse_property(
+//                 input,
+//                 trivial_step(PropName::Rfc5545(prop)),
+//                 only::<I>(ValueType::Text),
+//                 gregorian,
+//             )?;
+//
+//             res.finish_value(|()| KnownProp::CalScale)
+//         }
+//         PropName::Rfc5545(prop @ Rfc5545PropName::Method) => {
+//             let res = parse_property(
+//                 input,
+//                 trivial_step(PropName::Rfc5545(prop)),
+//                 only::<I>(ValueType::Text),
+//                 method,
+//             )?;
+//
+//             res.finish_value(KnownProp::Method)
+//         }
+//         PropName::Rfc5545(prop @ Rfc5545PropName::ProductIdentifier) => {
+//             let res = parse_property(
+//                 input,
+//                 trivial_step(PropName::Rfc5545(prop)),
+//                 only::<I>(ValueType::Text),
+//                 text,
+//             )?;
+//
+//             res.finish_value(KnownProp::ProdId)
+//         }
+//         PropName::Rfc5545(prop @ Rfc5545PropName::Version) => {
+//             let res = parse_property(
+//                 input,
+//                 trivial_step(PropName::Rfc5545(prop)),
+//                 only::<I>(ValueType::Text),
+//                 v2_0,
+//             )?;
+//
+//             res.finish_value(|()| KnownProp::Version)
+//         }
+//         PropName::Rfc5545(Rfc5545PropName::Attachment) => {
+//             struct Base64;
+//
+//             struct State<S> {
+//                 /// Permitted iff value_type is BINARY
+//                 encoding: Option<Base64>,
+//                 /// OPTIONAL for URI and RECOMMENDED for BINARY
+//                 format_type: Option<FormatType<S>>,
+//             }
+//
+//             impl<S> Default for State<S> {
+//                 fn default() -> Self {
+//                     Self {
+//                         encoding: Default::default(),
+//                         format_type: Default::default(),
+//                     }
+//                 }
+//             }
+//
+//             fn step<S>(
+//                 param: KnownParam<S>,
+//                 state: &mut State<S>,
+//             ) -> Result<(), CalendarParseError<S>> {
+//                 match param {
+//                     KnownParam::Encoding(Encoding::Base64) => match state.encoding {
+//                         Some(_) => Err(CalendarParseError::DuplicateParam(StaticParam::Encoding)),
+//                         None => {
+//                             state.encoding = Some(Base64);
+//                             Ok(())
+//                         }
+//                     },
+//                     KnownParam::Encoding(Encoding::Bit8) => Err(CalendarParseError::AttachParam(
+//                         AttachParamError::Bit8Encoding,
+//                     )),
+//                     KnownParam::FormatType(format_type) => match state.format_type {
+//                         Some(_) => Err(CalendarParseError::DuplicateParam(StaticParam::FormatType)),
+//                         None => {
+//                             state.format_type = Some(format_type);
+//                             Ok(())
+//                         }
+//                     },
+//                     known_param => Err(CalendarParseError::Unexpected(UnexpectedKnownParamError {
+//                         current_property: PropName::Rfc5545(Rfc5545PropName::Attachment),
+//                         unexpected_param: known_param,
+//                     })),
+//                 }
+//             }
+//
+//             let res = parse_property(
+//                 input,
+//                 step,
+//                 |v| match v {
+//                     None | Some(ValueType::Uri) => Ok(UriOrBinary::Uri),
+//                     Some(ValueType::Binary) => Ok(UriOrBinary::Binary),
+//                     _ => Err(CalendarParseError::UnexpectedValueType),
+//                 },
+//                 empty,
+//             )?;
+//
+//             if res.value_type == UriOrBinary::Binary {
+//                 match res.state.encoding {
+//                     Some(Base64) => (),
+//                     None => {
+//                         return Err(E::from_external_error(
+//                             input,
+//                             CalendarParseError::AttachParam(
+//                                 AttachParamError::BinaryWithoutEncoding,
+//                             ),
+//                         ));
+//                     }
+//                 }
+//             }
+//
+//             let params = AttachParams {
+//                 format_type: res.state.format_type,
+//             };
+//
+//             let value = match res.value_type {
+//                 UriOrBinary::Uri => uri::<_, _, false>.map(AttachValue::Uri).parse_next(input)?,
+//                 UriOrBinary::Binary => binary.map(AttachValue::Binary).parse_next(input)?,
+//             };
+//
+//             (
+//                 Prop::Known(KnownProp::Attach(value, params)),
+//                 res.universals,
+//                 res.unknown_params,
+//             )
+//         }
+//         PropName::Rfc5545(prop @ Rfc5545PropName::Categories) => {
+//             let res = parse_property(
+//                 input,
+//                 lang_param_step(PropName::Rfc5545(prop)),
+//                 only::<I>(ValueType::Text),
+//                 text_seq,
+//             )?;
+//
+//             res.finish_both(LangParamState::into_params, KnownProp::Categories)
+//         }
+//         PropName::Rfc5545(prop @ Rfc5545PropName::Classification) => {
+//             let res = parse_property(
+//                 input,
+//                 trivial_step(PropName::Rfc5545(prop)),
+//                 only::<I>(ValueType::Text),
+//                 class_value,
+//             )?;
+//
+//             res.finish_value(KnownProp::Class)
+//         }
+//         PropName::Rfc5545(prop @ Rfc5545PropName::Comment) => {
+//             let res = parse_property(
+//                 input,
+//                 text_param_step(PropName::Rfc5545(prop)),
+//                 only::<I>(ValueType::Text),
+//                 text,
+//             )?;
+//
+//             res.finish_both(TextParamState::into_params, KnownProp::Comment)
+//         }
+//         PropName::Rfc5545(prop @ Rfc5545PropName::Description) => {
+//             let res = parse_property(
+//                 input,
+//                 text_param_step(PropName::Rfc5545(prop)),
+//                 only::<I>(ValueType::Text),
+//                 text,
+//             )?;
+//
+//             res.finish_both(TextParamState::into_params, KnownProp::Description)
+//         }
+//         PropName::Rfc5545(prop @ Rfc5545PropName::GeographicPosition) => {
+//             let res = parse_property(
+//                 input,
+//                 trivial_step(PropName::Rfc5545(prop)),
+//                 only::<I>(ValueType::Float),
+//                 geo,
+//             )?;
+//
+//             res.finish_value(KnownProp::Geo)
+//         }
+//         PropName::Rfc5545(prop @ Rfc5545PropName::Location) => {
+//             let res = parse_property(
+//                 input,
+//                 text_param_step(PropName::Rfc5545(prop)),
+//                 only::<I>(ValueType::Text),
+//                 text,
+//             )?;
+//
+//             res.finish_both(TextParamState::into_params, KnownProp::Location)
+//         }
+//         PropName::Rfc5545(prop @ Rfc5545PropName::PercentComplete) => {
+//             let res = parse_property(
+//                 input,
+//                 trivial_step(PropName::Rfc5545(prop)),
+//                 only::<I>(ValueType::Integer),
+//                 completion_percentage,
+//             )?;
+//
+//             res.finish_value(KnownProp::PercentComplete)
+//         }
+//         PropName::Rfc5545(prop @ Rfc5545PropName::Priority) => {
+//             let res = parse_property(
+//                 input,
+//                 trivial_step(PropName::Rfc5545(prop)),
+//                 only::<I>(ValueType::Integer),
+//                 priority,
+//             )?;
+//
+//             res.finish_value(KnownProp::Priority)
+//         }
+//         PropName::Rfc5545(prop @ Rfc5545PropName::Resources) => {
+//             let res = parse_property(
+//                 input,
+//                 text_param_step(PropName::Rfc5545(prop)),
+//                 only::<I>(ValueType::Text),
+//                 text_seq,
+//             )?;
+//
+//             res.finish_both(TextParamState::into_params, KnownProp::Resources)
+//         }
+//         PropName::Rfc5545(prop @ Rfc5545PropName::Status) => {
+//             let res = parse_property(
+//                 input,
+//                 trivial_step(PropName::Rfc5545(prop)),
+//                 only::<I>(ValueType::Text),
+//                 status,
+//             )?;
+//
+//             res.finish_value(KnownProp::Status)
+//         }
+//         PropName::Rfc5545(prop @ Rfc5545PropName::Summary) => {
+//             let res = parse_property(
+//                 input,
+//                 text_param_step(PropName::Rfc5545(prop)),
+//                 only::<I>(ValueType::Text),
+//                 text,
+//             )?;
+//
+//             res.finish_both(TextParamState::into_params, KnownProp::Summary)
+//         }
+//         PropName::Rfc5545(prop @ Rfc5545PropName::DateTimeCompleted) => {
+//             let res = parse_property(
+//                 input,
+//                 trivial_step(PropName::Rfc5545(prop)),
+//                 only::<I>(ValueType::DateTime),
+//                 datetime_utc,
+//             )?;
+//
+//             res.finish_value(KnownProp::DtCompleted)
+//         }
+//         PropName::Rfc5545(prop @ Rfc5545PropName::DateTimeEnd) => {
+//             let res = parse_property(
+//                 input,
+//                 dt_param_step(PropName::Rfc5545(prop)),
+//                 datetime_or_date_type::<I>,
+//                 empty,
+//             )?;
+//
+//             res.try_finish(|(), value_type, state| {
+//                 let value = value_type.into_parser().parse_next(input)?;
+//                 let params = state.into_params();
+//                 Ok(KnownProp::DtEnd(value, params))
+//             })?
+//         }
+//         PropName::Rfc5545(prop @ Rfc5545PropName::DateTimeDue) => {
+//             let res = parse_property(
+//                 input,
+//                 dt_param_step(PropName::Rfc5545(prop)),
+//                 datetime_or_date_type::<I>,
+//                 empty,
+//             )?;
+//
+//             res.try_finish(|(), value_type, state| {
+//                 let value = value_type.into_parser().parse_next(input)?;
+//                 let params = state.into_params();
+//                 Ok(KnownProp::DtDue(value, params))
+//             })?
+//         }
+//         PropName::Rfc5545(prop @ Rfc5545PropName::DateTimeStart) => {
+//             let res = parse_property(
+//                 input,
+//                 dt_param_step(PropName::Rfc5545(prop)),
+//                 datetime_or_date_type::<I>,
+//                 empty,
+//             )?;
+//
+//             res.try_finish(|(), value_type, state| {
+//                 let value = value_type.into_parser().parse_next(input)?;
+//                 let params = state.into_params();
+//                 Ok(KnownProp::DtStart(value, params))
+//             })?
+//         }
+//         PropName::Rfc5545(prop @ Rfc5545PropName::Duration) => {
+//             let res = parse_property(
+//                 input,
+//                 trivial_step(PropName::Rfc5545(prop)),
+//                 only::<I>(ValueType::Duration),
+//                 duration,
+//             )?;
+//
+//             res.finish_value(KnownProp::Duration)
+//         }
+//         PropName::Rfc5545(Rfc5545PropName::FreeBusyTime) => {
+//             type State<S> = Option<FreeBusyType<S>>;
+//
+//             fn step<S>(
+//                 param: KnownParam<S>,
+//                 state: &mut State<S>,
+//             ) -> Result<(), CalendarParseError<S>> {
+//                 match param {
+//                     KnownParam::FBType(free_busy_type) => match state {
+//                         Some(_) => Err(CalendarParseError::DuplicateParam(
+//                             StaticParam::FreeBusyType,
+//                         )),
+//                         None => {
+//                             *state = Some(free_busy_type);
+//                             Ok(())
+//                         }
+//                     },
+//                     unexpected_param => {
+//                         Err(CalendarParseError::Unexpected(UnexpectedKnownParamError {
+//                             current_property: PropName::Rfc5545(Rfc5545PropName::FreeBusyTime),
+//                             unexpected_param,
+//                         }))
+//                     }
+//                 }
+//             }
+//
+//             parse_property(input, step, only::<I>(ValueType::Period), |i| {
+//                 separated(1.., period, ',').parse_next(i)
+//             })?
+//             .finish_both(
+//                 |free_busy_type| FBTypeParams { free_busy_type },
+//                 KnownProp::FreeBusy,
+//             )
+//         }
+//         PropName::Rfc5545(prop @ Rfc5545PropName::TimeTransparency) => {
+//             let res = parse_property(
+//                 input,
+//                 trivial_step(PropName::Rfc5545(prop)),
+//                 only::<I>(ValueType::Text),
+//                 time_transparency,
+//             )?;
+//
+//             res.finish_value(KnownProp::Transparency)
+//         }
+//         PropName::Rfc5545(prop @ Rfc5545PropName::TimeZoneIdentifier) => {
+//             let res = parse_property(
+//                 input,
+//                 trivial_step(PropName::Rfc5545(prop)),
+//                 only::<I>(ValueType::Text),
+//                 tz_id,
+//             )?;
+//
+//             res.finish_value(KnownProp::TzId)
+//         }
+//         PropName::Rfc5545(prop @ Rfc5545PropName::TimeZoneName) => {
+//             let res = parse_property(
+//                 input,
+//                 lang_param_step(PropName::Rfc5545(prop)),
+//                 only::<I>(ValueType::Text),
+//                 text,
+//             )?;
+//
+//             res.finish_both(LangParamState::into_params, KnownProp::TzName)
+//         }
+//         PropName::Rfc5545(prop @ Rfc5545PropName::TimeZoneOffsetFrom) => {
+//             let res = parse_property(
+//                 input,
+//                 trivial_step(PropName::Rfc5545(prop)),
+//                 only::<I>(ValueType::UtcOffset),
+//                 utc_offset,
+//             )?;
+//
+//             res.finish_value(KnownProp::TzOffsetFrom)
+//         }
+//         PropName::Rfc5545(prop @ Rfc5545PropName::TimeZoneOffsetTo) => {
+//             let res = parse_property(
+//                 input,
+//                 trivial_step(PropName::Rfc5545(prop)),
+//                 only::<I>(ValueType::UtcOffset),
+//                 utc_offset,
+//             )?;
+//
+//             res.finish_value(KnownProp::TzOffsetTo)
+//         }
+//         PropName::Rfc5545(prop @ Rfc5545PropName::TimeZoneUrl) => {
+//             let res = parse_property(
+//                 input,
+//                 trivial_step(PropName::Rfc5545(prop)),
+//                 only::<I>(ValueType::Uri),
+//                 uri::<_, _, false>,
+//             )?;
+//
+//             res.finish_value(KnownProp::TzUrl)
+//         }
+//         PropName::Rfc5545(Rfc5545PropName::Attendee) => {
+//             type State<S> = AttendeeParams<S>;
+//
+//             fn step<S>(
+//                 param: KnownParam<S>,
+//                 state: &mut State<S>,
+//             ) -> Result<(), CalendarParseError<S>> {
+//                 let name = param.name();
+//                 match param {
+//                     KnownParam::CommonName(common_name) => match state.common_name {
+//                         Some(_) => Err(CalendarParseError::DuplicateParam(name)),
+//                         None => {
+//                             state.common_name = Some(common_name);
+//                             Ok(())
+//                         }
+//                     },
+//                     KnownParam::CUType(calendar_user_type) => match state.calendar_user_type {
+//                         Some(_) => Err(CalendarParseError::DuplicateParam(name)),
+//                         None => {
+//                             state.calendar_user_type = Some(calendar_user_type);
+//                             Ok(())
+//                         }
+//                     },
+//                     KnownParam::DelFrom(delegators) => match state.delegators {
+//                         Some(_) => Err(CalendarParseError::DuplicateParam(name)),
+//                         None => {
+//                             state.delegators = Some(delegators);
+//                             Ok(())
+//                         }
+//                     },
+//                     KnownParam::DelTo(delegatees) => match state.delegatees {
+//                         Some(_) => Err(CalendarParseError::DuplicateParam(name)),
+//                         None => {
+//                             state.delegatees = Some(delegatees);
+//                             Ok(())
+//                         }
+//                     },
+//                     KnownParam::Dir(dir) => match state.directory_entry_reference {
+//                         Some(_) => Err(CalendarParseError::DuplicateParam(name)),
+//                         None => {
+//                             state.directory_entry_reference = Some(dir);
+//                             Ok(())
+//                         }
+//                     },
+//                     KnownParam::Language(language) => match state.language {
+//                         Some(_) => Err(CalendarParseError::DuplicateParam(name)),
+//                         None => {
+//                             state.language = Some(language);
+//                             Ok(())
+//                         }
+//                     },
+//                     KnownParam::Member(uris) => match state.group_or_list_membership {
+//                         Some(_) => Err(CalendarParseError::DuplicateParam(name)),
+//                         None => {
+//                             state.group_or_list_membership = Some(uris);
+//                             Ok(())
+//                         }
+//                     },
+//                     KnownParam::PartStatus(participation_status) => {
+//                         match state.participation_status {
+//                             Some(_) => Err(CalendarParseError::DuplicateParam(name)),
+//                             None => {
+//                                 state.participation_status = Some(participation_status);
+//                                 Ok(())
+//                             }
+//                         }
+//                     }
+//                     KnownParam::Role(participation_role) => match state.participation_role {
+//                         Some(_) => Err(CalendarParseError::DuplicateParam(name)),
+//                         None => {
+//                             state.participation_role = Some(participation_role);
+//                             Ok(())
+//                         }
+//                     },
+//                     KnownParam::Rsvp(rsvp_expectation) => match state.rsvp_expectation {
+//                         Some(_) => Err(CalendarParseError::DuplicateParam(name)),
+//                         None => {
+//                             state.rsvp_expectation = Some(rsvp_expectation);
+//                             Ok(())
+//                         }
+//                     },
+//                     KnownParam::SentBy(sent_by) => match state.sent_by {
+//                         Some(_) => Err(CalendarParseError::DuplicateParam(name)),
+//                         None => {
+//                             state.sent_by = Some(sent_by);
+//                             Ok(())
+//                         }
+//                     },
+//                     KnownParam::Email(email) => match state.email {
+//                         Some(_) => Err(CalendarParseError::DuplicateParam(name)),
+//                         None => {
+//                             state.email = Some(email);
+//                             Ok(())
+//                         }
+//                     },
+//                     unexpected_param => {
+//                         Err(CalendarParseError::Unexpected(UnexpectedKnownParamError {
+//                             current_property: PropName::Rfc5545(Rfc5545PropName::Attendee),
+//                             unexpected_param,
+//                         }))
+//                     }
+//                 }
+//             }
+//
+//             let res = parse_property(
+//                 input,
+//                 step,
+//                 only::<I>(ValueType::CalAddress),
+//                 cal_address::<_, _, false>,
+//             )?;
+//
+//             res.finish_both(std::convert::identity, KnownProp::Attendee)
+//         }
+//         PropName::Rfc5545(prop @ Rfc5545PropName::Contact) => {
+//             let res = parse_property(
+//                 input,
+//                 text_param_step(PropName::Rfc5545(prop)),
+//                 only::<I>(ValueType::Text),
+//                 text,
+//             )?;
+//
+//             res.finish_both(TextParamState::into_params, KnownProp::Contact)
+//         }
+//         PropName::Rfc5545(Rfc5545PropName::Organizer) => {
+//             type State<S> = OrganizerParams<S>;
+//
+//             fn step<S>(
+//                 param: KnownParam<S>,
+//                 state: &mut State<S>,
+//             ) -> Result<(), CalendarParseError<S>> {
+//                 let name = param.name();
+//                 match param {
+//                     KnownParam::CommonName(common_name) => match state.common_name {
+//                         Some(_) => Err(CalendarParseError::DuplicateParam(name)),
+//                         None => {
+//                             state.common_name = Some(common_name);
+//                             Ok(())
+//                         }
+//                     },
+//                     KnownParam::Dir(dir) => match state.directory_entry_reference {
+//                         Some(_) => Err(CalendarParseError::DuplicateParam(name)),
+//                         None => {
+//                             state.directory_entry_reference = Some(dir);
+//                             Ok(())
+//                         }
+//                     },
+//                     KnownParam::Language(language) => match state.language {
+//                         Some(_) => Err(CalendarParseError::DuplicateParam(name)),
+//                         None => {
+//                             state.language = Some(language);
+//                             Ok(())
+//                         }
+//                     },
+//                     KnownParam::SentBy(sent_by) => match state.sent_by {
+//                         Some(_) => Err(CalendarParseError::DuplicateParam(name)),
+//                         None => {
+//                             state.sent_by = Some(sent_by);
+//                             Ok(())
+//                         }
+//                     },
+//                     KnownParam::Email(email) => match state.email {
+//                         Some(_) => Err(CalendarParseError::DuplicateParam(name)),
+//                         None => {
+//                             state.email = Some(email);
+//                             Ok(())
+//                         }
+//                     },
+//                     unexpected_param => {
+//                         Err(CalendarParseError::Unexpected(UnexpectedKnownParamError {
+//                             current_property: PropName::Rfc5545(Rfc5545PropName::Organizer),
+//                             unexpected_param,
+//                         }))
+//                     }
+//                 }
+//             }
+//
+//             let res = parse_property(
+//                 input,
+//                 step,
+//                 only::<I>(ValueType::CalAddress),
+//                 cal_address::<_, _, false>,
+//             )?;
+//
+//             res.finish_both(std::convert::identity, KnownProp::Organizer)
+//         }
+//         PropName::Rfc5545(Rfc5545PropName::RecurrenceId) => {
+//             struct State<S> {
+//                 tz_id: Option<TzId<S>>,
+//                 recurrence_identifier_range: Option<ThisAndFuture>,
+//             }
+//
+//             impl<S> State<S> {
+//                 fn into_params(self) -> RecurrenceIdParams<S> {
+//                     RecurrenceIdParams {
+//                         tz_id: self.tz_id,
+//                         recurrence_identifier_range: self.recurrence_identifier_range,
+//                     }
+//                 }
+//             }
+//
+//             impl<S> Default for State<S> {
+//                 fn default() -> Self {
+//                     Self {
+//                         tz_id: Default::default(),
+//                         recurrence_identifier_range: Default::default(),
+//                     }
+//                 }
+//             }
+//
+//             fn step<S>(
+//                 param: KnownParam<S>,
+//                 state: &mut State<S>,
+//             ) -> Result<(), CalendarParseError<S>> {
+//                 let name = param.name();
+//                 match param {
+//                     KnownParam::RecurrenceIdentifierRange => {
+//                         match state.recurrence_identifier_range {
+//                             Some(ThisAndFuture) => Err(CalendarParseError::DuplicateParam(name)),
+//                             None => {
+//                                 state.recurrence_identifier_range = Some(ThisAndFuture);
+//                                 Ok(())
+//                             }
+//                         }
+//                     }
+//                     KnownParam::TzId(tz_id) => match state.tz_id {
+//                         Some(_) => Err(CalendarParseError::DuplicateParam(name)),
+//                         None => {
+//                             state.tz_id = Some(tz_id);
+//                             Ok(())
+//                         }
+//                     },
+//                     unexpected_param => {
+//                         Err(CalendarParseError::Unexpected(UnexpectedKnownParamError {
+//                             current_property: PropName::Rfc5545(Rfc5545PropName::RecurrenceId),
+//                             unexpected_param,
+//                         }))
+//                     }
+//                 }
+//             }
+//
+//             parse_property(input, step, datetime_or_date_type::<I>, empty)?.try_finish(
+//                 |(), value_type, state| {
+//                     let value = value_type.into_parser().parse_next(input)?;
+//                     let params = state.into_params();
+//                     Ok(KnownProp::RecurrenceId(value, params))
+//                 },
+//             )?
+//         }
+//         PropName::Rfc5545(Rfc5545PropName::RelatedTo) => {
+//             type State<S> = Option<RelationshipType<S>>;
+//
+//             fn step<S>(
+//                 param: KnownParam<S>,
+//                 state: &mut State<S>,
+//             ) -> Result<(), CalendarParseError<S>> {
+//                 let name = param.name();
+//
+//                 match param {
+//                     KnownParam::RelType(relationship_type) => match state {
+//                         Some(_) => Err(CalendarParseError::DuplicateParam(name)),
+//                         None => {
+//                             *state = Some(relationship_type);
+//                             Ok(())
+//                         }
+//                     },
+//                     unexpected_param => {
+//                         Err(CalendarParseError::Unexpected(UnexpectedKnownParamError {
+//                             current_property: PropName::Rfc5545(Rfc5545PropName::RelatedTo),
+//                             unexpected_param,
+//                         }))
+//                     }
+//                 }
+//             }
+//
+//             parse_property(input, step, only::<I>(ValueType::Text), text)?.finish_both(
+//                 |relationship_type| RelTypeParams { relationship_type },
+//                 KnownProp::RelatedTo,
+//             )
+//         }
+//         PropName::Rfc5545(prop @ Rfc5545PropName::UniformResourceLocator) => {
+//             let res = parse_property(
+//                 input,
+//                 trivial_step(PropName::Rfc5545(prop)),
+//                 only::<I>(ValueType::Uri),
+//                 uri::<_, _, false>,
+//             )?;
+//
+//             res.finish_value(KnownProp::Url)
+//         }
+//         PropName::Rfc5545(prop @ Rfc5545PropName::UniqueIdentifier) => {
+//             let res = parse_property(
+//                 input,
+//                 trivial_step(PropName::Rfc5545(prop)),
+//                 only::<I>(ValueType::Text),
+//                 uid,
+//             )?;
+//
+//             res.finish_value(KnownProp::Uid)
+//         }
+//         PropName::Rfc5545(prop @ Rfc5545PropName::ExceptionDateTimes) => {
+//             let res = parse_property(
+//                 input,
+//                 dt_param_step(PropName::Rfc5545(prop)),
+//                 datetime_or_date_type::<I>,
+//                 empty,
+//             )?;
+//
+//             res.try_finish(|(), value_type, state| {
+//                 let value = value_type.into_seq_parser().parse_next(input)?;
+//                 let params = state.into_params();
+//                 Ok(KnownProp::ExDate(value, params))
+//             })?
+//         }
+//         PropName::Rfc5545(prop @ Rfc5545PropName::RecurrenceDateTimes) => {
+//             enum RDateType {
+//                 DateTime,
+//                 Date,
+//                 Period,
+//             }
+//
+//             let res = parse_property(
+//                 input,
+//                 dt_param_step(PropName::Rfc5545(prop)),
+//                 |v| match v {
+//                     None | Some(ValueType::DateTime) => Ok(RDateType::DateTime),
+//                     Some(ValueType::Date) => Ok(RDateType::Date),
+//                     Some(ValueType::Period) => Ok(RDateType::Period),
+//                     _ => Err(CalendarParseError::UnexpectedValueType),
+//                 },
+//                 empty,
+//             )?;
+//
+//             res.try_finish(|(), value_type, state| {
+//                 let value = match value_type {
+//                     RDateType::DateTime => separated(1.., datetime, ',')
+//                         .map(RDateSeq::DateTime)
+//                         .parse_next(input),
+//                     RDateType::Date => separated(1.., date, ',')
+//                         .map(RDateSeq::Date)
+//                         .parse_next(input),
+//                     RDateType::Period => separated(1.., period, ',')
+//                         .map(RDateSeq::Period)
+//                         .parse_next(input),
+//                 }?;
+//                 let params = state.into_params();
+//                 Ok(KnownProp::RDate(value, params))
+//             })?
+//         }
+//         PropName::Rfc5545(prop @ Rfc5545PropName::RecurrenceRule) => {
+//             let res = parse_property(
+//                 input,
+//                 trivial_step(PropName::Rfc5545(prop)),
+//                 only::<I>(ValueType::Recur),
+//                 rrule,
+//             )?;
+//
+//             res.finish_value(KnownProp::RRule)
+//         }
+//         PropName::Rfc5545(prop @ Rfc5545PropName::Action) => {
+//             let res = parse_property(
+//                 input,
+//                 trivial_step(PropName::Rfc5545(prop)),
+//                 only::<I>(ValueType::Text),
+//                 alarm_action,
+//             )?;
+//
+//             res.finish_value(KnownProp::Action)
+//         }
+//         PropName::Rfc5545(prop @ Rfc5545PropName::RepeatCount) => {
+//             // NOTE: should we restrict this to being positive? the standard
+//             // (RFC 5545 §3.8.6.2) doesn't explicitly provide for this, but it
+//             // seems semantically incoherent to have a negative number of
+//             // repetitions.
+//
+//             let res = parse_property(
+//                 input,
+//                 trivial_step(PropName::Rfc5545(prop)),
+//                 only::<I>(ValueType::Integer),
+//                 integer,
+//             )?;
+//
+//             res.finish_value(KnownProp::Repeat)
+//         }
+//         PropName::Rfc5545(Rfc5545PropName::Trigger) => {
+//             enum TriggerType {
+//                 Duration,
+//                 DateTime,
+//             }
+//
+//             #[derive(Default)]
+//             struct State {
+//                 trigger_relation: Option<TriggerRelation>,
+//             }
+//
+//             fn step<S>(
+//                 param: KnownParam<S>,
+//                 state: &mut State,
+//             ) -> Result<(), CalendarParseError<S>> {
+//                 let name = param.name();
+//
+//                 match param {
+//                     KnownParam::AlarmTrigger(trigger_relation) => match state.trigger_relation {
+//                         Some(_) => Err(CalendarParseError::DuplicateParam(name)),
+//                         None => {
+//                             state.trigger_relation = Some(trigger_relation);
+//                             Ok(())
+//                         }
+//                     },
+//                     unexpected_param => {
+//                         Err(CalendarParseError::Unexpected(UnexpectedKnownParamError {
+//                             current_property: PropName::Rfc5545(Rfc5545PropName::Trigger),
+//                             unexpected_param,
+//                         }))
+//                     }
+//                 }
+//             }
+//
+//             let res = parse_property(
+//                 input,
+//                 step,
+//                 |v| match v {
+//                     None | Some(ValueType::Duration) => Ok(TriggerType::Duration),
+//                     Some(ValueType::DateTime) => Ok(TriggerType::DateTime),
+//                     _ => Err(CalendarParseError::UnexpectedValueType),
+//                 },
+//                 empty,
+//             )?;
+//
+//             let prop = match res.value_type {
+//                 TriggerType::DateTime if res.state.trigger_relation.is_some() => {
+//                     Err(E::from_external_error(
+//                         input,
+//                         CalendarParseError::TriggerParam(TriggerParamError::DateTimeWithRelation),
+//                     ))
+//                 }
+//                 TriggerType::DateTime => {
+//                     let value = datetime_utc.parse_next(input)?;
+//                     Ok(Prop::Known(KnownProp::TriggerAbsolute(value)))
+//                 }
+//                 TriggerType::Duration => {
+//                     let value = duration.parse_next(input)?;
+//                     let params = TriggerParams {
+//                         trigger_relation: res.state.trigger_relation,
+//                     };
+//                     Ok(Prop::Known(KnownProp::TriggerRelative(value, params)))
+//                 }
+//             }?;
+//
+//             (prop, res.universals, res.unknown_params)
+//         }
+//         PropName::Rfc5545(prop @ Rfc5545PropName::DateTimeCreated) => {
+//             let res = parse_property(
+//                 input,
+//                 trivial_step(PropName::Rfc5545(prop)),
+//                 only::<I>(ValueType::DateTime),
+//                 datetime_utc,
+//             )?;
+//
+//             res.finish_value(KnownProp::Created)
+//         }
+//         PropName::Rfc5545(prop @ Rfc5545PropName::DateTimeStamp) => {
+//             let res = parse_property(
+//                 input,
+//                 trivial_step(PropName::Rfc5545(prop)),
+//                 only::<I>(ValueType::DateTime),
+//                 datetime_utc,
+//             )?;
+//
+//             res.finish_value(KnownProp::DtStamp)
+//         }
+//         PropName::Rfc5545(prop @ Rfc5545PropName::LastModified) => {
+//             let res = parse_property(
+//                 input,
+//                 trivial_step(PropName::Rfc5545(prop)),
+//                 only::<I>(ValueType::DateTime),
+//                 datetime_utc,
+//             )?;
+//
+//             res.finish_value(KnownProp::LastModified)
+//         }
+//         PropName::Rfc5545(prop @ Rfc5545PropName::SequenceNumber) => {
+//             let res = parse_property(
+//                 input,
+//                 trivial_step(PropName::Rfc5545(prop)),
+//                 only::<I>(ValueType::Integer),
+//                 integer,
+//             )?;
+//
+//             res.finish_value(KnownProp::Sequence)
+//         }
+//         PropName::Rfc5545(prop @ Rfc5545PropName::RequestStatus) => {
+//             let res = parse_property(
+//                 input,
+//                 lang_param_step(PropName::Rfc5545(prop)),
+//                 only::<I>(ValueType::Text),
+//                 empty,
+//             )?;
+//
+//             res.try_finish(|(), (), state| {
+//                 let value = RequestStatus {
+//                     code: status_code.parse_next(input)?,
+//                     description: preceded(';', text).parse_next(input)?,
+//                     exception_data: opt(preceded(';', text)).parse_next(input)?,
+//                 };
+//                 let params = state.into_params();
+//                 Ok(KnownProp::RequestStatus(value, params))
+//             })?
+//         }
+//         PropName::Rfc7986(prop @ Rfc7986PropName::Name) => {
+//             let res = parse_property(
+//                 input,
+//                 text_param_step(PropName::Rfc7986(prop)),
+//                 only::<I>(ValueType::Text),
+//                 text,
+//             )?;
+//
+//             res.finish_both(TextParamState::into_params, KnownProp::Name)
+//         }
+//         PropName::Rfc7986(prop @ Rfc7986PropName::RefreshInterval) => {
+//             let res = parse_property(
+//                 input,
+//                 trivial_step(PropName::Rfc7986(prop)),
+//                 once::<I>(ValueType::Duration),
+//                 duration,
+//             )?;
+//
+//             res.finish_value(KnownProp::RefreshInterval)
+//         }
+//         PropName::Rfc7986(prop @ Rfc7986PropName::Source) => {
+//             let res = parse_property(
+//                 input,
+//                 trivial_step(PropName::Rfc7986(prop)),
+//                 once::<I>(ValueType::Uri),
+//                 uri::<_, _, false>,
+//             )?;
+//
+//             res.finish_value(KnownProp::Source)
+//         }
+//         PropName::Rfc7986(prop @ Rfc7986PropName::Color) => {
+//             let res = parse_property(
+//                 input,
+//                 trivial_step(PropName::Rfc7986(prop)),
+//                 only::<I>(ValueType::Text),
+//                 color,
+//             )?;
+//
+//             res.finish_value(KnownProp::Color)
+//         }
+//         PropName::Rfc7986(Rfc7986PropName::Image) => {
+//             struct State<S> {
+//                 params: ImageParams<S>,
+//                 encoding_found: bool,
+//             }
+//
+//             impl<S> Default for State<S> {
+//                 fn default() -> Self {
+//                     Self {
+//                         params: Default::default(),
+//                         encoding_found: Default::default(),
+//                     }
+//                 }
+//             }
+//
+//             fn step<S>(
+//                 param: KnownParam<S>,
+//                 state: &mut State<S>,
+//             ) -> Result<(), CalendarParseError<S>> {
+//                 let name = param.name();
+//
+//                 match param {
+//                     KnownParam::FormatType(format_type) => match state.params.format_type {
+//                         Some(_) => Err(CalendarParseError::DuplicateParam(name)),
+//                         None => {
+//                             state.params.format_type = Some(format_type);
+//                             Ok(())
+//                         }
+//                     },
+//                     KnownParam::AltRep(alternate_representation) => {
+//                         match state.params.alternate_representation {
+//                             Some(_) => Err(CalendarParseError::DuplicateParam(name)),
+//                             None => {
+//                                 state.params.alternate_representation =
+//                                     Some(alternate_representation);
+//                                 Ok(())
+//                             }
+//                         }
+//                     }
+//                     KnownParam::Display(display) => match state.params.display {
+//                         Some(_) => Err(CalendarParseError::DuplicateParam(name)),
+//                         None => {
+//                             state.params.display = Some(display);
+//                             Ok(())
+//                         }
+//                     },
+//                     KnownParam::Encoding(Encoding::Base64) => match state.encoding_found {
+//                         true => Err(CalendarParseError::DuplicateParam(name)),
+//                         false => {
+//                             state.encoding_found = true;
+//                             Ok(())
+//                         }
+//                     },
+//                     KnownParam::Encoding(Encoding::Bit8) => Err(CalendarParseError::AttachParam(
+//                         AttachParamError::Bit8Encoding,
+//                     )),
+//                     unexpected_param => {
+//                         Err(CalendarParseError::Unexpected(UnexpectedKnownParamError {
+//                             current_property: PropName::Rfc7986(Rfc7986PropName::Image),
+//                             unexpected_param,
+//                         }))
+//                     }
+//                 }
+//             }
+//
+//             let res = parse_property(
+//                 input,
+//                 step,
+//                 |v| match v {
+//                     Some(ValueType::Uri) => Ok(UriOrBinary::Uri),
+//                     Some(ValueType::Binary) => Ok(UriOrBinary::Binary),
+//                     Some(_) | None => Err(CalendarParseError::UnexpectedValueType),
+//                 },
+//                 empty,
+//             )?;
+//
+//             res.try_finish(|(), value_type, state| {
+//                 let value = match (state.encoding_found, value_type) {
+//                     (false, UriOrBinary::Uri) => {
+//                         uri::<_, _, false>.map(ImageData::Uri).parse_next(input)
+//                     }
+//                     (true, UriOrBinary::Binary) => binary.map(ImageData::Binary).parse_next(input),
+//                     (true, UriOrBinary::Uri) => Err(E::from_external_error(
+//                         input,
+//                         CalendarParseError::AttachParam(AttachParamError::EncodingOnUri),
+//                     )),
+//                     (false, UriOrBinary::Binary) => Err(E::from_external_error(
+//                         input,
+//                         CalendarParseError::AttachParam(AttachParamError::BinaryWithoutEncoding),
+//                     )),
+//                 }?;
+//                 let params = state.params;
+//                 Ok(KnownProp::Image(value, params))
+//             })?
+//         }
+//         PropName::Rfc7986(Rfc7986PropName::Conference) => {
+//             type State<S> = ConfParams<S>;
+//
+//             fn step<S>(
+//                 param: KnownParam<S>,
+//                 state: &mut State<S>,
+//             ) -> Result<(), CalendarParseError<S>> {
+//                 let name = param.name();
+//
+//                 match param {
+//                     KnownParam::Feature(feature_type) => match state.feature_type {
+//                         Some(_) => Err(CalendarParseError::DuplicateParam(name)),
+//                         None => {
+//                             state.feature_type = Some(feature_type);
+//                             Ok(())
+//                         }
+//                     },
+//                     KnownParam::Language(language) => match state.language {
+//                         Some(_) => Err(CalendarParseError::DuplicateParam(name)),
+//                         None => {
+//                             state.language = Some(language);
+//                             Ok(())
+//                         }
+//                     },
+//                     KnownParam::Label(label) => match state.label {
+//                         Some(_) => Err(CalendarParseError::DuplicateParam(name)),
+//                         None => {
+//                             state.label = Some(label);
+//                             Ok(())
+//                         }
+//                     },
+//                     unexpected_param => {
+//                         Err(CalendarParseError::Unexpected(UnexpectedKnownParamError {
+//                             current_property: PropName::Rfc7986(Rfc7986PropName::Conference),
+//                             unexpected_param,
+//                         }))
+//                     }
+//                 }
+//             }
+//
+//             let res = parse_property(input, step, once::<I>(ValueType::Uri), uri::<_, _, false>)?;
+//             res.finish_both(std::convert::identity, KnownProp::Conference)
+//         }
+//         PropName::Rfc9073(prop @ Rfc9073PropName::LocationType) => {
+//             let res = parse_property(
+//                 input,
+//                 trivial_step(PropName::Rfc9073(prop)),
+//                 only::<I>(ValueType::Text),
+//                 text_seq,
+//             )?;
+//
+//             res.finish_value(KnownProp::LocationType)
+//         }
+//         PropName::Rfc9073(prop @ Rfc9073PropName::ParticipantType) => {
+//             let res = parse_property(
+//                 input,
+//                 trivial_step(PropName::Rfc9073(prop)),
+//                 only::<I>(ValueType::Text),
+//                 participant_type,
+//             )?;
+//
+//             res.finish_value(KnownProp::ParticipantType)
+//         }
+//         PropName::Rfc9073(prop @ Rfc9073PropName::ResourceType) => {
+//             let res = parse_property(
+//                 input,
+//                 trivial_step(PropName::Rfc9073(prop)),
+//                 only::<I>(ValueType::Text),
+//                 resource_type,
+//             )?;
+//
+//             res.finish_value(KnownProp::ResourceType)
+//         }
+//         PropName::Rfc9073(prop @ Rfc9073PropName::CalendarAddress) => {
+//             let res = parse_property(
+//                 input,
+//                 trivial_step(PropName::Rfc9073(prop)),
+//                 only::<I>(ValueType::CalAddress),
+//                 cal_address::<_, _, false>,
+//             )?;
+//
+//             res.finish_value(KnownProp::CalendarAddress)
+//         }
+//         PropName::Rfc9073(Rfc9073PropName::StyledDescription) => {
+//             enum UriOrText {
+//                 Uri,
+//                 Text,
+//             }
+//
+//             type State<S> = StyledDescriptionParams<S>;
+//
+//             fn step<S>(
+//                 param: KnownParam<S>,
+//                 state: &mut State<S>,
+//             ) -> Result<(), CalendarParseError<S>> {
+//                 let name = param.name();
+//
+//                 match param {
+//                     KnownParam::AltRep(alternate_representation) => {
+//                         match state.alternate_representation {
+//                             Some(_) => Err(CalendarParseError::DuplicateParam(name)),
+//                             None => {
+//                                 state.alternate_representation = Some(alternate_representation);
+//                                 Ok(())
+//                             }
+//                         }
+//                     }
+//                     KnownParam::Language(language) => match state.language {
+//                         Some(_) => Err(CalendarParseError::DuplicateParam(name)),
+//                         None => {
+//                             state.language = Some(language);
+//                             Ok(())
+//                         }
+//                     },
+//                     KnownParam::FormatType(format_type) => match state.format_type {
+//                         Some(_) => Err(CalendarParseError::DuplicateParam(name)),
+//                         None => {
+//                             state.format_type = Some(format_type);
+//                             Ok(())
+//                         }
+//                     },
+//                     unexpected_param => {
+//                         Err(CalendarParseError::Unexpected(UnexpectedKnownParamError {
+//                             current_property: PropName::Rfc9073(Rfc9073PropName::StyledDescription),
+//                             unexpected_param,
+//                         }))
+//                     }
+//                 }
+//             }
+//
+//             let res = parse_property(
+//                 input,
+//                 step,
+//                 |v| match v {
+//                     Some(ValueType::Uri) => Ok(UriOrText::Uri),
+//                     Some(ValueType::Text) => Ok(UriOrText::Text),
+//                     Some(_) | None => Err(CalendarParseError::UnexpectedValueType),
+//                 },
+//                 empty,
+//             )?;
+//
+//             res.try_finish(|(), value_type, params| {
+//                 let value = match value_type {
+//                     UriOrText::Uri => uri::<_, _, false>
+//                         .map(StyledDescriptionValue::Uri)
+//                         .parse_next(input)?,
+//                     UriOrText::Text => text.map(StyledDescriptionValue::Text).parse_next(input)?,
+//                 };
+//
+//                 Ok(KnownProp::StyledDescription(value, params))
+//             })?
+//         }
+//         PropName::Rfc9073(Rfc9073PropName::StructuredData) => {
+//             enum SDType {
+//                 Binary,
+//                 Text,
+//                 Uri,
+//             }
+//
+//             struct State<S> {
+//                 encoding_seen: Option<()>,
+//                 format_type: Option<FormatType<S>>,
+//                 schema: Option<Uri<S>>,
+//             }
+//
+//             impl<S> Default for State<S> {
+//                 fn default() -> Self {
+//                     Self {
+//                         encoding_seen: Default::default(),
+//                         format_type: Default::default(),
+//                         schema: Default::default(),
+//                     }
+//                 }
+//             }
+//
+//             fn step<S>(
+//                 param: KnownParam<S>,
+//                 state: &mut State<S>,
+//             ) -> Result<(), CalendarParseError<S>> {
+//                 let name = param.name();
+//
+//                 match param {
+//                     KnownParam::Encoding(Encoding::Base64) => match state.encoding_seen {
+//                         Some(_) => Err(CalendarParseError::DuplicateParam(name)),
+//                         None => {
+//                             state.encoding_seen = Some(());
+//                             Ok(())
+//                         }
+//                     },
+//                     KnownParam::Encoding(Encoding::Bit8) => {
+//                         Err(CalendarParseError::SDParam(SDParamError::Bit8Encoding))
+//                     }
+//                     KnownParam::Schema(schema) => match state.schema {
+//                         Some(_) => Err(CalendarParseError::DuplicateParam(name)),
+//                         None => {
+//                             state.schema = Some(schema);
+//                             Ok(())
+//                         }
+//                     },
+//                     KnownParam::FormatType(format_type) => match state.format_type {
+//                         Some(_) => Err(CalendarParseError::DuplicateParam(name)),
+//                         None => {
+//                             state.format_type = Some(format_type);
+//                             Ok(())
+//                         }
+//                     },
+//                     unexpected_param => {
+//                         Err(CalendarParseError::Unexpected(UnexpectedKnownParamError {
+//                             current_property: PropName::Rfc9073(Rfc9073PropName::StyledDescription),
+//                             unexpected_param,
+//                         }))
+//                     }
+//                 }
+//             }
+//
+//             let res = parse_property(
+//                 input,
+//                 step,
+//                 |v| match v {
+//                     Some(ValueType::Binary) => Ok(SDType::Binary),
+//                     Some(ValueType::Text) => Ok(SDType::Text),
+//                     Some(ValueType::Uri) => Ok(SDType::Uri),
+//                     Some(other) => Err(CalendarParseError::SDParam(
+//                         SDParamError::InvalidValueType(other),
+//                     )),
+//                     None => Err(CalendarParseError::SDParam(SDParamError::MissingValueType)),
+//                 },
+//                 empty,
+//             )?;
+//
+//             res.try_finish(|(), value_type, state| match value_type {
+//                 SDType::Binary => todo!(),
+//                 SDType::Text => todo!(),
+//                 SDType::Uri => todo!(),
+//             })?
+//         }
+//         PropName::Rfc9074(prop @ Rfc9074PropName::Acknowledged) => {
+//             let res = parse_property(
+//                 input,
+//                 trivial_step(PropName::Rfc9074(prop)),
+//                 only::<I>(ValueType::DateTime),
+//                 datetime_utc,
+//             )?;
+//
+//             res.finish_value(KnownProp::Acknowledged)
+//         }
+//         PropName::Rfc9074(prop @ Rfc9074PropName::Proximity) => {
+//             let res = parse_property(
+//                 input,
+//                 trivial_step(PropName::Rfc9074(prop)),
+//                 only::<I>(ValueType::Text),
+//                 proximity_value,
+//             )?;
+//
+//             res.finish_value(KnownProp::Proximity)
+//         }
+//         PropName::Iana(name) => {
+//             let res = parse_property(
+//                 input,
+//                 unknown_step,
+//                 |v| Ok(v.unwrap_or(ValueType::Text)),
+//                 empty,
+//             )?;
+//
+//             (
+//                 Prop::Unknown(UnknownProp::Iana {
+//                     value: parse_value(res.value_type, input)?,
+//                     name: name.clone(),
+//                     params: res.state,
+//                 }),
+//                 res.universals,
+//                 res.unknown_params,
+//             )
+//         }
+//         PropName::X(name) => {
+//             let res = parse_property(
+//                 input,
+//                 unknown_step,
+//                 |v| Ok(v.unwrap_or(ValueType::Text)),
+//                 empty,
+//             )?;
+//
+//             (
+//                 Prop::Unknown(UnknownProp::X {
+//                     value: parse_value(res.value_type, input)?,
+//                     name: name.clone(),
+//                     params: res.state,
+//                 }),
+//                 res.universals,
+//                 res.unknown_params,
+//             )
+//         }
+//     })
+// }
 
 /// A property name.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -2404,8 +2068,9 @@ mod tests {
         model::{
             parameter::ParamValue,
             primitive::{
-                DurationKind, DurationTime, GeoComponent, ParticipationRole, ParticipationStatus,
-                RawTime, Sign, Time, TimeFormat,
+                DurationKind, DurationTime, FormatType, FreeBusyType, GeoComponent, Language,
+                ParticipationRole, ParticipationStatus, RawTime, Sign, ThisAndFuture, Time,
+                TimeFormat,
             },
         },
         parser::escaped::AsEscaped,
@@ -2443,23 +2108,23 @@ mod tests {
         assert!(tail.is_empty());
         assert_eq!(props.len(), 15);
 
-        let mut iter = props.into_iter().map(|(prop, _, _)| prop);
+        let mut iter = props.into_iter();
         let _ = iter.next(); // skip the first line, it's not a real property
 
         assert_eq!(
             iter.next(),
-            Some(Prop::Known(KnownProp::ProdId(Text(
+            Some(ParsedProp::Known(KnownProp::ProdId(Text(
                 "-//xyz Corp//NONSGML PDA Calendar Version 1.0//EN".as_escaped()
             )))),
         );
 
-        assert_eq!(iter.next(), Some(Prop::Known(KnownProp::Version)));
+        assert_eq!(iter.next(), Some(ParsedProp::Known(KnownProp::Version)));
 
         let _ = iter.next(); // next line is also not a real property
 
         assert_eq!(
             iter.next(),
-            Some(Prop::Known(KnownProp::DtStamp(DateTime {
+            Some(ParsedProp::Known(KnownProp::DtStamp(DateTime {
                 date: date!(1996;7;4),
                 time: Time {
                     raw: RawTime {
@@ -2474,14 +2139,14 @@ mod tests {
 
         assert_eq!(
             iter.next(),
-            Some(Prop::Known(KnownProp::Uid(Uid(
+            Some(ParsedProp::Known(KnownProp::Uid(Uid(
                 "uid1@example.com".as_escaped()
             )))),
         );
 
         assert_eq!(
             iter.next(),
-            Some(Prop::Known(KnownProp::Organizer(
+            Some(ParsedProp::Known(KnownProp::Organizer(
                 CalAddress("mailto:jsmith@example.com".as_escaped(),),
                 OrganizerParams::default()
             ))),
@@ -2493,36 +2158,30 @@ mod tests {
     #[test]
     fn rfc_5545_example_calendar_scale_property() {
         let input = "CALSCALE:GREGORIAN";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
-        assert_eq!(prop, Prop::Known(KnownProp::CalScale));
+        assert_eq!(prop, ParsedProp::Known(KnownProp::CalScale));
     }
 
     #[test]
     fn rfc_5545_example_method_property() {
         let input = "METHOD:REQUEST";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
-        assert_eq!(prop, Prop::Known(KnownProp::Method(Method::Request)));
+        assert_eq!(prop, ParsedProp::Known(KnownProp::Method(Method::Request)));
     }
 
     #[test]
     fn rfc_5545_example_product_identifier_property() {
         let input = "PRODID:-//ABC Corporation//NONSGML My Product//EN";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
         assert_eq!(
             prop,
-            Prop::Known(KnownProp::ProdId(Text(
+            ParsedProp::Known(KnownProp::ProdId(Text(
                 "-//ABC Corporation//NONSGML My Product//EN"
             )))
         )
@@ -2531,24 +2190,20 @@ mod tests {
     #[test]
     fn rfc_5545_example_version_property() {
         let input = "VERSION:2.0";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
-        assert_eq!(prop, Prop::Known(KnownProp::Version));
+        assert_eq!(prop, ParsedProp::Known(KnownProp::Version));
     }
 
     #[test]
     fn rfc_5545_example_attachment_property_1() {
         let input = "ATTACH:CID:jsmith.part3.960817T083000.xyzMail@example.com";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
 
-        let Prop::Known(KnownProp::Attach(value, params)) = prop else {
+        let ParsedProp::Known(KnownProp::Attach(value, params)) = prop else {
             panic!()
         };
 
@@ -2564,13 +2219,11 @@ mod tests {
         let input =
             "ATTACH;FMTTYPE=application/postscript:ftp://example.com/pub/\r\n reports/r-960812.ps"
                 .as_escaped();
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
 
-        let Prop::Known(KnownProp::Attach(value, params)) = prop else {
+        let ParsedProp::Known(KnownProp::Attach(value, params)) = prop else {
             panic!()
         };
 
@@ -2592,13 +2245,11 @@ mod tests {
     #[test]
     fn rfc_5545_example_categories_property_1() {
         let input = "CATEGORIES:APPOINTMENT,EDUCATION";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
 
-        let Prop::Known(KnownProp::Categories(values, params)) = prop else {
+        let ParsedProp::Known(KnownProp::Categories(values, params)) = prop else {
             panic!()
         };
 
@@ -2609,13 +2260,11 @@ mod tests {
     #[test]
     fn rfc_5545_example_categories_property_2() {
         let input = "CATEGORIES:MEETING";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
 
-        let Prop::Known(KnownProp::Categories(values, params)) = prop else {
+        let ParsedProp::Known(KnownProp::Categories(values, params)) = prop else {
             panic!()
         };
 
@@ -2626,26 +2275,24 @@ mod tests {
     #[test]
     fn rfc_5545_example_classification_property() {
         let input = "CLASS:PUBLIC";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
-        assert_eq!(prop, Prop::Known(KnownProp::Class(ClassValue::Public)));
+        assert_eq!(
+            prop,
+            ParsedProp::Known(KnownProp::Class(ClassValue::Public))
+        );
     }
 
     #[test]
     fn rfc_5545_example_comment_property() {
         let input = "COMMENT:The meeting really needs to include both ourselves \r\n and the customer. We can't hold this meeting without them. \r\n As a matter of fact\\, the venue for the meeting ought to be at \r\n their site. - - John";
 
-        let (tail, (prop, univ, unknown_params)) =
-            property::<_, ()>.parse_peek(input.as_escaped()).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input.as_escaped()).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
 
-        let Prop::Known(KnownProp::Comment(text, params)) = prop else {
+        let ParsedProp::Known(KnownProp::Comment(text, params)) = prop else {
             panic!()
         };
 
@@ -2658,14 +2305,11 @@ mod tests {
     fn rfc_5545_example_description_property() {
         let input = "DESCRIPTION:Meeting to provide technical review for \"Phoenix\" \r\n design.\\nHappy Face Conference Room. Phoenix design team \r\n MUST attend this meeting.\\nRSVP to team leader.";
 
-        let (tail, (prop, univ, unknown_params)) =
-            property::<_, ()>.parse_peek(input.as_escaped()).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input.as_escaped()).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
 
-        let Prop::Known(KnownProp::Description(text, params)) = prop else {
+        let ParsedProp::Known(KnownProp::Description(text, params)) = prop else {
             panic!()
         };
 
@@ -2677,13 +2321,11 @@ mod tests {
     #[test]
     fn rfc_5545_example_geographic_position_property() {
         let input = "GEO:37.386013;-122.082932";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
 
-        let Prop::Known(KnownProp::Geo(geo)) = prop else {
+        let ParsedProp::Known(KnownProp::Geo(geo)) = prop else {
             panic!()
         };
 
@@ -2694,13 +2336,11 @@ mod tests {
     #[test]
     fn rfc_5545_example_location_property_1() {
         let input = "LOCATION:Conference Room - F123\\, Bldg. 002";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
 
-        let Prop::Known(KnownProp::Location(text, params)) = prop else {
+        let ParsedProp::Known(KnownProp::Location(text, params)) = prop else {
             panic!()
         };
 
@@ -2713,14 +2353,11 @@ mod tests {
     fn rfc_5545_example_location_property_2() {
         let input = "LOCATION;ALTREP=\"http://xyzcorp.com/conf-rooms/f123.vcf\":\r\n Conference Room - F123\\, Bldg. 002";
 
-        let (tail, (prop, univ, unknown_params)) =
-            property::<_, ()>.parse_peek(input.as_escaped()).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input.as_escaped()).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
 
-        let Prop::Known(KnownProp::Location(text, params)) = prop else {
+        let ParsedProp::Known(KnownProp::Location(text, params)) = prop else {
             panic!()
         };
 
@@ -2736,13 +2373,11 @@ mod tests {
     #[test]
     fn rfc_5545_example_percent_complete_property() {
         let input = "PERCENT-COMPLETE:39";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
 
-        let Prop::Known(KnownProp::PercentComplete(pct)) = prop else {
+        let ParsedProp::Known(KnownProp::PercentComplete(pct)) = prop else {
             panic!()
         };
 
@@ -2752,46 +2387,38 @@ mod tests {
     #[test]
     fn rfc_5545_example_priority_property_1() {
         let input = "PRIORITY:1";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
-        assert_eq!(prop, Prop::Known(KnownProp::Priority(Priority::A1)));
+        assert_eq!(prop, ParsedProp::Known(KnownProp::Priority(Priority::A1)));
     }
 
     #[test]
     fn rfc_5545_example_priority_property_2() {
         let input = "PRIORITY:2";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
-        assert_eq!(prop, Prop::Known(KnownProp::Priority(Priority::A2)));
+        assert_eq!(prop, ParsedProp::Known(KnownProp::Priority(Priority::A2)));
     }
 
     #[test]
     fn rfc_5545_example_priority_property_3() {
         let input = "PRIORITY:0";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
-        assert_eq!(prop, Prop::Known(KnownProp::Priority(Priority::Zero)));
+        assert_eq!(prop, ParsedProp::Known(KnownProp::Priority(Priority::Zero)));
     }
 
     #[test]
     fn rfc_5545_example_resources_property_1() {
         let input = "RESOURCES:EASEL,PROJECTOR,VCR";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
 
-        let Prop::Known(KnownProp::Resources(values, params)) = prop else {
+        let ParsedProp::Known(KnownProp::Resources(values, params)) = prop else {
             panic!()
         };
 
@@ -2803,13 +2430,11 @@ mod tests {
     #[test]
     fn rfc_5545_example_resources_property_2() {
         let input = "RESOURCES;LANGUAGE=fr:Nettoyeur haute pression";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
 
-        let Prop::Known(KnownProp::Resources(values, params)) = prop else {
+        let ParsedProp::Known(KnownProp::Resources(values, params)) = prop else {
             panic!()
         };
 
@@ -2821,46 +2446,44 @@ mod tests {
     #[test]
     fn rfc_5545_example_status_property_1() {
         let input = "STATUS:TENTATIVE";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
-        assert_eq!(prop, Prop::Known(KnownProp::Status(Status::Tentative)));
+        assert_eq!(
+            prop,
+            ParsedProp::Known(KnownProp::Status(Status::Tentative))
+        );
     }
 
     #[test]
     fn rfc_5545_example_status_property_2() {
         let input = "STATUS:NEEDS-ACTION";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
-        assert_eq!(prop, Prop::Known(KnownProp::Status(Status::NeedsAction)));
+        assert_eq!(
+            prop,
+            ParsedProp::Known(KnownProp::Status(Status::NeedsAction))
+        );
     }
 
     #[test]
     fn rfc_5545_example_status_property_3() {
         let input = "STATUS:DRAFT";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
-        assert_eq!(prop, Prop::Known(KnownProp::Status(Status::Draft)));
+        assert_eq!(prop, ParsedProp::Known(KnownProp::Status(Status::Draft)));
     }
 
     #[test]
     fn rfc_5545_example_summary_property() {
         let input = "SUMMARY:Department Party";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
 
-        let Prop::Known(KnownProp::Summary(text, params)) = prop else {
+        let ParsedProp::Known(KnownProp::Summary(text, params)) = prop else {
             panic!()
         };
 
@@ -2872,13 +2495,11 @@ mod tests {
     #[test]
     fn rfc_5545_example_date_time_completed_property() {
         let input = "COMPLETED:19960401T150000Z";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
 
-        let Prop::Known(KnownProp::DtCompleted(datetime)) = prop else {
+        let ParsedProp::Known(KnownProp::DtCompleted(datetime)) = prop else {
             panic!()
         };
 
@@ -2897,13 +2518,11 @@ mod tests {
     #[test]
     fn rfc_5545_example_date_time_end_property_1() {
         let input = "DTEND:19960401T150000Z";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
 
-        let Prop::Known(KnownProp::DtEnd(value, params)) = prop else {
+        let ParsedProp::Known(KnownProp::DtEnd(value, params)) = prop else {
             panic!()
         };
 
@@ -2927,13 +2546,11 @@ mod tests {
     #[test]
     fn rfc_5545_example_date_time_end_property_2() {
         let input = "DTEND;VALUE=DATE:19980704";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
 
-        let Prop::Known(KnownProp::DtEnd(value, params)) = prop else {
+        let ParsedProp::Known(KnownProp::DtEnd(value, params)) = prop else {
             panic!()
         };
 
@@ -2944,13 +2561,11 @@ mod tests {
     #[test]
     fn rfc_5545_example_date_time_due_property() {
         let input = "DUE:19980430T000000Z";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
 
-        let Prop::Known(KnownProp::DtDue(value, params)) = prop else {
+        let ParsedProp::Known(KnownProp::DtDue(value, params)) = prop else {
             panic!()
         };
 
@@ -2974,13 +2589,11 @@ mod tests {
     #[test]
     fn rfc_5545_example_date_time_start_property() {
         let input = "DTSTART:19980118T073000Z";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
 
-        let Prop::Known(KnownProp::DtStart(value, params)) = prop else {
+        let ParsedProp::Known(KnownProp::DtStart(value, params)) = prop else {
             panic!()
         };
 
@@ -3004,13 +2617,11 @@ mod tests {
     #[test]
     fn rfc_5545_example_duration_property_1() {
         let input = "DURATION:PT1H0M0S";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
 
-        let Prop::Known(KnownProp::Duration(duration)) = prop else {
+        let ParsedProp::Known(KnownProp::Duration(duration)) = prop else {
             panic!()
         };
 
@@ -3032,13 +2643,11 @@ mod tests {
     #[test]
     fn rfc_5545_example_duration_property_2() {
         let input = "DURATION:PT15M";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
 
-        let Prop::Known(KnownProp::Duration(duration)) = prop else {
+        let ParsedProp::Known(KnownProp::Duration(duration)) = prop else {
             panic!()
         };
 
@@ -3056,13 +2665,11 @@ mod tests {
     #[test]
     fn rfc_5545_example_free_busy_time_property_1() {
         let input = "FREEBUSY;FBTYPE=BUSY-UNAVAILABLE:19970308T160000Z/PT8H30M";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
 
-        let Prop::Known(KnownProp::FreeBusy(periods, params)) = prop else {
+        let ParsedProp::Known(KnownProp::FreeBusy(periods, params)) = prop else {
             panic!()
         };
 
@@ -3097,13 +2704,11 @@ mod tests {
     #[test]
     fn rfc_5545_example_free_busy_time_property_2() {
         let input = "FREEBUSY;FBTYPE=FREE:19970308T160000Z/PT3H,19970308T200000Z/PT1H";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
 
-        let Prop::Known(KnownProp::FreeBusy(periods, params)) = prop else {
+        let ParsedProp::Known(KnownProp::FreeBusy(periods, params)) = prop else {
             panic!()
         };
 
@@ -3156,14 +2761,11 @@ mod tests {
     #[test]
     fn rfc_5545_example_free_busy_time_property_3() {
         let input = "FREEBUSY;FBTYPE=FREE:19970308T160000Z/PT3H,19970308T200000Z/PT1H\r\n\t,19970308T230000Z/19970309T000000Z";
-        let (tail, (prop, univ, unknown_params)) =
-            property::<_, ()>.parse_peek(input.as_escaped()).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input.as_escaped()).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
 
-        let Prop::Known(KnownProp::FreeBusy(periods, params)) = prop else {
+        let ParsedProp::Known(KnownProp::FreeBusy(periods, params)) = prop else {
             panic!()
         };
 
@@ -3240,80 +2842,71 @@ mod tests {
     #[test]
     fn rfc_5545_example_time_transparency_property_1() {
         let input = "TRANSP:TRANSPARENT";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
         assert_eq!(
             prop,
-            Prop::Known(KnownProp::Transparency(TimeTransparency::Transparent))
+            ParsedProp::Known(KnownProp::Transparency(TimeTransparency::Transparent))
         );
     }
 
     #[test]
     fn rfc_5545_example_time_transparency_property_2() {
         let input = "TRANSP:OPAQUE";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
         assert_eq!(
             prop,
-            Prop::Known(KnownProp::Transparency(TimeTransparency::Opaque))
+            ParsedProp::Known(KnownProp::Transparency(TimeTransparency::Opaque))
         );
     }
 
     #[test]
     fn rfc_5545_example_time_zone_identifier_property_1() {
         let input = "TZID:America/New_York";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
-        assert_eq!(prop, Prop::Known(KnownProp::TzId(TzId("America/New_York"))));
+        assert_eq!(
+            prop,
+            ParsedProp::Known(KnownProp::TzId(TzId("America/New_York")))
+        );
     }
 
     #[test]
     fn rfc_5545_example_time_zone_identifier_property_2() {
         let input = "TZID:America/Los_Angeles";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
         assert_eq!(
             prop,
-            Prop::Known(KnownProp::TzId(TzId("America/Los_Angeles")))
+            ParsedProp::Known(KnownProp::TzId(TzId("America/Los_Angeles")))
         );
     }
 
     #[test]
     fn rfc_5545_example_time_zone_identifier_property_3() {
         let input = "TZID:/example.org/America/New_York";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
         assert_eq!(
             prop,
-            Prop::Known(KnownProp::TzId(TzId("/example.org/America/New_York")))
+            ParsedProp::Known(KnownProp::TzId(TzId("/example.org/America/New_York")))
         );
     }
 
     #[test]
     fn rfc_5545_example_time_zone_name_property_1() {
         let input = "TZNAME:EST";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
 
-        let Prop::Known(KnownProp::TzName(name, params)) = prop else {
+        let ParsedProp::Known(KnownProp::TzName(name, params)) = prop else {
             panic!()
         };
 
@@ -3324,13 +2917,11 @@ mod tests {
     #[test]
     fn rfc_5545_example_time_zone_name_property_2() {
         let input = "TZNAME;LANGUAGE=fr-CA:HNE";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
 
-        let Prop::Known(KnownProp::TzName(name, params)) = prop else {
+        let ParsedProp::Known(KnownProp::TzName(name, params)) = prop else {
             panic!()
         };
 
@@ -3341,14 +2932,12 @@ mod tests {
     #[test]
     fn rfc_5545_example_time_zone_offset_from_property_1() {
         let input = "TZOFFSETFROM:-0500";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
         assert_eq!(
             prop,
-            Prop::Known(KnownProp::TzOffsetFrom(UtcOffset {
+            ParsedProp::Known(KnownProp::TzOffsetFrom(UtcOffset {
                 sign: Sign::Negative,
                 hours: 5,
                 minutes: 0,
@@ -3360,14 +2949,12 @@ mod tests {
     #[test]
     fn rfc_5545_example_time_zone_offset_from_property_2() {
         let input = "TZOFFSETFROM:+1345";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
         assert_eq!(
             prop,
-            Prop::Known(KnownProp::TzOffsetFrom(UtcOffset {
+            ParsedProp::Known(KnownProp::TzOffsetFrom(UtcOffset {
                 sign: Sign::Positive,
                 hours: 13,
                 minutes: 45,
@@ -3379,14 +2966,12 @@ mod tests {
     #[test]
     fn rfc_5545_example_time_zone_offset_to_property_1() {
         let input = "TZOFFSETTO:-0400";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
         assert_eq!(
             prop,
-            Prop::Known(KnownProp::TzOffsetTo(UtcOffset {
+            ParsedProp::Known(KnownProp::TzOffsetTo(UtcOffset {
                 sign: Sign::Negative,
                 hours: 4,
                 minutes: 0,
@@ -3398,14 +2983,12 @@ mod tests {
     #[test]
     fn rfc_5545_example_time_zone_offset_to_property_2() {
         let input = "TZOFFSETTO:+1245";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
         assert_eq!(
             prop,
-            Prop::Known(KnownProp::TzOffsetTo(UtcOffset {
+            ParsedProp::Known(KnownProp::TzOffsetTo(UtcOffset {
                 sign: Sign::Positive,
                 hours: 12,
                 minutes: 45,
@@ -3417,14 +3000,12 @@ mod tests {
     #[test]
     fn rfc_5545_example_time_zone_url_property() {
         let input = "TZURL:http://timezones.example.org/tz/America-Los_Angeles.ics";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
         assert_eq!(
             prop,
-            Prop::Known(KnownProp::TzUrl(Uri(
+            ParsedProp::Known(KnownProp::TzUrl(Uri(
                 "http://timezones.example.org/tz/America-Los_Angeles.ics"
             ))),
         );
@@ -3434,14 +3015,11 @@ mod tests {
     fn rfc_5545_example_attendee_property_1() {
         let input =
             "ATTENDEE;MEMBER=\"mailto:DEV-GROUP@example.com\":\r\n mailto:joecool@example.com";
-        let (tail, (prop, univ, unknown_params)) =
-            property::<_, ()>.parse_peek(input.as_escaped()).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input.as_escaped()).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
 
-        let Prop::Known(KnownProp::Attendee(address, params)) = prop else {
+        let ParsedProp::Known(KnownProp::Attendee(address, params)) = prop else {
             panic!()
         };
 
@@ -3465,14 +3043,11 @@ mod tests {
     fn rfc_5545_example_attendee_property_2() {
         let input =
             "ATTENDEE;DELEGATED-FROM=\"mailto:immud@example.com\":\r\n mailto:ildoit@example.com";
-        let (tail, (prop, univ, unknown_params)) =
-            property::<_, ()>.parse_peek(input.as_escaped()).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input.as_escaped()).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
 
-        let Prop::Known(KnownProp::Attendee(address, params)) = prop else {
+        let ParsedProp::Known(KnownProp::Attendee(address, params)) = prop else {
             panic!()
         };
 
@@ -3493,14 +3068,11 @@ mod tests {
     #[test]
     fn rfc_5545_example_attendee_property_3() {
         let input = "ATTENDEE;ROLE=REQ-PARTICIPANT;PARTSTAT=TENTATIVE;CN=Henry\r\n Cabot:mailto:hcabot@example.com";
-        let (tail, (prop, univ, unknown_params)) =
-            property::<_, ()>.parse_peek(input.as_escaped()).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input.as_escaped()).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
 
-        let Prop::Known(KnownProp::Attendee(address, params)) = prop else {
+        let ParsedProp::Known(KnownProp::Attendee(address, params)) = prop else {
             panic!()
         };
 
@@ -3523,13 +3095,11 @@ mod tests {
     #[test]
     fn rfc_5545_example_contact_property_1() {
         let input = "CONTACT:Jim Dolittle\\, ABC Industries\\, +1-919-555-1234";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
 
-        let Prop::Known(KnownProp::Contact(contact, params)) = prop else {
+        let ParsedProp::Known(KnownProp::Contact(contact, params)) = prop else {
             panic!()
         };
 
@@ -3543,14 +3113,11 @@ mod tests {
     #[test]
     fn rfc_5545_example_contact_property_2() {
         let input = "CONTACT;ALTREP=\"ldap://example.com:6666/o=ABC%20Industries\\,\r\n c=US???(cn=Jim%20Dolittle)\":Jim Dolittle\\, ABC Industries\\,\r\n +1-919-555-1234";
-        let (tail, (prop, univ, unknown_params)) =
-            property::<_, ()>.parse_peek(input.as_escaped()).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input.as_escaped()).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
 
-        let Prop::Known(KnownProp::Contact(contact, params)) = prop else {
+        let ParsedProp::Known(KnownProp::Contact(contact, params)) = prop else {
             panic!()
         };
 
@@ -3568,13 +3135,11 @@ mod tests {
     #[test]
     fn rfc_5545_example_organizer_property_1() {
         let input = "ORGANIZER;CN=John Smith:mailto:jsmith@example.com";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
 
-        let Prop::Known(KnownProp::Organizer(organizer, params)) = prop else {
+        let ParsedProp::Known(KnownProp::Organizer(organizer, params)) = prop else {
             panic!()
         };
 
@@ -3592,14 +3157,11 @@ mod tests {
     #[test]
     fn rfc_5545_example_organizer_property_2() {
         let input = "ORGANIZER;CN=JohnSmith;DIR=\"ldap://example.com:6666/o=DC%20Ass\r\n ociates,c=US???(cn=John%20Smith)\":mailto:jsmith@example.com";
-        let (tail, (prop, univ, unknown_params)) =
-            property::<_, ()>.parse_peek(input.as_escaped()).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input.as_escaped()).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
 
-        let Prop::Known(KnownProp::Organizer(organizer, params)) = prop else {
+        let ParsedProp::Known(KnownProp::Organizer(organizer, params)) = prop else {
             panic!()
         };
 
@@ -3618,13 +3180,12 @@ mod tests {
     #[test]
     fn rfc_5545_example_recurrence_identifier_property_1() {
         let input = "RECURRENCE-ID;VALUE=DATE:19960401";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
 
-        let Prop::Known(KnownProp::RecurrenceId(DateTimeOrDate::Date(date), params)) = prop else {
+        let ParsedProp::Known(KnownProp::RecurrenceId(DateTimeOrDate::Date(date), params)) = prop
+        else {
             panic!()
         };
 
@@ -3636,13 +3197,11 @@ mod tests {
     #[test]
     fn rfc_5545_example_recurrence_identifier_property_2() {
         let input = "RECURRENCE-ID;RANGE=THISANDFUTURE:19960120T120000Z";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
 
-        let Prop::Known(KnownProp::RecurrenceId(DateTimeOrDate::DateTime(dt), params)) = prop
+        let ParsedProp::Known(KnownProp::RecurrenceId(DateTimeOrDate::DateTime(dt), params)) = prop
         else {
             panic!()
         };
@@ -3668,13 +3227,11 @@ mod tests {
     #[test]
     fn rfc_5545_example_uid_property() {
         let input = "UID:19960401T080045Z-4000F192713-0052@example.com";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
 
-        let Prop::Known(KnownProp::Uid(uid)) = prop else {
+        let ParsedProp::Known(KnownProp::Uid(uid)) = prop else {
             panic!()
         };
 
@@ -3684,13 +3241,11 @@ mod tests {
     #[test]
     fn rfc_5545_example_request_status_property_1() {
         let input = "REQUEST-STATUS:2.0;Success";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
 
-        let Prop::Known(KnownProp::RequestStatus(status, params)) = prop else {
+        let ParsedProp::Known(KnownProp::RequestStatus(status, params)) = prop else {
             panic!()
         };
 
@@ -3708,13 +3263,11 @@ mod tests {
     #[test]
     fn rfc_5545_example_request_status_property_2() {
         let input = "REQUEST-STATUS:3.1;Invalid property value;DTSTART:96-Apr-01";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
 
-        let Prop::Known(KnownProp::RequestStatus(status, params)) = prop else {
+        let ParsedProp::Known(KnownProp::RequestStatus(status, params)) = prop else {
             panic!()
         };
 
@@ -3734,13 +3287,11 @@ mod tests {
     #[test]
     fn rfc_5545_example_request_status_property_4() {
         let input = "REQUEST-STATUS:4.1;Event conflict.  Date-time is busy.";
-        let (tail, (prop, univ, unknown_params)) = property::<_, ()>.parse_peek(input).unwrap();
+        let (tail, prop) = property::<_, ()>.parse_peek(input).unwrap();
 
         assert!(tail.is_empty());
-        assert!(univ.is_empty());
-        assert!(unknown_params.is_empty());
 
-        let Prop::Known(KnownProp::RequestStatus(status, params)) = prop else {
+        let ParsedProp::Known(KnownProp::RequestStatus(status, params)) = prop else {
             panic!()
         };
 
@@ -3761,30 +3312,26 @@ mod tests {
         let prop = property::<_, ()>(&mut input);
         assert!(matches!(
             prop,
-            Ok((
-                Prop::Unknown(UnknownProp::Iana {
+            Ok(
+                ParsedProp::Unknown(UnknownProp::Iana {
                     name: "NON-SMOKING",
                     value: Value::Boolean(true),
                     params,
                 }),
-                universals,
-                extras,
-            )) if params.is_empty() && universals.is_empty() && extras.is_empty(),
+            ) if params.is_empty(),
         ));
 
         let mut input = "NON-SMOKING:TRUE";
         let prop = property::<_, ()>(&mut input);
         assert!(matches!(
             prop,
-            Ok((
-                Prop::Unknown(UnknownProp::Iana {
+            Ok(
+                ParsedProp::Unknown(UnknownProp::Iana {
                     name: "NON-SMOKING",
                     value: Value::Text("TRUE"),
                     params
                 }),
-                universals,
-                extras,
-            )) if params.is_empty() && universals.is_empty() && extras.is_empty(),
+            ) if params.is_empty(),
         ));
     }
 
@@ -3795,11 +3342,11 @@ mod tests {
         let expected_uri = Uri("http://www.example.org/mysubj.au");
 
         assert!(matches!(
-            prop, Ok(("", (Prop::Unknown(UnknownProp::X {
+            prop, Ok(("", ParsedProp::Unknown(UnknownProp::X {
                 name: "X-ABC-MMSUBJ",
                 value: Value::Uri(uri),
-                params
-            }), universals, extras))) if params.len() == 1 && universals.is_empty() && extras.is_empty() && uri == expected_uri
+                params: _
+            }))) if uri == expected_uri
         ))
     }
 

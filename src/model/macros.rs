@@ -64,3 +64,20 @@ macro_rules! define_value_type {
         )*
     };
 }
+
+#[macro_export]
+macro_rules! define_value_type_with_mult {
+    (
+        $(#[$m:meta])*
+        $v:vis
+        $name:ident
+        { $($variant:ident ($field:ty)),* $(,)? }
+    ) => {
+        ::paste::paste! {
+            $crate::define_value_type! {
+                $(#[$m])* $v $name ([<$name Inner>])
+                { $($variant ($field), [<$variant N>] (Vec<$field>),)* }
+            }
+        }
+    };
+}

@@ -86,6 +86,11 @@ where
             .map(|item| item.as_known().unwrap().1)
     }
 
+    pub fn get_unknown<K: HashCaseless + Equiv<K2>>(&self, key: K) -> Option<&V2> {
+        self.get(&Key::Unknown(key))
+            .map(|item| item.as_unknown().unwrap().1)
+    }
+
     pub fn get_mut<'a, T: HashCaseless + Equiv<K2>>(
         &'a mut self,
         key: &Key<K1, T>,
@@ -100,11 +105,17 @@ where
             .map(|item| item.as_known_mut().unwrap().1)
     }
 
-    pub fn insert_known(&mut self, key: K1, value: V1) -> Option<Item<K1, K2, V1, V2>>
+    pub fn get_unknown_mut<K: HashCaseless + Equiv<K2>>(&mut self, key: K) -> Option<&mut V2> {
+        self.get_mut(&Key::Unknown(key))
+            .map(|item| item.as_unknown_mut().unwrap().1)
+    }
+
+    pub fn insert_known(&mut self, key: K1, value: V1) -> Option<V1>
     where
         K2: Equiv,
     {
         self.insert(Item::Known { key, value })
+            .map(|item| item.into_known().unwrap().1)
     }
 
     pub fn insert_unknown(&mut self, key: K2, value: V2) -> Option<Item<K1, K2, V1, V2>>
@@ -390,5 +401,120 @@ impl<T: ?Sized + HashCaseless> HashCaseless for &mut T {
 impl<T: ?Sized + HashCaseless> HashCaseless for Box<T> {
     fn hash_caseless(&self, state: &mut impl Hasher) {
         self.as_ref().hash_caseless(state)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        date,
+        model::{
+            primitive::{AudioAction, DateTime, Uid, UnknownKind, Utc, Value},
+            property::{
+                Prop, PropertyTable, RawPropValue, StaticProp, UnknownProp, UnknownPropSeq,
+            },
+            table::Item,
+        },
+        parser::escaped::AsEscaped,
+        time,
+    };
+
+    use super::*;
+
+    #[test]
+    fn basic_property_table_usage() {
+        let mut props = PropertyTable::new();
+
+        let uid = RawPropValue::from(Prop::from_value(Uid("some-identifier")));
+        let dtstamp = RawPropValue::from(Prop::from_value(DateTime {
+            date: date!(1997;12;24),
+            time: time!(15;20;12, Utc),
+        }));
+
+        let prev = props.insert(Item::Known {
+            key: StaticProp::Uid,
+            value: uid.clone(),
+        });
+        assert!(prev.is_none());
+
+        let prev = props.insert(Item::Known {
+            key: StaticProp::DtStamp,
+            value: dtstamp.clone(),
+        });
+        assert!(prev.is_none());
+
+        assert_eq!(props.len(), 2);
+
+        let uid_ref = props
+            .get(&StaticProp::Uid.as_key())
+            .and_then(Item::as_known)
+            .map(|(_key, value)| value);
+
+        let dtstamp_ref = props
+            .get(&StaticProp::DtStamp.as_key())
+            .and_then(Item::as_known)
+            .map(|(_key, value)| value);
+
+        assert_eq!(Some(&uid), uid_ref);
+        assert_eq!(Some(&dtstamp), dtstamp_ref);
+    }
+
+    #[test]
+    fn property_table_get_known() {
+        let mut props: PropertyTable<&'static str> = PropertyTable::new();
+        let action = Prop::from_value(AudioAction);
+        props.insert_known(StaticProp::Action, RawPropValue::from(action));
+        dbg![props.get_known(StaticProp::Action)];
+
+        let prop: Prop<AudioAction> = props
+            .remove_known(StaticProp::Action)
+            .unwrap()
+            .try_into()
+            .unwrap();
+        dbg![prop];
+    }
+
+    #[test]
+    fn property_table_get_unknown() {
+        let mut props = PropertyTable::new();
+
+        let unknown_prop = UnknownProp {
+            value: Box::new(Value::Boolean(true)),
+            params: vec![],
+            unknown_params: vec![],
+        };
+
+        props.insert_unknown(
+            "X-A-RANDOM-BOOLEAN",
+            UnknownPropSeq {
+                kind: UnknownKind::X,
+                props: vec![unknown_prop],
+            },
+        );
+
+        assert_eq!(
+            props.get(&Key::Unknown("X-A-RANDOM-BOOLEAN")),
+            props.get(&Key::Unknown("x-a-random-boolean")),
+        );
+
+        assert_eq!(
+            props.get(&Key::Unknown("X-A-RANDOM-BOOLEAN")),
+            props.get(&Key::Unknown(b"X-a-RaNdOm-BoOlEaN")),
+        );
+
+        assert_eq!(
+            props.get(&Key::Unknown("X-A-RANDOM-BOOLEAN")),
+            props.get(&Key::Unknown("X-a-RaNdOm-BoOlEaN".as_bytes())),
+        );
+
+        assert_eq!(
+            props.get(&Key::Unknown("X-A-RANDOM-BOOLEAN")),
+            props.get(&Key::Unknown("X-a-RANDOM-boolean".to_string())),
+        );
+
+        assert_eq!(
+            props.get(&Key::Unknown("X-A-RANDOM-BOOLEAN")),
+            props.get(&Key::Unknown("x-a-ra\r\n\tndo\r\n m-boolean".as_escaped())),
+        );
     }
 }

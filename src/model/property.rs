@@ -1,16 +1,221 @@
 //! iCalendar properties.
 
+use crate::define_value_type_with_mult;
+
 use super::{
+    css::Css3Color,
     parameter::{KnownParam, ParamValue, UnknownParam},
     primitive::{
-        Binary, CalAddress, CalendarUserType, DateTime, DisplayType, Duration, FeatureType,
-        FormatType, FreeBusyType, Language, ParticipationRole, ParticipationStatus,
-        PositiveInteger, RelationshipType, Text, ThisAndFuture, TriggerRelation, TzId, Uri, Utc,
-        Value,
+        AlarmAction, AttachValue, AudioAction, Binary, CalAddress, CalendarUserType, ClassValue,
+        CompletionPercentage, DateTime, DateTimeOrDate, DisplayAction, DisplayType, Duration,
+        EmailAction, EventStatus, ExDateSeq, FeatureType, FormatType, FreeBusyType, Geo, ImageData,
+        Integer, JournalStatus, Language, Method, ParticipantType, ParticipationRole,
+        ParticipationStatus, Period, PositiveInteger, Priority, ProximityValue, RDateSeq,
+        RelationshipType, RequestStatus, ResourceType, Status, StyledDescriptionValue, Text,
+        ThisAndFuture, TimeTransparency, TodoStatus, TriggerRelation, TzId, Uid, UnknownAction,
+        UnknownKind, Uri, Utc, UtcOffset, Value,
     },
+    rrule::RRule,
+    table::{Key, Table},
 };
 
-pub type MultiProp<S, V, P = ()> = Prop<S, V, MultiParams<P>>;
+pub type PropertyTable<S> = Table<StaticProp, S, RawPropValue<S>, UnknownPropSeq<S>>;
+
+define_value_type_with_mult! {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub RawPropValue {
+    // PRIMITIVES
+    CalAddress(Prop<CalAddress<S>>),
+    Color(Prop<Css3Color>),
+    DtUtc(Prop<DateTime<Utc>>),
+    DtOrDateDt(Prop<DateTimeOrDate, DtParams<S>>),
+    Duration(Prop<Duration>),
+    Integer(Prop<Integer>),
+    PositiveInteger(Prop<PositiveInteger>),
+    Text(Prop<Text<S>>),
+    Uid(Prop<Uid<S>>),
+    Unit(Prop<()>),
+    Uri(Prop<Uri<S>>),
+    UtcOffset(Prop<UtcOffset>),
+    // ONE-OFFS
+    Attach(Prop<AttachValue<S>, AttachParams<S>>),
+    Attendee(Prop<CalAddress<S>, Box<AttendeeParams<S>>>),
+    Class(Prop<ClassValue<S>>),
+    Conf(Prop<Uri<S>, ConfParams<S>>),
+    ExDate(Prop<ExDateSeq, DtParams<S>>),
+    FreeBusy(Prop<Vec<Period>, FBTypeParams<S>>),
+    Geo(Prop<Geo>),
+    Image(Prop<ImageData<S>, ImageParams<S>>),
+    Method(Prop<Method<S>>),
+    Organizer(Prop<CalAddress<S>, Box<OrganizerParams<S>>>),
+    ParticipantType(Prop<ParticipantType<S>>),
+    Percent(Prop<CompletionPercentage>),
+    Priority(Prop<Priority>),
+    Proximity(Prop<ProximityValue<S>>),
+    RDate(Prop<RDateSeq, DtParams<S>>),
+    RecurId(Prop<DateTimeOrDate, RecurrenceIdParams<S>>),
+    RelatedTo(Prop<Text<S>, RelTypeParams<S>>),
+    ResourceType(Prop<ResourceType<S>>),
+    RequestStatus(Prop<RequestStatus<S>, LangParams<S>>),
+    RRule(Prop<Box<RRule>>),
+    StyledDescription(Prop<StyledDescriptionValue<S>, StyledDescriptionParams<S>>),
+    Transp(Prop<TimeTransparency>),
+    TzId(Prop<TzId<S>>),
+    // TEXT VARIANTS
+    TextSeq(Prop<Vec<Text<S>>>),
+    TextText(Prop<Text<S>, TextParams<S>>),
+    TextSeqText(Prop<Vec<Text<S>>, TextParams<S>>),
+    TextLang(Prop<Text<S>, LangParams<S>>),
+    TextSeqLang(Prop<Vec<Text<S>>, LangParams<S>>),
+    // STATUS VARIANTS
+    Status(Prop<Status>),
+    EventStatus(Prop<EventStatus>),
+    TodoStatus(Prop<TodoStatus>),
+    JournalStatus(Prop<JournalStatus>),
+    // ACTION VARIANTS
+    Action(Prop<AlarmAction<S>>),
+    AudioAction(Prop<AudioAction>),
+    DisplayAction(Prop<DisplayAction>),
+    EmailAction(Prop<EmailAction>),
+    UnknownAction(Prop<UnknownAction<S>>),
+    // STRUCTURED DATA VARIANTS
+    StructuredDataBinary(Prop<Binary<S>, StructuredDataParams<S>>),
+    StructuredDataText(Prop<Text<S>, StructuredDataParams<S>>),
+    StructuredDataUri(Prop<Uri<S>, UriStructuredDataParams<S>>),
+    // OTHER VARIANTS
+    TriggerRelative(Prop<Duration, TriggerParams>),
+    AnyTrigger(TriggerProp),
+    AnyStructuredData(StructuredDataProp<S>),
+}}
+
+impl<'a, S> TryFrom<&'a RawPropValue<S>> for AlarmAction<&'a S> {
+    type Error = ();
+
+    fn try_from(value: &'a RawPropValue<S>) -> Result<Self, Self::Error> {
+        match &value.0 {
+            RawPropValueInner::AudioAction(_) => Ok(Self::Audio),
+            RawPropValueInner::DisplayAction(_) => Ok(Self::Display),
+            RawPropValueInner::EmailAction(_) => Ok(Self::Email),
+            RawPropValueInner::UnknownAction(Prop { value, .. }) => match value.as_ref() {
+                UnknownAction::Iana(action) => Ok(Self::Iana(action)),
+                UnknownAction::X(action) => Ok(Self::X(action)),
+            },
+            _ => Err(()),
+        }
+    }
+}
+
+impl<'a, S> TryFrom<&'a RawPropValue<S>> for TriggerPropRef<'a> {
+    type Error = ();
+
+    fn try_from(value: &'a RawPropValue<S>) -> Result<Self, Self::Error> {
+        match &value.0 {
+            RawPropValueInner::TriggerRelative(prop) => Ok(Self::Relative(prop)),
+            RawPropValueInner::DtUtc(prop) => Ok(Self::Absolute(prop)),
+            _ => Err(()),
+        }
+    }
+}
+
+impl<'a, S> TryFrom<&'a mut RawPropValue<S>> for TriggerPropMut<'a> {
+    type Error = ();
+
+    fn try_from(value: &'a mut RawPropValue<S>) -> Result<Self, Self::Error> {
+        match &mut value.0 {
+            RawPropValueInner::TriggerRelative(prop) => Ok(Self::Relative(prop)),
+            RawPropValueInner::DtUtc(prop) => Ok(Self::Absolute(prop)),
+            _ => Err(()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnknownPropSeq<S> {
+    pub kind: UnknownKind,
+    pub props: Vec<UnknownProp<S>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum StaticProp {
+    // CALENDAR PROPERTIES
+    CalScale,
+    Method,
+    ProdId,
+    Version,
+    // DESCRIPTIVE COMPONENT PROPERTIES
+    Attach,
+    Categories,
+    Class,
+    Comment,
+    Description,
+    Geo,
+    Location,
+    PercentComplete,
+    Priority,
+    Resources,
+    Status,
+    Summary,
+    // DATE AND TIME COMPONENT PROPERTIES
+    DtCompleted,
+    DtEnd,
+    DtDue,
+    DtStart,
+    Duration,
+    FreeBusy,
+    Transp,
+    // TIME ZONE COMPONENT PROPERTIES
+    TzId,
+    TzName,
+    TzOffsetFrom,
+    TzOffsetTo,
+    TzUrl,
+    // RELATIONSHIP COMPONENT PROPERTIES
+    Attendee,
+    Contact,
+    Organizer,
+    RecurId,
+    RelatedTo,
+    Url,
+    Uid,
+    // RECURRENCE COMPONENT PROPERTIES
+    ExDate,
+    RDate,
+    RRule,
+    // ALARM COMPONENT PROPERTIES
+    Action,
+    Repeat,
+    Trigger,
+    // CHANGE MANAGEMENT COMPONENT PROPERTIES
+    Created,
+    DtStamp,
+    LastModified,
+    Sequence,
+    // MISCELLANEOUS COMPONENT PROPERTIES
+    RequestStatus,
+    // RFC 7986 PROPERTIES
+    Name,
+    RefreshInterval,
+    Source,
+    Color,
+    Image,
+    Conference,
+    // RFC 9073 PROPERTIES
+    LocationType,
+    ParticipantType,
+    ResourceType,
+    CalendarAddress,
+    StyledDescription,
+    StructuredData,
+    // RFC 9074 PROPERTIES
+    Acknowledged,
+    Proximity,
+}
+
+impl StaticProp {
+    pub const fn as_key(self) -> Key<Self, std::convert::Infallible> {
+        Key::Known(self)
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnknownProp<S> {
@@ -19,152 +224,79 @@ pub struct UnknownProp<S> {
     pub unknown_params: Vec<UnknownParam<S>>,
 }
 
+// TODO: at some point this default parameter for P needs to be removed
+
 /// A property generic over values and parameters.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct Prop<S, V, P = ()> {
-    pub derived: bool,
+pub struct Prop<V, P = ()> {
     pub params: P,
     pub value: V,
-    pub unknown_params: Vec<UnknownParam<S>>,
 }
 
-impl<S, V, P> Prop<S, V, P> {
+impl<V, P> Prop<V, P> {
     pub fn from_value(value: V) -> Self
     where
         P: Default,
     {
         Self {
             value,
-            derived: Default::default(),
             params: Default::default(),
-            unknown_params: Default::default(),
         }
     }
-
-    /// Converts `self` into a [`MultiProp`] with no defined ORDER.
-    pub fn into_multi_prop(self) -> MultiProp<S, V, P> {
-        let Prop {
-            derived,
-            params,
-            value,
-            unknown_params,
-        } = self;
-
-        MultiProp {
-            derived,
-            value,
-            unknown_params,
-            params: MultiParams {
-                order: None,
-                known: params,
-            },
-        }
-    }
-}
-
-impl<S, V, P> MultiProp<S, V, P> {
-    /// Tries to convert `self` into a normal [`Prop`] by unwrapping the [`Self::params`] field.
-    /// This will fail if the [`MultiParams::order`] field is not [`None`].
-    pub fn try_into_single_prop(self) -> Option<Prop<S, V, P>> {
-        let MultiProp {
-            derived,
-            params:
-                MultiParams {
-                    order,
-                    known: params,
-                },
-            value,
-            unknown_params,
-        } = self;
-
-        match order {
-            Some(_) => None,
-            None => Some(Prop {
-                derived,
-                params,
-                value,
-                unknown_params,
-            }),
-        }
-    }
-}
-
-/// The parameters of a property which can occur multiple times in the same component, and in
-/// particular can therefore include the ORDER parameter (RFC 9073 §5.1).
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub struct MultiParams<P> {
-    /// The value of the ORDER parameter (RFC 9073 §5.1).
-    pub order: Option<PositiveInteger>,
-    /// The other statically known parameters.
-    pub known: P,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TriggerMultiProp<S> {
-    Relative(MultiProp<S, Duration, TriggerParams>),
-    Absolute(MultiProp<S, DateTime<Utc>>),
+pub enum TriggerProp {
+    Relative(Prop<Duration, TriggerParams>),
+    Absolute(Prop<DateTime<Utc>>),
 }
 
-impl<S> From<MultiProp<S, DateTime<Utc>>> for TriggerMultiProp<S> {
-    fn from(v: MultiProp<S, DateTime<Utc>>) -> Self {
+impl From<Prop<DateTime<Utc>>> for TriggerProp {
+    fn from(v: Prop<DateTime<Utc>>) -> Self {
         Self::Absolute(v)
     }
 }
 
-impl<S> From<MultiProp<S, Duration, TriggerParams>> for TriggerMultiProp<S> {
-    fn from(v: MultiProp<S, Duration, TriggerParams>) -> Self {
+impl From<Prop<Duration, TriggerParams>> for TriggerProp {
+    fn from(v: Prop<Duration, TriggerParams>) -> Self {
         Self::Relative(v)
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TriggerPropRef<'a, S> {
-    Relative(&'a Prop<S, Duration, TriggerParams>),
-    Absolute(&'a Prop<S, DateTime<Utc>>),
+pub enum TriggerPropRef<'a> {
+    Relative(&'a Prop<Duration, TriggerParams>),
+    Absolute(&'a Prop<DateTime<Utc>>),
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum TriggerPropMut<'a, S> {
-    Relative(&'a mut Prop<S, Duration, TriggerParams>),
-    Absolute(&'a mut Prop<S, DateTime<Utc>>),
+pub enum TriggerPropMut<'a> {
+    Relative(&'a mut Prop<Duration, TriggerParams>),
+    Absolute(&'a mut Prop<DateTime<Utc>>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum StructuredDataMultiProp<S> {
-    Binary(MultiProp<S, Binary<S>, StructuredDataParams<S>>),
-    Text(MultiProp<S, Text<S>, StructuredDataParams<S>>),
-    Uri(MultiProp<S, Uri<S>, UriStructuredDataParams<S>>),
+pub enum StructuredDataProp<S> {
+    Binary(Prop<Binary<S>, StructuredDataParams<S>>),
+    Text(Prop<Text<S>, StructuredDataParams<S>>),
+    Uri(Prop<Uri<S>, UriStructuredDataParams<S>>),
 }
 
-impl<S> From<MultiProp<S, Uri<S>, UriStructuredDataParams<S>>> for StructuredDataMultiProp<S> {
-    fn from(v: MultiProp<S, Uri<S>, UriStructuredDataParams<S>>) -> Self {
-        Self::Uri(v)
-    }
-}
-
-impl<S> From<MultiProp<S, Text<S>, StructuredDataParams<S>>> for StructuredDataMultiProp<S> {
-    fn from(v: MultiProp<S, Text<S>, StructuredDataParams<S>>) -> Self {
-        Self::Text(v)
-    }
-}
-
-impl<S> From<MultiProp<S, Binary<S>, StructuredDataParams<S>>> for StructuredDataMultiProp<S> {
-    fn from(v: MultiProp<S, Binary<S>, StructuredDataParams<S>>) -> Self {
+impl<S> From<Prop<Binary<S>, StructuredDataParams<S>>> for StructuredDataProp<S> {
+    fn from(v: Prop<Binary<S>, StructuredDataParams<S>>) -> Self {
         Self::Binary(v)
     }
 }
 
-/// The parameters which are admissible on every property (assuming we do not know the multiplicity
-/// of the property and must conservatively include the ORDER parameter).
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct UniversalParams {
-    pub derived: Option<bool>,
-    pub order: Option<PositiveInteger>,
+impl<S> From<Prop<Text<S>, StructuredDataParams<S>>> for StructuredDataProp<S> {
+    fn from(v: Prop<Text<S>, StructuredDataParams<S>>) -> Self {
+        Self::Text(v)
+    }
 }
 
-impl UniversalParams {
-    pub const fn is_empty(&self) -> bool {
-        self.derived.is_none() && self.order.is_none()
+impl<S> From<Prop<Uri<S>, UriStructuredDataParams<S>>> for StructuredDataProp<S> {
+    fn from(v: Prop<Uri<S>, UriStructuredDataParams<S>>) -> Self {
+        Self::Uri(v)
     }
 }
 
