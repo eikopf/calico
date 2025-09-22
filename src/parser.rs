@@ -1,6 +1,7 @@
 //! A [`winnow`]-based RFC 5545 parser implementation.
 
 pub mod component;
+pub mod config;
 pub mod error;
 pub mod escaped;
 pub mod parameter;
