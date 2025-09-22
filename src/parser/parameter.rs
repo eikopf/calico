@@ -26,8 +26,12 @@ use winnow::{
 
 use crate::{
     model::{
-        parameter::{KnownParam, Param, ParamName, ParamValue, StaticParam, UnknownParam},
-        primitive::{CalAddress, CalendarUserType, FreeBusyType, ParticipationStatus, TzId, Uri},
+        parameter::{
+            KnownParam, Param, ParamName, ParamValue, StaticParam, UnknownParam, UnknownParamValue,
+        },
+        primitive::{
+            CalAddress, CalendarUserType, FreeBusyType, ParticipationStatus, TzId, UnknownKind, Uri,
+        },
     },
     parser::primitive::{
         alarm_trigger_relationship, ascii_lower, bool_caseless, feature_type, format_type,
@@ -78,16 +82,22 @@ where
     match name {
         ParamName::Iana(name) => {
             let value: Vec<_> = separated(1.., param_value, ',').parse_next(input)?;
-            Ok(Param::Unknown(UnknownParam::Iana {
+            Ok(Param::Unknown(UnknownParam {
                 name,
-                value: value.into_boxed_slice(),
+                value: UnknownParamValue {
+                    kind: UnknownKind::Iana,
+                    values: value,
+                },
             }))
         }
         ParamName::X(name) => {
             let value: Vec<_> = separated(1.., param_value, ',').parse_next(input)?;
-            Ok(Param::Unknown(UnknownParam::X {
+            Ok(Param::Unknown(UnknownParam {
                 name,
-                value: value.into_boxed_slice(),
+                value: UnknownParamValue {
+                    kind: UnknownKind::X,
+                    values: value,
+                },
             }))
         }
         ParamName::Known(name) => match name {

@@ -63,13 +63,19 @@ use super::{
         Language, ParticipationRole, ParticipationStatus, PositiveInteger, RelationshipType,
         TriggerRelation, TzId, UnknownKind, Uri, ValueType,
     },
-    table::{HashCaseless, Item, Table},
+    table::{HashCaseless, Table},
 };
 
 macro_rules! define_parameter_type {
     ($(#[$m:meta])* $v:vis $name:ident { $($tail:tt)* }) => {
         $(#[$m])*
         $v struct $name<S>(ParameterTable<S>);
+
+        impl<S: PartialEq + HashCaseless + Equiv> PartialEq for $name<S> {
+            fn eq(&self, other: &Self) -> bool {
+                self.0 == other.0
+            }
+        }
 
         impl<S> $name<S> {
             pub fn capacity(&self) -> usize {
@@ -92,6 +98,22 @@ macro_rules! define_parameter_type {
 
             pub(crate) fn get_known_raw_mut(&mut self, key: StaticParam) -> Option<&mut RawParamValue<S>> {
                 self.0.get_known_mut(key)
+            }
+
+            pub(crate) fn insert_known(&mut self, key: StaticParam, value: RawParamValue<S>) -> Option<RawParamValue<S>> where S: Equiv {
+                self.0.insert_known(key, value)
+            }
+
+            pub fn insert_unknown(&mut self, key: S, value: UnknownParamValue<S>) -> Option<UnknownParamValue<S>> where S: Equiv {
+                self.0.insert_unknown(key, value)
+            }
+
+            pub fn contains_known(&self, key: StaticParam) -> bool {
+                self.0.contains_known_key(key)
+            }
+
+            pub fn contains_unknown<K: HashCaseless + Equiv<S>>(&self, key: &K) -> bool {
+                self.0.contains_unknown_key(key)
             }
 
             pub fn get_unknown<K: HashCaseless + Equiv<S>>(&self, key: K) -> Option<&UnknownParamValue<S>> {
@@ -445,44 +467,15 @@ impl<S> KnownParam<S> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum UnknownParam<S> {
-    Iana {
-        name: S,
-        value: Box<[ParamValue<S>]>,
-    },
-    X {
-        name: S,
-        value: Box<[ParamValue<S>]>,
-    },
+pub struct UnknownParam<S> {
+    pub name: S,
+    pub value: UnknownParamValue<S>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnknownParamValue<S> {
     pub kind: UnknownKind,
     pub values: Vec<ParamValue<S>>,
-}
-
-impl<S> UnknownParam<S> {
-    pub(crate) fn into_table_item<K1, V1>(self) -> Item<K1, S, V1, UnknownParamValue<S>> {
-        let (key, value) = match self {
-            UnknownParam::Iana { name, value } => (
-                name,
-                UnknownParamValue {
-                    kind: UnknownKind::Iana,
-                    values: value.into_vec(),
-                },
-            ),
-            UnknownParam::X { name, value } => (
-                name,
-                UnknownParamValue {
-                    kind: UnknownKind::X,
-                    values: value.into_vec(),
-                },
-            ),
-        };
-
-        Item::Unknown { key, value }
-    }
 }
 
 /// A statically known parameter name.

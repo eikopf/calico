@@ -21,26 +21,18 @@ use crate::{
             AlarmAction, AttachValue, AudioAction, CalAddress, DisplayAction, EmailAction,
             EventStatus, JournalStatus, Status, Text, TodoStatus, UnknownAction, UnknownKind,
         },
-        property::{
-            AttachParams, AttendeeParams, Prop, PropertyTable, RawPropValue, StaticProp,
-            TextParams, UnknownProp, UnknownPropSeq,
-        },
+        property::{Prop, PropertyTable, RawPropValue, StaticProp, UnknownProp, UnknownPropSeq},
         table::HashCaseless,
     },
     parser::{
-        error::ComponentKind,
+        error::{CalendarParseError, ComponentKind},
         escaped::Equiv,
         primitive::{ascii_lower, iana_token, x_name},
         property::{
-            KnownProp, ParsedProp as ParserProp, PropName, Rfc5545PropName, Rfc7986PropName,
-            Rfc9074PropName, UnknownProp as UnknownParserProp,
+            KnownProp, ParsedProp, PropName, Rfc5545PropName, Rfc7986PropName, Rfc9074PropName,
+            UnknownProp as UnknownParserProp, property,
         },
     },
-};
-
-use super::{
-    error::CalendarParseError,
-    property::{ParsedProp, property},
 };
 
 macro_rules! step_inner {
@@ -374,7 +366,7 @@ impl<S, F> StateMachine<S, F> {
     where
         I: StreamIsPartial + Stream + Compare<Caseless<&'static str>> + Compare<char>,
         I::Token: AsChar + Clone,
-        I::Slice: AsBStr + Clone + Eq + SliceLen + Stream,
+        I::Slice: AsBStr + Clone + Eq + SliceLen + Stream + HashCaseless + Equiv,
         <<I as Stream>::Slice as Stream>::Token: AsChar,
         E: ParserError<I> + FromExternalError<I, CalendarParseError<I::Slice>>,
         F: FnMut(ParsedProp<I::Slice>, &mut S) -> Result<(), CalendarParseError<I::Slice>>,
@@ -1099,9 +1091,9 @@ where
         let props = StateMachine::new(rule_step).parse_next(input)?;
 
         check_mandatory_fields! {input, props, StandardOrDaylight;
-            DtStart => PropName::Rfc5545(Rfc5545PropName::DateTimeStart),
-            TzOffsetFrom => PropName::Rfc5545(Rfc5545PropName::TimeZoneOffsetFrom),
-            TzOffsetTo => PropName::Rfc5545(Rfc5545PropName::TimeZoneOffsetTo),
+            DtStart => PropName::Known(StaticProp::DtStart),
+            TzOffsetFrom => PropName::Known(StaticProp::TzOffsetFrom),
+            TzOffsetTo => PropName::Known(StaticProp::TzOffsetTo),
         }
 
         match terminated(end(rule_kind), crlf).parse_next(input)? == kind {
@@ -1116,7 +1108,7 @@ where
     terminated(end(CalCompKind::TimeZone.parser()), crlf).parse_next(input)?;
 
     check_mandatory_fields! {input, props, TimeZone;
-        TzId => PropName::Rfc5545(Rfc5545PropName::TimeZoneIdentifier),
+        TzId => PropName::Known(StaticProp::TzId),
     }
 
     Ok(TimeZone::new(props, subcomponents))
@@ -1527,13 +1519,12 @@ mod tests {
     use crate::{
         date,
         model::{
-            component::EventTerminationRef,
             primitive::{
-                AttachValue, AudioAction, CalAddress, ClassValue, DateTime, DisplayAction,
-                Duration, DurationKind, DurationTime, EmailAction, FormatType, Local, Period, Sign,
-                Text, TriggerRelation, TzId, Uid, Uri, Utc,
+                AudioAction, CalAddress, ClassValue, DateTime, DisplayAction, Duration,
+                DurationKind, DurationTime, EmailAction, Local, Period, Sign, Text, TzId, Uid, Uri,
+                Utc,
             },
-            property::{AttachParams, TriggerParams, TriggerPropRef},
+            property::{EventTerminationRef, TriggerPropRef},
         },
         parser::escaped::AsEscaped,
         time, utc_offset,

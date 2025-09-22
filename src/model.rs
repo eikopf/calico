@@ -9,9 +9,12 @@
 
 pub mod component;
 pub mod css;
-pub(crate) mod macros;
+pub mod one_or_seq;
 pub mod parameter;
 pub mod primitive;
 pub mod property;
 pub mod rrule;
+
+// internal modules
+pub(crate) mod macros;
 pub(crate) mod table;

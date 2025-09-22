@@ -1,90 +1,79 @@
 //! iCalendar properties.
 
-use crate::define_value_type_with_mult;
-
-use super::{
-    css::Css3Color,
-    parameter::{KnownParam, ParamValue, UnknownParam},
-    primitive::{
-        AlarmAction, AttachValue, AudioAction, Binary, CalAddress, CalendarUserType, ClassValue,
-        CompletionPercentage, DateTime, DateTimeOrDate, DisplayAction, DisplayType, Duration,
-        EmailAction, EventStatus, ExDateSeq, FeatureType, FormatType, FreeBusyType, Geo, ImageData,
-        Integer, JournalStatus, Language, Method, ParticipantType, ParticipationRole,
-        ParticipationStatus, Period, PositiveInteger, Priority, ProximityValue, RDateSeq,
-        RelationshipType, RequestStatus, ResourceType, Status, StyledDescriptionValue, Text,
-        ThisAndFuture, TimeTransparency, TodoStatus, TriggerRelation, TzId, Uid, UnknownAction,
-        UnknownKind, Uri, Utc, UtcOffset, Value,
+use crate::{
+    define_value_type_with_mult,
+    model::{
+        css::Css3Color,
+        parameter::{KnownParam, Params, StructuredDataParams, UnknownParam},
+        primitive::{
+            AlarmAction, AttachValue, AudioAction, Binary, CalAddress, ClassValue,
+            CompletionPercentage, DateTime, DateTimeOrDate, DisplayAction, Duration, EmailAction,
+            EventStatus, ExDateSeq, Geo, Gregorian, ImageData, Integer, JournalStatus, Method,
+            ParticipantType, Period, PositiveInteger, Priority, ProximityValue, RDateSeq,
+            RequestStatus, ResourceType, Status, StyledDescriptionValue, Text, TimeTransparency,
+            TodoStatus, TzId, Uid, UnknownAction, UnknownKind, Uri, Utc, UtcOffset, Value, Version,
+        },
+        rrule::RRule,
+        table::{HashCaseless, Key, Table},
     },
-    rrule::RRule,
-    table::{Key, Table},
+    parser::escaped::Equiv,
 };
 
 pub type PropertyTable<S> = Table<StaticProp, S, RawPropValue<S>, UnknownPropSeq<S>>;
 
 define_value_type_with_mult! {
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub RawPropValue {
     // PRIMITIVES
-    CalAddress(Prop<CalAddress<S>>),
-    Color(Prop<Css3Color>),
-    DtUtc(Prop<DateTime<Utc>>),
-    DtOrDateDt(Prop<DateTimeOrDate, DtParams<S>>),
-    Duration(Prop<Duration>),
-    Integer(Prop<Integer>),
-    PositiveInteger(Prop<PositiveInteger>),
-    Text(Prop<Text<S>>),
-    Uid(Prop<Uid<S>>),
-    Unit(Prop<()>),
-    Uri(Prop<Uri<S>>),
-    UtcOffset(Prop<UtcOffset>),
+    CalAddress(Prop<CalAddress<S>, Params<S>>),
+    Color(Prop<Css3Color, Params<S>>),
+    DtUtc(Prop<DateTime<Utc>, Params<S>>),
+    DtOrDate(Prop<DateTimeOrDate, Params<S>>),
+    Duration(Prop<Duration, Params<S>>),
+    Integer(Prop<Integer, Params<S>>),
+    PositiveInteger(Prop<PositiveInteger, Params<S>>),
+    Text(Prop<Text<S>, Params<S>>),
+    TextSeq(Prop<Vec<Text<S>>, Params<S>>),
+    Uid(Prop<Uid<S>, Params<S>>),
+    Uri(Prop<Uri<S>, Params<S>>),
+    UtcOffset(Prop<UtcOffset, Params<S>>),
     // ONE-OFFS
-    Attach(Prop<AttachValue<S>, AttachParams<S>>),
-    Attendee(Prop<CalAddress<S>, Box<AttendeeParams<S>>>),
-    Class(Prop<ClassValue<S>>),
-    Conf(Prop<Uri<S>, ConfParams<S>>),
-    ExDate(Prop<ExDateSeq, DtParams<S>>),
-    FreeBusy(Prop<Vec<Period>, FBTypeParams<S>>),
-    Geo(Prop<Geo>),
-    Image(Prop<ImageData<S>, ImageParams<S>>),
-    Method(Prop<Method<S>>),
-    Organizer(Prop<CalAddress<S>, Box<OrganizerParams<S>>>),
-    ParticipantType(Prop<ParticipantType<S>>),
-    Percent(Prop<CompletionPercentage>),
-    Priority(Prop<Priority>),
-    Proximity(Prop<ProximityValue<S>>),
-    RDate(Prop<RDateSeq, DtParams<S>>),
-    RecurId(Prop<DateTimeOrDate, RecurrenceIdParams<S>>),
-    RelatedTo(Prop<Text<S>, RelTypeParams<S>>),
-    ResourceType(Prop<ResourceType<S>>),
-    RequestStatus(Prop<RequestStatus<S>, LangParams<S>>),
-    RRule(Prop<Box<RRule>>),
-    StyledDescription(Prop<StyledDescriptionValue<S>, StyledDescriptionParams<S>>),
-    Transp(Prop<TimeTransparency>),
-    TzId(Prop<TzId<S>>),
-    // TEXT VARIANTS
-    TextSeq(Prop<Vec<Text<S>>>),
-    TextText(Prop<Text<S>, TextParams<S>>),
-    TextSeqText(Prop<Vec<Text<S>>, TextParams<S>>),
-    TextLang(Prop<Text<S>, LangParams<S>>),
-    TextSeqLang(Prop<Vec<Text<S>>, LangParams<S>>),
+    Attach(Prop<AttachValue<S>, Params<S>>),
+    Class(Prop<ClassValue<S>, Params<S>>),
+    ExDate(Prop<ExDateSeq, Params<S>>),
+    FreeBusy(Prop<Vec<Period>, Params<S>>),
+    Geo(Prop<Geo, Params<S>>),
+    Gregorian(Prop<Gregorian, Params<S>>),
+    Image(Prop<ImageData<S>, Params<S>>),
+    Method(Prop<Method<S>, Params<S>>),
+    ParticipantType(Prop<ParticipantType<S>, Params<S>>),
+    Percent(Prop<CompletionPercentage, Params<S>>),
+    Priority(Prop<Priority, Params<S>>),
+    Proximity(Prop<ProximityValue<S>, Params<S>>),
+    RDate(Prop<RDateSeq, Params<S>>),
+    ResourceType(Prop<ResourceType<S>, Params<S>>),
+    RequestStatus(Prop<RequestStatus<S>, Params<S>>),
+    RRule(Prop<Box<RRule>, Params<S>>),
+    StyledDescription(Prop<StyledDescriptionValue<S>, Params<S>>),
+    Transp(Prop<TimeTransparency, Params<S>>),
+    TzId(Prop<TzId<S>, Params<S>>),
+    Version(Prop<Version, Params<S>>),
     // STATUS VARIANTS
-    Status(Prop<Status>),
-    EventStatus(Prop<EventStatus>),
-    TodoStatus(Prop<TodoStatus>),
-    JournalStatus(Prop<JournalStatus>),
+    Status(Prop<Status, Params<S>>),
+    EventStatus(Prop<EventStatus, Params<S>>),
+    TodoStatus(Prop<TodoStatus, Params<S>>),
+    JournalStatus(Prop<JournalStatus, Params<S>>),
     // ACTION VARIANTS
-    Action(Prop<AlarmAction<S>>),
-    AudioAction(Prop<AudioAction>),
-    DisplayAction(Prop<DisplayAction>),
-    EmailAction(Prop<EmailAction>),
-    UnknownAction(Prop<UnknownAction<S>>),
+    Action(Prop<AlarmAction<S>, Params<S>>),
+    AudioAction(Prop<AudioAction, Params<S>>),
+    DisplayAction(Prop<DisplayAction, Params<S>>),
+    EmailAction(Prop<EmailAction, Params<S>>),
+    UnknownAction(Prop<UnknownAction<S>, Params<S>>),
     // STRUCTURED DATA VARIANTS
     StructuredDataBinary(Prop<Binary<S>, StructuredDataParams<S>>),
     StructuredDataText(Prop<Text<S>, StructuredDataParams<S>>),
-    StructuredDataUri(Prop<Uri<S>, UriStructuredDataParams<S>>),
     // OTHER VARIANTS
-    TriggerRelative(Prop<Duration, TriggerParams>),
-    AnyTrigger(TriggerProp),
+    AnyTrigger(TriggerProp<S>),
     AnyStructuredData(StructuredDataProp<S>),
 }}
 
@@ -93,38 +82,51 @@ impl<'a, S> TryFrom<&'a RawPropValue<S>> for AlarmAction<&'a S> {
 
     fn try_from(value: &'a RawPropValue<S>) -> Result<Self, Self::Error> {
         match &value.0 {
-            RawPropValueInner::AudioAction(_) => Ok(Self::Audio),
-            RawPropValueInner::DisplayAction(_) => Ok(Self::Display),
-            RawPropValueInner::EmailAction(_) => Ok(Self::Email),
-            RawPropValueInner::UnknownAction(Prop { value, .. }) => match value.as_ref() {
-                UnknownAction::Iana(action) => Ok(Self::Iana(action)),
-                UnknownAction::X(action) => Ok(Self::X(action)),
+            RawPropValueInner::AudioAction(xs) if xs.is_one() => Ok(Self::Audio),
+            RawPropValueInner::DisplayAction(xs) if xs.is_one() => Ok(Self::Display),
+            RawPropValueInner::EmailAction(xs) if xs.is_one() => Ok(Self::Email),
+            RawPropValueInner::UnknownAction(xs) => match xs.as_one().map(|prop| &prop.value) {
+                Some(UnknownAction::Iana(action)) => Ok(Self::Iana(action)),
+                Some(UnknownAction::X(action)) => Ok(Self::X(action)),
+                None => Err(()),
             },
             _ => Err(()),
         }
     }
 }
 
-impl<'a, S> TryFrom<&'a RawPropValue<S>> for TriggerPropRef<'a> {
+impl<'a, S> TryFrom<&'a RawPropValue<S>> for TriggerPropRef<'a, S> {
     type Error = ();
 
     fn try_from(value: &'a RawPropValue<S>) -> Result<Self, Self::Error> {
-        match &value.0 {
-            RawPropValueInner::TriggerRelative(prop) => Ok(Self::Relative(prop)),
-            RawPropValueInner::DtUtc(prop) => Ok(Self::Absolute(prop)),
-            _ => Err(()),
-        }
+        value
+            .downcast_ref()
+            .map(Self::Relative)
+            .or_else(|| value.downcast_ref().map(Self::Absolute))
+            .or_else(|| {
+                value
+                    .downcast_ref::<TriggerProp<S>>()
+                    .map(TriggerProp::as_ref)
+            })
+            .ok_or(())
     }
 }
 
-impl<'a, S> TryFrom<&'a mut RawPropValue<S>> for TriggerPropMut<'a> {
+impl<'a, S> TryFrom<&'a mut RawPropValue<S>> for TriggerPropMut<'a, S> {
     type Error = ();
 
     fn try_from(value: &'a mut RawPropValue<S>) -> Result<Self, Self::Error> {
-        match &mut value.0 {
-            RawPropValueInner::TriggerRelative(prop) => Ok(Self::Relative(prop)),
-            RawPropValueInner::DtUtc(prop) => Ok(Self::Absolute(prop)),
-            _ => Err(()),
+        if value.is::<Prop<Duration, Params<S>>>() {
+            value.downcast_mut().map(Self::Relative).ok_or(())
+        } else if value.is::<Prop<DateTime<Utc>, Params<S>>>() {
+            value.downcast_mut().map(Self::Absolute).ok_or(())
+        } else if value.is::<TriggerProp<S>>() {
+            value
+                .downcast_mut::<TriggerProp<S>>()
+                .map(TriggerProp::as_mut)
+                .ok_or(())
+        } else {
+            Err(())
         }
     }
 }
@@ -224,11 +226,9 @@ pub struct UnknownProp<S> {
     pub unknown_params: Vec<UnknownParam<S>>,
 }
 
-// TODO: at some point this default parameter for P needs to be removed
-
 /// A property generic over values and parameters.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct Prop<V, P = ()> {
+pub struct Prop<V, P> {
     pub params: P,
     pub value: V,
 }
@@ -245,280 +245,118 @@ impl<V, P> Prop<V, P> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TriggerProp {
-    Relative(Prop<Duration, TriggerParams>),
-    Absolute(Prop<DateTime<Utc>>),
+#[derive(Debug, Clone, Copy)]
+pub enum EventTerminationRef<'a, S> {
+    End(&'a Prop<DateTimeOrDate, Params<S>>),
+    Duration(&'a Prop<Duration, Params<S>>),
 }
 
-impl From<Prop<DateTime<Utc>>> for TriggerProp {
-    fn from(v: Prop<DateTime<Utc>>) -> Self {
-        Self::Absolute(v)
+impl<'a, S: PartialEq + HashCaseless + Equiv> PartialEq for EventTerminationRef<'a, S> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::End(l0), Self::End(r0)) => l0 == r0,
+            (Self::Duration(l0), Self::Duration(r0)) => l0 == r0,
+            _ => false,
+        }
     }
 }
 
-impl From<Prop<Duration, TriggerParams>> for TriggerProp {
-    fn from(v: Prop<Duration, TriggerParams>) -> Self {
-        Self::Relative(v)
+#[derive(Debug)]
+pub enum EventTerminationMut<'a, S> {
+    End(&'a mut Prop<DateTimeOrDate, Params<S>>),
+    Duration(&'a mut Prop<Duration, Params<S>>),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum TodoTerminationRef<'a, S> {
+    Due(&'a Prop<DateTimeOrDate, Params<S>>),
+    Duration(&'a Prop<Duration, Params<S>>),
+}
+
+#[derive(Debug)]
+pub enum TodoTerminationMut<'a, S> {
+    Due(&'a mut Prop<DateTimeOrDate, Params<S>>),
+    Duration(&'a mut Prop<Duration, Params<S>>),
+}
+
+#[derive(Debug, Clone)]
+pub enum TriggerProp<S> {
+    Relative(Prop<Duration, Params<S>>),
+    Absolute(Prop<DateTime<Utc>, Params<S>>),
+}
+
+impl<S: PartialEq + HashCaseless + Equiv> PartialEq for TriggerProp<S> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Relative(l0), Self::Relative(r0)) => l0 == r0,
+            (Self::Absolute(l0), Self::Absolute(r0)) => l0 == r0,
+            _ => false,
+        }
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TriggerPropRef<'a> {
-    Relative(&'a Prop<Duration, TriggerParams>),
-    Absolute(&'a Prop<DateTime<Utc>>),
+impl<S> TriggerProp<S> {
+    pub fn as_ref(&self) -> TriggerPropRef<'_, S> {
+        match self {
+            TriggerProp::Relative(prop) => TriggerPropRef::Relative(prop),
+            TriggerProp::Absolute(prop) => TriggerPropRef::Absolute(prop),
+        }
+    }
+
+    pub fn as_mut(&mut self) -> TriggerPropMut<'_, S> {
+        match self {
+            TriggerProp::Relative(prop) => TriggerPropMut::Relative(prop),
+            TriggerProp::Absolute(prop) => TriggerPropMut::Absolute(prop),
+        }
+    }
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub enum TriggerPropMut<'a> {
-    Relative(&'a mut Prop<Duration, TriggerParams>),
-    Absolute(&'a mut Prop<DateTime<Utc>>),
+#[derive(Debug, Clone, Copy)]
+pub enum TriggerPropRef<'a, S> {
+    Relative(&'a Prop<Duration, Params<S>>),
+    Absolute(&'a Prop<DateTime<Utc>, Params<S>>),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+impl<'a, S: PartialEq + HashCaseless + Equiv> PartialEq for TriggerPropRef<'a, S> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Relative(l0), Self::Relative(r0)) => l0 == r0,
+            (Self::Absolute(l0), Self::Absolute(r0)) => l0 == r0,
+            _ => false,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum TriggerPropMut<'a, S> {
+    Relative(&'a mut Prop<Duration, Params<S>>),
+    Absolute(&'a mut Prop<DateTime<Utc>, Params<S>>),
+}
+
+impl<'a, S: PartialEq + HashCaseless + Equiv> PartialEq for TriggerPropMut<'a, S> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Relative(l0), Self::Relative(r0)) => l0 == r0,
+            (Self::Absolute(l0), Self::Absolute(r0)) => l0 == r0,
+            _ => false,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum StructuredDataProp<S> {
     Binary(Prop<Binary<S>, StructuredDataParams<S>>),
     Text(Prop<Text<S>, StructuredDataParams<S>>),
-    Uri(Prop<Uri<S>, UriStructuredDataParams<S>>),
+    Uri(Prop<Uri<S>, Params<S>>),
 }
 
-impl<S> From<Prop<Binary<S>, StructuredDataParams<S>>> for StructuredDataProp<S> {
-    fn from(v: Prop<Binary<S>, StructuredDataParams<S>>) -> Self {
-        Self::Binary(v)
-    }
-}
-
-impl<S> From<Prop<Text<S>, StructuredDataParams<S>>> for StructuredDataProp<S> {
-    fn from(v: Prop<Text<S>, StructuredDataParams<S>>) -> Self {
-        Self::Text(v)
-    }
-}
-
-impl<S> From<Prop<Uri<S>, UriStructuredDataParams<S>>> for StructuredDataProp<S> {
-    fn from(v: Prop<Uri<S>, UriStructuredDataParams<S>>) -> Self {
-        Self::Uri(v)
-    }
-}
-
-/// The parameters associated with the `ATTACH` property.
-///
-/// Note that if the value of the property is a binary value, then there are
-/// additional required parameters with statically known values; hence they are
-/// elided in this type.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AttachParams<S> {
-    pub format_type: Option<FormatType<S>>,
-}
-
-/// The parameters associated with the `ATTENDEE` property.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AttendeeParams<S> {
-    pub language: Option<Language<S>>,
-    pub calendar_user_type: Option<CalendarUserType<S>>,
-    pub group_or_list_membership: Option<Box<[CalAddress<S>]>>,
-    pub participation_role: Option<ParticipationRole<S>>,
-    pub participation_status: Option<ParticipationStatus<S>>,
-    pub rsvp_expectation: Option<bool>,
-    pub delegatees: Option<Box<[CalAddress<S>]>>,
-    pub delegators: Option<Box<[CalAddress<S>]>>,
-    pub sent_by: Option<Uri<S>>,
-    pub common_name: Option<ParamValue<S>>,
-    pub directory_entry_reference: Option<Uri<S>>,
-    pub email: Option<ParamValue<S>>,
-}
-
-impl<S> Default for AttendeeParams<S> {
-    fn default() -> Self {
-        Self {
-            language: Default::default(),
-            calendar_user_type: Default::default(),
-            group_or_list_membership: Default::default(),
-            participation_role: Default::default(),
-            participation_status: Default::default(),
-            rsvp_expectation: Default::default(),
-            delegatees: Default::default(),
-            delegators: Default::default(),
-            sent_by: Default::default(),
-            common_name: Default::default(),
-            directory_entry_reference: Default::default(),
-            email: Default::default(),
-        }
-    }
-}
-
-/// The parameters associated with the `ORGANIZER` property.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OrganizerParams<S> {
-    pub language: Option<Language<S>>,
-    pub sent_by: Option<Uri<S>>,
-    pub common_name: Option<ParamValue<S>>,
-    pub directory_entry_reference: Option<Uri<S>>,
-    pub email: Option<ParamValue<S>>,
-}
-
-impl<S> Default for OrganizerParams<S> {
-    fn default() -> Self {
-        Self {
-            language: Default::default(),
-            sent_by: Default::default(),
-            common_name: Default::default(),
-            directory_entry_reference: Default::default(),
-            email: Default::default(),
-        }
-    }
-}
-
-/// The parameters associated with the `RECURRENCE-ID` property.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RecurrenceIdParams<S> {
-    pub tz_id: Option<TzId<S>>,
-    pub recurrence_identifier_range: Option<ThisAndFuture>,
-}
-
-/// The parameters associated with the `RELATED-TO` property.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RelTypeParams<S> {
-    pub relationship_type: Option<RelationshipType<S>>,
-}
-
-/// A variant of [`TextParams`] without the `ALTREP` parameter.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LangParams<S> {
-    pub language: Option<Language<S>>,
-}
-
-impl<S> Default for LangParams<S> {
-    fn default() -> Self {
-        Self {
-            language: Default::default(),
-        }
-    }
-}
-
-/// The parameters associated with several date and time properties.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DtParams<S> {
-    pub tz_id: Option<TzId<S>>,
-}
-
-impl<S> Default for DtParams<S> {
-    fn default() -> Self {
-        Self {
-            tz_id: Default::default(),
-        }
-    }
-}
-
-/// The parameters associated with the `TRIGGER` property.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub struct TriggerParams {
-    pub trigger_relation: Option<TriggerRelation>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FBTypeParams<S> {
-    pub free_busy_type: Option<FreeBusyType<S>>,
-}
-
-impl<S> Default for FBTypeParams<S> {
-    fn default() -> Self {
-        Self {
-            free_busy_type: Default::default(),
-        }
-    }
-}
-
-/// The parameters usually associated with text values.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TextParams<S> {
-    pub language: Option<Language<S>>,
-    pub alternate_representation: Option<Uri<S>>,
-}
-
-impl<S> Default for TextParams<S> {
-    fn default() -> Self {
-        Self {
-            language: Default::default(),
-            alternate_representation: Default::default(),
-        }
-    }
-}
-
-/// The parameters usually associated with image data.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ImageParams<S> {
-    pub format_type: Option<FormatType<S>>,
-    pub display: Option<DisplayType<S>>,
-    pub alternate_representation: Option<Uri<S>>,
-}
-
-impl<S> Default for ImageParams<S> {
-    fn default() -> Self {
-        Self {
-            format_type: Default::default(),
-            display: Default::default(),
-            alternate_representation: Default::default(),
-        }
-    }
-}
-
-/// The parameters associated with the CONFERENCE property.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ConfParams<S> {
-    pub feature_type: Option<FeatureType<S>>,
-    pub label: Option<ParamValue<S>>,
-    pub language: Option<Language<S>>,
-}
-
-impl<S> Default for ConfParams<S> {
-    fn default() -> Self {
-        Self {
-            feature_type: Default::default(),
-            label: Default::default(),
-            language: Default::default(),
-        }
-    }
-}
-
-/// The parameters associated with the STYLED-DESCRIPTION property (RFC 5545 §6.5).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StyledDescriptionParams<S> {
-    pub language: Option<Language<S>>,
-    pub alternate_representation: Option<Uri<S>>,
-    pub format_type: Option<FormatType<S>>,
-}
-
-impl<S> Default for StyledDescriptionParams<S> {
-    fn default() -> Self {
-        Self {
-            language: Default::default(),
-            alternate_representation: Default::default(),
-            format_type: Default::default(),
-        }
-    }
-}
-
-/// The parameters associated with the STRUCTURED-DATA property (RFC 5545 §6.6) when its value type
-/// is TEXT or BINARY.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StructuredDataParams<S> {
-    pub format_type: FormatType<S>,
-    pub schema: Uri<S>,
-}
-
-/// The parameters associated with the STRUCTURED-DATA property (RFC 5545 §6.6) when its value type
-/// is URI.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UriStructuredDataParams<S> {
-    pub format_type: Option<FormatType<S>>,
-    pub schema: Option<Uri<S>>,
-}
-
-impl<S> Default for UriStructuredDataParams<S> {
-    fn default() -> Self {
-        Self {
-            format_type: Default::default(),
-            schema: Default::default(),
+impl<S: PartialEq + HashCaseless + Equiv> PartialEq for StructuredDataProp<S> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Binary(l0), Self::Binary(r0)) => l0 == r0,
+            (Self::Text(l0), Self::Text(r0)) => l0 == r0,
+            (Self::Uri(l0), Self::Uri(r0)) => l0 == r0,
+            _ => false,
         }
     }
 }

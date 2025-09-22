@@ -19,11 +19,11 @@ use crate::model::{
     primitive::{
         AlarmAction, Binary, CalAddress, CalendarUserType, ClassValue, CompletionPercentage, Date,
         DateTime, DateTimeOrDate, DisplayType, Duration, DurationKind, DurationTime, Encoding,
-        FeatureType, Float, FormatType, FreeBusyType, Geo, GeoComponent, Integer, IsoWeek,
-        Language, Method, ParticipantType, ParticipationRole, ParticipationStatus, Period,
-        PositiveInteger, Priority, ProximityValue, RawTime, RelationshipType, RequestStatusCode,
-        ResourceType, Sign, Status, Text, Time, TimeFormat, TimeTransparency, TriggerRelation,
-        TzId, Uid, Uri, Utc, UtcOffset, ValueType,
+        FeatureType, Float, FormatType, FreeBusyType, Geo, GeoComponent, Gregorian, Integer,
+        IsoWeek, Language, Method, ParticipantType, ParticipationRole, ParticipationStatus, Period,
+        PositiveInteger, Priority, ProximityValue, RawTime, RelationshipType, RequestStatus,
+        RequestStatusCode, ResourceType, Sign, Status, Text, Time, TimeFormat, TimeTransparency,
+        TriggerRelation, TzId, Uid, Uri, Utc, UtcOffset, ValueType, Version,
     },
 };
 
@@ -32,6 +32,21 @@ use super::error::{
     InvalidDurationTimeError, InvalidGeoError, InvalidIntegerError, InvalidPriorityError,
     InvalidRawTimeError, InvalidUtcOffsetError,
 };
+
+/// Parses a [`RequestStatus`].
+pub fn request_status<I, E>(input: &mut I) -> Result<RequestStatus<I::Slice>, E>
+where
+    I: StreamIsPartial + Stream + Compare<Caseless<&'static str>> + Compare<char>,
+    <I as Stream>::Token: AsChar + Clone,
+    <I as Stream>::Slice: AsBStr,
+    E: ParserError<I>,
+{
+    Ok(RequestStatus {
+        code: status_code.parse_next(input)?,
+        description: preceded(';', text).parse_next(input)?,
+        exception_data: opt(preceded(';', text)).parse_next(input)?,
+    })
+}
 
 /// Parses a [`ParticipantType`].
 pub fn participant_type<I, E>(input: &mut I) -> Result<ParticipantType<I::Slice>, E>
@@ -179,25 +194,23 @@ where
 /// Parses the exact string `GREGORIAN`, which occurs in the calendar scale
 /// property. This parser returns `()` because the Gregorian calendar is the
 /// _only_ calendar scale recognised by RFC 5545 and its successors.
-pub fn gregorian<I, E>(input: &mut I) -> Result<(), E>
+pub fn gregorian<I, E>(input: &mut I) -> Result<Gregorian, E>
 where
     I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
     E: ParserError<I>,
 {
-    Caseless("GREGORIAN").void().parse_next(input)
+    Caseless("GREGORIAN").value(Gregorian).parse_next(input)
 }
 
-/// Parses the exact string `2.0`, which occurs in the version property. This
-/// parser returns `()` because no other version of iCalendar has ever been
-/// registered or recognised.
-pub fn v2_0<I, E>(input: &mut I) -> Result<(), E>
+/// Parses the exact string `2.0`, which occurs in the version property.
+pub fn version<I, E>(input: &mut I) -> Result<Version, E>
 where
     I: StreamIsPartial + Stream + Compare<Caseless<&'static str>>,
     E: ParserError<I>,
 {
     // using Caseless here does nothing, but it makes the trait bounds match
     // the other parsers in this module
-    Caseless("2.0").void().parse_next(input)
+    Caseless("2.0").value(Version::V2_0).parse_next(input)
 }
 
 /// Parses a [`Method`].
@@ -1761,8 +1774,8 @@ mod tests {
 
     #[test]
     fn v2_0_parser() {
-        assert!(v2_0::<_, ()>.parse_peek("2.0").is_ok());
-        assert!(v2_0::<_, ()>.parse_peek("3.0").is_err());
+        assert!(version::<_, ()>.parse_peek("2.0").is_ok());
+        assert!(version::<_, ()>.parse_peek("3.0").is_err());
     }
 
     #[test]

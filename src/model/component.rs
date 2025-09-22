@@ -4,24 +4,26 @@ use paste::paste;
 
 use std::fmt::Debug;
 
-use crate::parser::escaped::Equiv;
-
-use super::{
-    css::Css3Color,
-    primitive::{
-        AttachValue, AudioAction, CalAddress, ClassValue, CompletionPercentage, DateTime,
-        DateTimeOrDate, DisplayAction, Duration, EmailAction, EventStatus, ExDateSeq, Geo,
-        ImageData, Integer, JournalStatus, Method, Period, Priority, ProximityValue, RDateSeq,
-        RequestStatus, Text, TimeTransparency, TodoStatus, TzId, Uid, UnknownAction, Uri, Utc,
-        UtcOffset,
+use crate::{
+    model::{
+        css::Css3Color,
+        one_or_seq::OneOrSeq,
+        parameter::Params,
+        primitive::{
+            AttachValue, AudioAction, CalAddress, ClassValue, CompletionPercentage, DateTime,
+            DateTimeOrDate, DisplayAction, Duration, EmailAction, EventStatus, ExDateSeq, Geo,
+            Gregorian, ImageData, Integer, JournalStatus, Method, Period, Priority, ProximityValue,
+            RDateSeq, RequestStatus, Text, TimeTransparency, TodoStatus, TzId, Uid, UnknownAction,
+            Uri, Utc, UtcOffset, Version,
+        },
+        property::{
+            EventTerminationMut, EventTerminationRef, Prop, PropertyTable, StaticProp,
+            TodoTerminationMut, TodoTerminationRef, TriggerPropMut, TriggerPropRef,
+        },
+        rrule::RRule,
+        table::HashCaseless,
     },
-    property::{
-        AttachParams, AttendeeParams, ConfParams, DtParams, FBTypeParams, ImageParams, LangParams,
-        OrganizerParams, Prop, PropertyTable, RecurrenceIdParams, RelTypeParams, StaticProp,
-        TextParams, TriggerPropMut, TriggerPropRef,
-    },
-    rrule::RRule,
-    table::HashCaseless,
+    parser::escaped::Equiv,
 };
 
 macro_rules! mandatory_accessors {
@@ -68,7 +70,7 @@ macro_rules! seq_accessors {
             pub fn $name(&self) -> Option<&[$ret]> {
                 match self.props.get_known(StaticProp::$key) {
                     Some(raw_value) => {
-                        let vs: &Vec<_> = raw_value.try_into().unwrap();
+                        let vs: &OneOrSeq<_> = raw_value.try_into().unwrap();
                         Some(vs.as_slice())
                     },
                     None => None,
@@ -76,10 +78,10 @@ macro_rules! seq_accessors {
             }
 
             paste! {
-            pub fn [<$name _mut>](&mut self) -> Option<&mut Vec<$ret>> {
+            pub fn [<$name _mut>](&mut self) -> Option<&mut OneOrSeq<$ret>> {
                 match self.props.get_known_mut(StaticProp::$key) {
                     Some(raw_value) => {
-                        let vs: &mut Vec<_> = raw_value.try_into().unwrap();
+                        let vs: &mut OneOrSeq<_> = raw_value.try_into().unwrap();
                         Some(vs)
                     },
                     None => None,
@@ -116,26 +118,26 @@ where
     S: HashCaseless + Equiv,
 {
     mandatory_accessors! {
-        [ProdId, prod_id, Prop<Text<S>>],
-        [Version, version, Prop<()>],
+        [ProdId, prod_id, Prop<Text<S>, Params<S>>],
+        [Version, version, Prop<Version, Params<S>>],
     }
 
     optional_accessors! {
-        [CalScale, scale, Prop<()>],
-        [Method, method, Prop<Method<S>>],
-        [Uid, uid, Prop<Uid<S>>],
-        [LastModified, last_modified, Prop<DateTime<Utc>>],
-        [Url, url, Prop<Uri<S>>],
-        [RefreshInterval, refresh_interval, Prop<Duration>],
-        [Source, source, Prop<Uri<S>>],
-        [Color, color, Prop<Css3Color>],
+        [CalScale, scale, Prop<Gregorian, Params<S>>],
+        [Method, method, Prop<Method<S>, Params<S>>],
+        [Uid, uid, Prop<Uid<S>, Params<S>>],
+        [LastModified, last_modified, Prop<DateTime<Utc>, Params<S>>],
+        [Url, url, Prop<Uri<S>, Params<S>>],
+        [RefreshInterval, refresh_interval, Prop<Duration, Params<S>>],
+        [Source, source, Prop<Uri<S>, Params<S>>],
+        [Color, color, Prop<Css3Color, Params<S>>],
     }
 
     seq_accessors! {
-        [Name, names, Prop<Text<S>, TextParams<S>>],
-        [Description, description, Prop<Text<S>, TextParams<S>>],
-        [Categories, categories, Prop<Vec<Text<S>>, LangParams<S>>],
-        [Image, images, Prop<ImageData<S>, ImageParams<S>>],
+        [Name, names, Prop<Text<S>, Params<S>>],
+        [Description, description, Prop<Text<S>, Params<S>>],
+        [Categories, categories, Prop<Vec<Text<S>>, Params<S>>],
+        [Image, images, Prop<ImageData<S>, Params<S>>],
     }
 }
 
@@ -157,18 +159,6 @@ pub struct Event<S> {
     alarms: Vec<Alarm<S>>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EventTerminationRef<'a, S> {
-    End(&'a Prop<DateTimeOrDate, DtParams<S>>),
-    Duration(&'a Prop<Duration>),
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum EventTerminationMut<'a, S> {
-    End(&'a mut Prop<DateTimeOrDate, DtParams<S>>),
-    Duration(&'a mut Prop<Duration>),
-}
-
 impl<S> Event<S> {
     pub(crate) const fn new(props: PropertyTable<S>, alarms: Vec<Alarm<S>>) -> Self {
         Self { props, alarms }
@@ -188,8 +178,8 @@ where
     S: HashCaseless + Equiv,
 {
     mandatory_accessors! {
-        [DtStamp, timestamp, Prop<DateTime<Utc>>],
-        [Uid, uid, Prop<Uid<S>>],
+        [DtStamp, timestamp, Prop<DateTime<Utc>, Params<S>>],
+        [Uid, uid, Prop<Uid<S>, Params<S>>],
     }
 
     pub fn termination(&self) -> Option<EventTerminationRef<'_, S>> {
@@ -209,40 +199,40 @@ where
     }
 
     optional_accessors! {
-        [Status, status, Prop<EventStatus>],
-        [DtStart, start, Prop<DateTimeOrDate, DtParams<S>>],
-        [DtEnd, end, Prop<DateTimeOrDate, DtParams<S>>],
-        [Duration, duration, Prop<Duration>],
-        [Class, class, Prop<ClassValue<S>>],
-        [Created, created, Prop<DateTime<Utc>>],
-        [Description, description, Prop<Text<S>, TextParams<S>>],
-        [Geo, geo, Prop<Geo>],
-        [LastModified, last_modified, Prop<DateTime<Utc>>],
-        [Location, location, Prop<Text<S>, TextParams<S>>],
-        [Organizer, organizer, Prop<CalAddress<S>, Box<OrganizerParams<S>>>],
-        [Priority, priority, Prop<Priority>],
-        [Sequence, sequence_number, Prop<Integer>],
-        [Summary, summary, Prop<Text<S>, TextParams<S>>],
-        [Transp, transparency, Prop<TimeTransparency>],
-        [Url, url, Prop<Uri<S>>],
-        [RecurId, recurrence_id, Prop<DateTimeOrDate, RecurrenceIdParams<S>>],
-        [Color, color, Prop<Css3Color>],
+        [Status, status, Prop<EventStatus, Params<S>>],
+        [DtStart, start, Prop<DateTimeOrDate, Params<S>>],
+        [DtEnd, end, Prop<DateTimeOrDate, Params<S>>],
+        [Duration, duration, Prop<Duration, Params<S>>],
+        [Class, class, Prop<ClassValue<S>, Params<S>>],
+        [Created, created, Prop<DateTime<Utc>, Params<S>>],
+        [Description, description, Prop<Text<S>, Params<S>>],
+        [Geo, geo, Prop<Geo, Params<S>>],
+        [LastModified, last_modified, Prop<DateTime<Utc>, Params<S>>],
+        [Location, location, Prop<Text<S>, Params<S>>],
+        [Organizer, organizer, Prop<CalAddress<S>, Params<S>>],
+        [Priority, priority, Prop<Priority, Params<S>>],
+        [Sequence, sequence_number, Prop<Integer, Params<S>>],
+        [Summary, summary, Prop<Text<S>, Params<S>>],
+        [Transp, transparency, Prop<TimeTransparency, Params<S>>],
+        [Url, url, Prop<Uri<S>, Params<S>>],
+        [RecurId, recurrence_id, Prop<DateTimeOrDate, Params<S>>],
+        [Color, color, Prop<Css3Color, Params<S>>],
     }
 
     seq_accessors! {
-        [Attach, attachments, Prop<AttachValue<S>, AttachParams<S>>],
-        [Attendee, attendees, Prop<CalAddress<S>, Box<AttendeeParams<S>>>],
-        [Categories, categories, Prop<Vec<Text<S>>, LangParams<S>>],
-        [Comment, comments, Prop<Text<S>, TextParams<S>>],
-        [Contact, contacts, Prop<Text<S>, TextParams<S>>],
-        [RRule, rrule, Prop<Box<RRule>>],
-        [ExDate, exception_dates, Prop<ExDateSeq, DtParams<S>>],
-        [RequestStatus, request_statuses, Prop<RequestStatus<S>, LangParams<S>>],
-        [RelatedTo, relateds, Prop<Text<S>, RelTypeParams<S>>],
-        [Resources, resources, Prop<Vec<Text<S>>, TextParams<S>>],
-        [RDate, recurrence_dates, Prop<RDateSeq, DtParams<S>>],
-        [Conference, conferences, Prop<Uri<S>, ConfParams<S>>],
-        [Image, images, Prop<ImageData<S>, ImageParams<S>>],
+        [Attach, attachments, Prop<AttachValue<S>, Params<S>>],
+        [Attendee, attendees, Prop<CalAddress<S>, Params<S>>],
+        [Categories, categories, Prop<Vec<Text<S>>, Params<S>>],
+        [Comment, comments, Prop<Text<S>, Params<S>>],
+        [Contact, contacts, Prop<Text<S>, Params<S>>],
+        [RRule, rrule, Prop<Box<RRule>, Params<S>>],
+        [ExDate, exception_dates, Prop<ExDateSeq, Params<S>>],
+        [RequestStatus, request_statuses, Prop<RequestStatus<S>, Params<S>>],
+        [RelatedTo, relateds, Prop<Uid<S>, Params<S>>],
+        [Resources, resources, Prop<Vec<Text<S>>, Params<S>>],
+        [RDate, recurrence_dates, Prop<RDateSeq, Params<S>>],
+        [Conference, conferences, Prop<Uri<S>, Params<S>>],
+        [Image, images, Prop<ImageData<S>, Params<S>>],
     }
 }
 
@@ -251,18 +241,6 @@ where
 pub struct Todo<S> {
     props: PropertyTable<S>,
     alarms: Vec<Alarm<S>>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TodoTerminationRef<'a, S> {
-    Due(&'a Prop<DateTimeOrDate, DtParams<S>>),
-    Duration(&'a Prop<Duration>),
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum TodoTerminationMut<'a, S> {
-    Due(&'a mut Prop<DateTimeOrDate, DtParams<S>>),
-    Duration(&'a mut Prop<Duration>),
 }
 
 impl<S> Todo<S> {
@@ -284,8 +262,8 @@ where
     S: HashCaseless + Equiv,
 {
     mandatory_accessors! {
-        [DtStamp, timestamp, Prop<DateTime<Utc>>],
-        [Uid, uid, Prop<Uid<S>>],
+        [DtStamp, timestamp, Prop<DateTime<Utc>, Params<S>>],
+        [Uid, uid, Prop<Uid<S>, Params<S>>],
     }
 
     pub fn termination(&self) -> Option<TodoTerminationRef<'_, S>> {
@@ -305,41 +283,41 @@ where
     }
 
     optional_accessors! {
-        [Status, status, Prop<TodoStatus>],
-        [Class, class, Prop<ClassValue<S>>],
-        [DtCompleted, completed, Prop<DateTime<Utc>>],
-        [Created, created, Prop<DateTime<Utc>>],
-        [Description, description, Prop<Text<S>, TextParams<S>>],
-        [DtStart, start, Prop<DateTimeOrDate, DtParams<S>>],
-        [DtDue, due, Prop<DateTimeOrDate, DtParams<S>>],
-        [Duration, duration, Prop<Duration>],
-        [Geo, geo, Prop<Geo>],
-        [LastModified, last_modified, Prop<DateTime<Utc>>],
-        [Location, location, Prop<Text<S>, TextParams<S>>],
-        [Organizer, organizer, Prop<CalAddress<S>, Box<OrganizerParams<S>>>],
-        [PercentComplete, percent, Prop<CompletionPercentage>],
-        [Priority, priority, Prop<Priority>],
-        [RecurId, recurrence_id, Prop<DateTimeOrDate, RecurrenceIdParams<S>>],
-        [Sequence, sequence_number, Prop<Integer>],
-        [Summary, summary, Prop<Text<S>, TextParams<S>>],
-        [Url, url, Prop<Uri<S>>],
-        [Color, color, Prop<Css3Color>],
+        [Status, status, Prop<TodoStatus, Params<S>>],
+        [Class, class, Prop<ClassValue<S>, Params<S>>],
+        [DtCompleted, completed, Prop<DateTime<Utc>, Params<S>>],
+        [Created, created, Prop<DateTime<Utc>, Params<S>>],
+        [Description, description, Prop<Text<S>, Params<S>>],
+        [DtStart, start, Prop<DateTimeOrDate, Params<S>>],
+        [DtDue, due, Prop<DateTimeOrDate, Params<S>>],
+        [Duration, duration, Prop<Duration, Params<S>>],
+        [Geo, geo, Prop<Geo, Params<S>>],
+        [LastModified, last_modified, Prop<DateTime<Utc>, Params<S>>],
+        [Location, location, Prop<Text<S>, Params<S>>],
+        [Organizer, organizer, Prop<CalAddress<S>, Params<S>>],
+        [PercentComplete, percent, Prop<CompletionPercentage, Params<S>>],
+        [Priority, priority, Prop<Priority, Params<S>>],
+        [RecurId, recurrence_id, Prop<DateTimeOrDate, Params<S>>],
+        [Sequence, sequence_number, Prop<Integer, Params<S>>],
+        [Summary, summary, Prop<Text<S>, Params<S>>],
+        [Url, url, Prop<Uri<S>, Params<S>>],
+        [Color, color, Prop<Css3Color, Params<S>>],
     }
 
     seq_accessors! {
-        [Attach, attachments, Prop<AttachValue<S>, AttachParams<S>>],
-        [Attendee, attendees, Prop<CalAddress<S>, Box<AttendeeParams<S>>>],
-        [Categories, categories, Prop<Vec<Text<S>>, LangParams<S>>],
-        [Comment, comments, Prop<Text<S>, TextParams<S>>],
-        [Contact, contacts, Prop<Text<S>, TextParams<S>>],
-        [RRule, rrule, Prop<Box<RRule>>],
-        [ExDate, exception_dates, Prop<ExDateSeq, DtParams<S>>],
-        [RequestStatus, request_statuses, Prop<RequestStatus<S>, LangParams<S>>],
-        [RelatedTo, relateds, Prop<Text<S>, RelTypeParams<S>>],
-        [Resources, resources, Prop<Vec<Text<S>>, TextParams<S>>],
-        [RDate, recurrence_dates, Prop<RDateSeq, DtParams<S>>],
-        [Conference, conferences, Prop<Uri<S>, ConfParams<S>>],
-        [Image, images, Prop<ImageData<S>, ImageParams<S>>],
+        [Attach, attachments, Prop<AttachValue<S>, Params<S>>],
+        [Attendee, attendees, Prop<CalAddress<S>, Params<S>>],
+        [Categories, categories, Prop<Vec<Text<S>>, Params<S>>],
+        [Comment, comments, Prop<Text<S>, Params<S>>],
+        [Contact, contacts, Prop<Text<S>, Params<S>>],
+        [RRule, rrule, Prop<Box<RRule>, Params<S>>],
+        [ExDate, exception_dates, Prop<ExDateSeq, Params<S>>],
+        [RequestStatus, request_statuses, Prop<RequestStatus<S>, Params<S>>],
+        [RelatedTo, relateds, Prop<Uid<S>, Params<S>>],
+        [Resources, resources, Prop<Vec<Text<S>>, Params<S>>],
+        [RDate, recurrence_dates, Prop<RDateSeq, Params<S>>],
+        [Conference, conferences, Prop<Uri<S>, Params<S>>],
+        [Image, images, Prop<ImageData<S>, Params<S>>],
     }
 }
 
@@ -377,7 +355,9 @@ impl<S> Alarm<S> {
 
 macro_rules! alarm_accessors {
     () => {
-        pub fn duration_and_repeat(&self) -> Option<(&Prop<Duration>, &Prop<Integer>)> {
+        pub fn duration_and_repeat(
+            &self,
+        ) -> Option<(&Prop<Duration, Params<S>>, &Prop<Integer, Params<S>>)> {
             let duration = self.duration();
             let repeat = self.repeat();
 
@@ -389,7 +369,7 @@ macro_rules! alarm_accessors {
             }
         }
 
-        pub fn trigger(&self) -> TriggerPropRef<'_> {
+        pub fn trigger(&self) -> TriggerPropRef<'_, S> {
             self.props
                 .get_known(StaticProp::Trigger)
                 .unwrap()
@@ -397,7 +377,7 @@ macro_rules! alarm_accessors {
                 .unwrap()
         }
 
-        pub fn trigger_mut(&mut self) -> TriggerPropMut<'_> {
+        pub fn trigger_mut(&mut self) -> TriggerPropMut<'_, S> {
             self.props
                 .get_known_mut(StaticProp::Trigger)
                 .unwrap()
@@ -439,16 +419,16 @@ where
     S: HashCaseless + Equiv,
 {
     mandatory_accessors! {
-        [Action, action, Prop<AudioAction>],
+        [Action, action, Prop<AudioAction, Params<S>>],
     }
 
     optional_accessors! {
-        [Attach, attachment, Prop<AttachValue<S>, AttachParams<S>>],
-        [Uid, uid, Prop<Uid<S>>],
-        [Duration, duration, Prop<Duration>],
-        [Repeat, repeat, Prop<Integer>],
-        [Acknowledged, acknowleded, Prop<DateTime<Utc>>],
-        [Proximity, proximity, Prop<ProximityValue<S>>],
+        [Attach, attachment, Prop<AttachValue<S>, Params<S>>],
+        [Uid, uid, Prop<Uid<S>, Params<S>>],
+        [Duration, duration, Prop<Duration, Params<S>>],
+        [Repeat, repeat, Prop<Integer, Params<S>>],
+        [Acknowledged, acknowleded, Prop<DateTime<Utc>, Params<S>>],
+        [Proximity, proximity, Prop<ProximityValue<S>, Params<S>>],
     }
 
     alarm_accessors!();
@@ -486,16 +466,16 @@ where
     S: HashCaseless + Equiv,
 {
     mandatory_accessors! {
-        [Action, action, Prop<DisplayAction>],
-        [Description, description, Prop<Text<S>, TextParams<S>>],
+        [Action, action, Prop<DisplayAction, Params<S>>],
+        [Description, description, Prop<Text<S>, Params<S>>],
     }
 
     optional_accessors! {
-        [Uid, uid, Prop<Uid<S>>],
-        [Duration, duration, Prop<Duration>],
-        [Repeat, repeat, Prop<Integer>],
-        [Acknowledged, acknowleded, Prop<DateTime<Utc>>],
-        [Proximity, proximity, Prop<ProximityValue<S>>],
+        [Uid, uid, Prop<Uid<S>, Params<S>>],
+        [Duration, duration, Prop<Duration, Params<S>>],
+        [Repeat, repeat, Prop<Integer, Params<S>>],
+        [Acknowledged, acknowleded, Prop<DateTime<Utc>, Params<S>>],
+        [Proximity, proximity, Prop<ProximityValue<S>, Params<S>>],
     }
 
     alarm_accessors!();
@@ -533,22 +513,22 @@ where
     S: HashCaseless + Equiv,
 {
     mandatory_accessors! {
-        [Action, action, Prop<EmailAction>],
-        [Description, description, Prop<Text<S>, TextParams<S>>],
-        [Summary, summary, Prop<Text<S>, TextParams<S>>],
+        [Action, action, Prop<EmailAction, Params<S>>],
+        [Description, description, Prop<Text<S>, Params<S>>],
+        [Summary, summary, Prop<Text<S>, Params<S>>],
     }
 
     optional_accessors! {
-        [Uid, uid, Prop<Uid<S>>],
-        [Duration, duration, Prop<Duration>],
-        [Repeat, repeat, Prop<Integer>],
-        [Acknowledged, acknowleded, Prop<DateTime<Utc>>],
-        [Proximity, proximity, Prop<ProximityValue<S>>],
+        [Uid, uid, Prop<Uid<S>, Params<S>>],
+        [Duration, duration, Prop<Duration, Params<S>>],
+        [Repeat, repeat, Prop<Integer, Params<S>>],
+        [Acknowledged, acknowleded, Prop<DateTime<Utc>, Params<S>>],
+        [Proximity, proximity, Prop<ProximityValue<S>, Params<S>>],
     }
 
     seq_accessors! {
-        [Attendee, attendees, Prop<CalAddress<S>, Box<AttendeeParams<S>>>],
-        [Attach, attachments, Prop<AttachValue<S>, AttachParams<S>>],
+        [Attendee, attendees, Prop<CalAddress<S>, Params<S>>],
+        [Attach, attachments, Prop<AttachValue<S>, Params<S>>],
     }
 
     alarm_accessors!();
@@ -586,22 +566,22 @@ where
     S: HashCaseless + Equiv,
 {
     mandatory_accessors! {
-        [Action, action, Prop<UnknownAction<S>>],
+        [Action, action, Prop<UnknownAction<S>, Params<S>>],
     }
 
     optional_accessors! {
-        [Description, description, Prop<Text<S>, TextParams<S>>],
-        [Summary, summary, Prop<Text<S>, TextParams<S>>],
-        [Uid, uid, Prop<Uid<S>>],
-        [Duration, duration, Prop<Duration>],
-        [Repeat, repeat, Prop<Integer>],
-        [Acknowledged, acknowlegded, Prop<DateTime<Utc>>],
-        [Proximity, proximity, Prop<ProximityValue<S>>],
+        [Description, description, Prop<Text<S>, Params<S>>],
+        [Summary, summary, Prop<Text<S>, Params<S>>],
+        [Uid, uid, Prop<Uid<S>, Params<S>>],
+        [Duration, duration, Prop<Duration, Params<S>>],
+        [Repeat, repeat, Prop<Integer, Params<S>>],
+        [Acknowledged, acknowlegded, Prop<DateTime<Utc>, Params<S>>],
+        [Proximity, proximity, Prop<ProximityValue<S>, Params<S>>],
     }
 
     seq_accessors! {
-        [Attendee, attendees, Prop<CalAddress<S>, Box<AttendeeParams<S>>>],
-        [Attach, attachments, Prop<AttachValue<S>, AttachParams<S>>],
+        [Attendee, attendees, Prop<CalAddress<S>, Params<S>>],
+        [Attach, attachments, Prop<AttachValue<S>, Params<S>>],
     }
 
     alarm_accessors!();
@@ -624,35 +604,35 @@ where
     S: HashCaseless + Equiv,
 {
     mandatory_accessors! {
-        [DtStamp, timestamp, Prop<DateTime<Utc>>],
-        [Uid, uid, Prop<Uid<S>>],
+        [DtStamp, timestamp, Prop<DateTime<Utc>, Params<S>>],
+        [Uid, uid, Prop<Uid<S>, Params<S>>],
     }
 
     optional_accessors! {
-        [Status, status, Prop<JournalStatus>],
-        [Class, class, Prop<ClassValue<S>>],
-        [Created, created, Prop<DateTime<Utc>>],
-        [DtStart, start, Prop<DateTimeOrDate, DtParams<S>>],
-        [LastModified, last_modified, Prop<DateTime<Utc>>],
-        [Organizer, organizer, Prop<CalAddress<S>, Box<OrganizerParams<S>>>],
-        [RecurId, recurrence_id, Prop<DateTimeOrDate, RecurrenceIdParams<S>>],
-        [Sequence, sequence_number, Prop<Integer>],
-        [Summary, summary, Prop<Text<S>, TextParams<S>>],
-        [Url, url, Prop<Uri<S>>],
+        [Status, status, Prop<JournalStatus, Params<S>>],
+        [Class, class, Prop<ClassValue<S>, Params<S>>],
+        [Created, created, Prop<DateTime<Utc>, Params<S>>],
+        [DtStart, start, Prop<DateTimeOrDate, Params<S>>],
+        [LastModified, last_modified, Prop<DateTime<Utc>, Params<S>>],
+        [Organizer, organizer, Prop<CalAddress<S>, Params<S>>],
+        [RecurId, recurrence_id, Prop<DateTimeOrDate, Params<S>>],
+        [Sequence, sequence_number, Prop<Integer, Params<S>>],
+        [Summary, summary, Prop<Text<S>, Params<S>>],
+        [Url, url, Prop<Uri<S>, Params<S>>],
     }
 
     seq_accessors! {
-        [Attach, attachments, Prop<AttachValue<S>, AttachParams<S>>],
-        [Attendee, attendees, Prop<CalAddress<S>, Box<AttendeeParams<S>>>],
-        [Categories, categories, Prop<Vec<Text<S>>, LangParams<S>>],
-        [Comment, comments, Prop<Text<S>, TextParams<S>>],
-        [Contact, contacts, Prop<Text<S>, TextParams<S>>],
-        [Description, descriptions, Prop<Text<S>, TextParams<S>>],
-        [ExDate, exception_dates, Prop<ExDateSeq, DtParams<S>>],
-        [RelatedTo, relateds, Prop<Text<S>, RelTypeParams<S>>],
-        [RDate, recurrence_dates, Prop<RDateSeq, DtParams<S>>],
-        [RRule, rrule, Prop<Box<RRule>>],
-        [RequestStatus, request_statuses, Prop<RequestStatus<S>, LangParams<S>>],
+        [Attach, attachments, Prop<AttachValue<S>, Params<S>>],
+        [Attendee, attendees, Prop<CalAddress<S>, Params<S>>],
+        [Categories, categories, Prop<Vec<Text<S>>, Params<S>>],
+        [Comment, comments, Prop<Text<S>, Params<S>>],
+        [Contact, contacts, Prop<Text<S>, Params<S>>],
+        [Description, descriptions, Prop<Text<S>, Params<S>>],
+        [ExDate, exception_dates, Prop<ExDateSeq, Params<S>>],
+        [RelatedTo, relateds, Prop<Uid<S>, Params<S>>],
+        [RDate, recurrence_dates, Prop<RDateSeq, Params<S>>],
+        [RRule, rrule, Prop<Box<RRule>, Params<S>>],
+        [RequestStatus, request_statuses, Prop<RequestStatus<S>, Params<S>>],
     }
 }
 
@@ -673,23 +653,23 @@ where
     S: HashCaseless + Equiv,
 {
     mandatory_accessors! {
-        [DtStamp, timestamp, Prop<DateTime<Utc>>],
-        [Uid, uid, Prop<Uid<S>>],
+        [DtStamp, timestamp, Prop<DateTime<Utc>, Params<S>>],
+        [Uid, uid, Prop<Uid<S>, Params<S>>],
     }
 
     optional_accessors! {
-        [Contact, contact, Prop<Text<S>, TextParams<S>>],
-        [DtStart, start, Prop<DateTimeOrDate, DtParams<S>>],
-        [DtEnd, end, Prop<DateTimeOrDate, DtParams<S>>],
-        [Organizer, organizer, Prop<CalAddress<S>, Box<OrganizerParams<S>>>],
-        [Url, url, Prop<Uri<S>>],
+        [Contact, contact, Prop<Text<S>, Params<S>>],
+        [DtStart, start, Prop<DateTimeOrDate, Params<S>>],
+        [DtEnd, end, Prop<DateTimeOrDate, Params<S>>],
+        [Organizer, organizer, Prop<CalAddress<S>, Params<S>>],
+        [Url, url, Prop<Uri<S>, Params<S>>],
     }
 
     seq_accessors! {
-        [Attendee, attendees, Prop<CalAddress<S>, Box<AttendeeParams<S>>>],
-        [Comment, comments, Prop<Text<S>, TextParams<S>>],
-        [FreeBusy, free_busy_periods, Prop<Vec<Period>, FBTypeParams<S>>],
-        [RequestStatus, request_statuses, Prop<RequestStatus<S>, LangParams<S>>],
+        [Attendee, attendees, Prop<CalAddress<S>, Params<S>>],
+        [Comment, comments, Prop<Text<S>, Params<S>>],
+        [FreeBusy, free_busy_periods, Prop<Vec<Period>, Params<S>>],
+        [RequestStatus, request_statuses, Prop<RequestStatus<S>, Params<S>>],
     }
 }
 
@@ -722,12 +702,12 @@ where
     S: HashCaseless + Equiv,
 {
     mandatory_accessors! {
-        [TzId, id, Prop<TzId<S>>],
+        [TzId, id, Prop<TzId<S>, Params<S>>],
     }
 
     optional_accessors! {
-        [LastModified, last_modified, Prop<DateTime<Utc>>],
-        [TzUrl, url, Prop<Uri<S>>],
+        [LastModified, last_modified, Prop<DateTime<Utc>, Params<S>>],
+        [TzUrl, url, Prop<Uri<S>, Params<S>>],
     }
 }
 
@@ -753,16 +733,16 @@ where
     S: HashCaseless + Equiv,
 {
     mandatory_accessors! {
-        [DtStart, start, Prop<DateTimeOrDate, DtParams<S>>],
-        [TzOffsetTo, offset_to, Prop<UtcOffset>],
-        [TzOffsetFrom, offset_from, Prop<UtcOffset>],
+        [DtStart, start, Prop<DateTimeOrDate, Params<S>>],
+        [TzOffsetTo, offset_to, Prop<UtcOffset, Params<S>>],
+        [TzOffsetFrom, offset_from, Prop<UtcOffset, Params<S>>],
     }
 
     seq_accessors! {
-        [Comment, comments, Prop<Text<S>, TextParams<S>>],
-        [RDate, recurrence_dates, Prop<RDateSeq, DtParams<S>>],
-        [RRule, rrule, Prop<Box<RRule>>],
-        [TzName, names, Prop<Text<S>, LangParams<S>>],
+        [Comment, comments, Prop<Text<S>, Params<S>>],
+        [RDate, recurrence_dates, Prop<RDateSeq, Params<S>>],
+        [RRule, rrule, Prop<Box<RRule>, Params<S>>],
+        [TzName, names, Prop<Text<S>, Params<S>>],
     }
 }
 

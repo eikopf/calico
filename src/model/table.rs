@@ -9,7 +9,6 @@ use std::{
 pub use hashbrown::hash_table::{Entry, OccupiedEntry, VacantEntry};
 
 use hashbrown::HashTable;
-use winnow::stream::Stream;
 
 use crate::parser::escaped::{Equiv, Escaped};
 
@@ -22,6 +21,24 @@ pub struct Table<K1, K2, V1, V2> {
 impl<K1: Debug, K2: Debug, V1: Debug, V2: Debug> Debug for Table<K1, K2, V1, V2> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_tuple("Table").field(&self.raw_table).finish()
+    }
+}
+
+impl<K1, K2, V1, V2> PartialEq for Table<K1, K2, V1, V2>
+where
+    K1: PartialEq + Hash,
+    K2: PartialEq + HashCaseless + Equiv,
+    V1: PartialEq,
+    V2: PartialEq,
+{
+    fn eq(&self, other: &Self) -> bool {
+        if self.len() != other.len() {
+            return false;
+        }
+
+        self.raw_table
+            .iter()
+            .all(|item| Some(item) == other.get_by_key_ref(item.as_key()))
     }
 }
 
@@ -72,6 +89,22 @@ where
         self.get_known(key).is_some()
     }
 
+    pub fn contains_unknown_key<K: HashCaseless + Equiv<K2>>(&self, key: &K) -> bool {
+        let key = KeyRef::Unknown(key);
+
+        self.raw_table
+            .find(self.state.hash_one(&key), |rhs| key.eq(&rhs.as_key()))
+            .is_some()
+    }
+
+    pub fn get_by_key_ref<'a, T: HashCaseless + Equiv<K2>>(
+        &'a self,
+        key: KeyRef<'_, K1, T>,
+    ) -> Option<&'a Item<K1, K2, V1, V2>> {
+        self.raw_table
+            .find(self.state.hash_one(&key), |rhs| key.eq(&rhs.as_key()))
+    }
+
     pub fn get<'a, T: HashCaseless + Equiv<K2>>(
         &'a self,
         key: &Key<K1, T>,
@@ -118,11 +151,12 @@ where
             .map(|item| item.into_known().unwrap().1)
     }
 
-    pub fn insert_unknown(&mut self, key: K2, value: V2) -> Option<Item<K1, K2, V1, V2>>
+    pub fn insert_unknown(&mut self, key: K2, value: V2) -> Option<V2>
     where
         K2: Equiv,
     {
         self.insert(Item::Unknown { key, value })
+            .map(|item| item.into_unknown().unwrap().1)
     }
 
     pub(crate) fn append_unknown<V>(
@@ -380,7 +414,7 @@ impl<const N: usize> HashCaseless for [u8; N] {
 
 impl HashCaseless for Escaped<'_> {
     fn hash_caseless(&self, state: &mut impl Hasher) {
-        for (_, byte) in self.iter_offsets() {
+        for (_, byte) in <Escaped<'_> as winnow::stream::Stream>::iter_offsets(self) {
             byte.to_ascii_lowercase().hash(state);
         }
     }
@@ -409,6 +443,7 @@ mod tests {
     use crate::{
         date,
         model::{
+            parameter::Params,
             primitive::{AudioAction, DateTime, Uid, UnknownKind, Utc, Value},
             property::{
                 Prop, PropertyTable, RawPropValue, StaticProp, UnknownProp, UnknownPropSeq,
@@ -466,7 +501,7 @@ mod tests {
         props.insert_known(StaticProp::Action, RawPropValue::from(action));
         dbg![props.get_known(StaticProp::Action)];
 
-        let prop: Prop<AudioAction> = props
+        let prop: Prop<AudioAction, Params<_>> = props
             .remove_known(StaticProp::Action)
             .unwrap()
             .try_into()

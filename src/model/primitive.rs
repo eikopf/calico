@@ -30,8 +30,19 @@ pub type Integer = i32;
 /// A strictly positive [`Integer`].
 pub type PositiveInteger = NonZero<u32>;
 
+/// The single allowed value of the CALSCALE property.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct Gregorian;
+
+/// The value of the VERSION property. This type is an enum because it could potentially obtain a
+/// new value in the future, but this is extremely unlikely.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Version {
+    V2_0,
+}
+
 /// A method as defined in RFC 5546 §1.4
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Method<S> {
     Publish,
     Request,
@@ -930,6 +941,72 @@ impl<T> From<(T, T, T)> for RequestStatusCode<T> {
         Self(a, b, Some(c))
     }
 }
+
+// NOTE: is it actually worth using this type?
+
+// /// A location type as described in RFC 4589.
+// pub enum LocationType<S> {
+//     Aircraft,
+//     Airport,
+//     Arena,
+//     Automobile,
+//     Bank,
+//     Bar,
+//     Bicycle,
+//     Bus,
+//     BusStation,
+//     Cafe,
+//     Campground,   // NH DESC
+//     CareFacility, // NH DESC
+//     Classroom,
+//     Club,
+//     Construction,
+//     ConventionCenter,
+//     DetachedUnit, // NH DESC
+//     FireStation,  // NH DESC
+//     Government,
+//     Hospital,
+//     Hotel,
+//     Industrial,
+//     LandmarkAddress, // NH DESC
+//     Library,
+//     Motorcycle,
+//     MunicipalGarage, // NH DESC
+//     Museum,          // NENA NG9-1-1 CLDXF-US
+//     Office,
+//     Other,
+//     Outdoors,
+//     Parking,
+//     PhoneBox, // NH DESC
+//     PlaceOfWorship,
+//     PostOffice, // NH DESC
+//     Prison,
+//     Public,
+//     PublicTransport,
+//     Residence,
+//     Restaurant,
+//     School,
+//     ShoppingArea,
+//     Stadium,
+//     Store,
+//     Street,
+//     Theater,
+//     TollBooth, // NH DESC
+//     TownHall,  // NH DESC
+//     Train,
+//     TrainStation,
+//     Truck,
+//     Underway,
+//     Unknown,
+//     UtilityBox, // NH DESC
+//     Warehouse,
+//     WasteTransferFacility, // NH DESC
+//     Water,
+//     WaterFacility, // NH DESC
+//     Watercraft,
+//     YouthCamp, // NH DESC
+//     Iana(S),
+// }
 
 #[macro_export]
 macro_rules! utc_offset {

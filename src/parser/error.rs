@@ -1,5 +1,7 @@
 //! Error types for parsing iCalendar.
 
+use std::convert::Infallible;
+
 use crate::model::{
     component::TzRuleKind,
     parameter::{KnownParam, StaticParam},
@@ -22,8 +24,8 @@ pub enum CalendarParseError<S> {
     InvalidDurationTime(InvalidDurationTimeError),
     /// A parameter with a multiplicity less than 2 occurred more than once.
     DuplicateParam(StaticParam),
-    Unexpected(UnexpectedKnownParamError<S>),
-    UnexpectedValueType,
+    MissingValueType,
+    InvalidValueType(ValueType<S>),
     AttachParam(AttachParamError<S>),
     DtParam(DtParamError<S>),
     RDateParam(RDateParamError<S>),
@@ -79,6 +81,12 @@ pub enum CalendarParseError<S> {
     TodoTerminationCollision,
     /// The ORDER parameter occurred on a property that cannot occur more than once.
     OrderOnNonRepeatableProp,
+}
+
+impl<S> From<Infallible> for CalendarParseError<S> {
+    fn from(_: Infallible) -> Self {
+        unreachable!()
+    }
 }
 
 /// A component kind, including the static subcomponents.
